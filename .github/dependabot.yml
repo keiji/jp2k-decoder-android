@@ -6,7 +6,7 @@ updates:
       interval: "weekly"
 
   - package-ecosystem: "gradle"
-    directory: "/sample"
+    directory: "/android"
     schedule:
       interval: "weekly"
     groups:
