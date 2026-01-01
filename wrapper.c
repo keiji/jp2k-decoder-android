@@ -13,6 +13,10 @@
 
 #define MIN_INPUT_SIZE 12 // JP2 signature box length
 
+// Color Format
+#define COLOR_FORMAT_RGB565 565
+#define COLOR_FORMAT_ARGB8888 8888
+
 int last_error = ERR_NONE;
 
 // 最新のエラーコードを取得する関数
@@ -76,8 +80,9 @@ static opj_image_t* decode_internal(uint8_t* data, uint32_t data_len, OPJ_CODEC_
     return l_image;
 }
 
-static opj_image_t* decode(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint32_t max_heap_size) {
-    uint32_t max_input_size = max_heap_size / 4;
+static opj_image_t* decode_opj(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint32_t max_heap_size, int color_format) {
+    uint32_t divider = (color_format == COLOR_FORMAT_RGB565) ? 3 : 4;
+    uint32_t max_input_size = max_heap_size / divider;
 
     if (data_len < MIN_INPUT_SIZE || data_len > max_input_size) {
         last_error = ERR_INPUT_DATA_SIZE;
@@ -110,27 +115,60 @@ static int32_t* get_alpha_component(opj_image_t* image) {
     return image->comps[3].data;
 }
 
-static void write_pixels_with_alpha(uint8_t* dest, int32_t* r, int32_t* g, int32_t* b, int32_t* a, uint32_t count) {
+static void write_pixels_argb8888(uint8_t* dest, int32_t* r, int32_t* g, int32_t* b, int32_t* a, uint32_t count) {
+    // ARGB8888: A R G B (byte order in memory for Java int packing 0xAARRGGBB? Wait.)
+    // Java int 0xAARRGGBB on LE machine is stored as B G R A? No.
+    // int color = (A << 24) | (B << 16) | (G << 8) | R
+    // This int is 0xAABBGGRR.
+    // On LE machine, bytes are: RR GG BB AA.
+    // So we write R, G, B, A.
     for (uint32_t i = 0; i < count; i++) {
-        *dest++ = (uint8_t)b[i];
-        *dest++ = (uint8_t)g[i];
+        uint8_t alpha = (a != NULL) ? (uint8_t)a[i] : 0xFF;
         *dest++ = (uint8_t)r[i];
-        *dest++ = (uint8_t)a[i];
+        *dest++ = (uint8_t)g[i];
+        *dest++ = (uint8_t)b[i];
+        *dest++ = alpha;
     }
 }
 
-static void write_pixels_no_alpha(uint8_t* dest, int32_t* r, int32_t* g, int32_t* b, uint32_t count) {
+static void write_pixels_rgb565(uint8_t* dest, int32_t* r, int32_t* g, int32_t* b, uint32_t count) {
+    // RGB565: (R & 0x1f) << 11 | (G & 0x3f) << 5 | (B & 0x1f)
+    // 5 bits R, 6 bits G, 5 bits B.
+    // Short is 16 bits.
+    // LE Storage: Low byte, High byte.
+    // Value = RRRR RGGG GGGB BBBB
+    // Low Byte (bits 0-7): GGGB BBBB -> (G << 5) | B ?
+    // Wait. Value = (R << 11) | (G << 5) | B.
+    // Bits: 15..11 (R), 10..5 (G), 4..0 (B).
+    // Low Byte (0..7): Bits 0..7.
+    // Bit 0..4 is B (5 bits). Bit 5..7 is low 3 bits of G.
+    // So Low Byte = (G & 0x7) << 5 | (B & 0x1F) ?
+    // Wait. (G << 5) & 0xE0 | B.
+    // High Byte (8..15): Bits 8..15.
+    // Bit 8..10 is high 3 bits of G. Bit 11..15 is R.
+    // So High Byte = (R << 3) | (G >> 3).
+
+    // BUT, inputs r,g,b are 8-bit (0-255).
+    // So we need to scale them down.
+    // R (8) -> 5 bits: R >> 3
+    // G (8) -> 6 bits: G >> 2
+    // B (8) -> 5 bits: B >> 3
+
+    uint16_t* ptr = (uint16_t*)dest;
+
     for (uint32_t i = 0; i < count; i++) {
-        *dest++ = (uint8_t)b[i];
-        *dest++ = (uint8_t)g[i];
-        *dest++ = (uint8_t)r[i];
-        *dest++ = 0xFF; // Alpha
+        uint16_t red = ((uint16_t)r[i] >> 3) & 0x1F;
+        uint16_t green = ((uint16_t)g[i] >> 2) & 0x3F;
+        uint16_t blue = ((uint16_t)b[i] >> 3) & 0x1F;
+
+        uint16_t color = (red << 11) | (green << 5) | blue;
+        *ptr++ = color; // Stores as LE automatically
     }
 }
 
 EMSCRIPTEN_KEEPALIVE
-uint8_t* decodeToBmp(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint32_t max_heap_size) {
-    opj_image_t* image = decode(data, data_len, max_pixels, max_heap_size);
+uint8_t* decode(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint32_t max_heap_size, int color_format) {
+    opj_image_t* image = decode_opj(data, data_len, max_pixels, max_heap_size, color_format);
     if (!image) {
         return NULL;
     }
@@ -145,60 +183,39 @@ uint8_t* decodeToBmp(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint
     }
 
     uint32_t pixel_count = width * height;
-    uint32_t bmp_header_size = 14;
-    uint32_t dib_header_size = 40;
-    uint32_t header_size = bmp_header_size + dib_header_size;
-    uint32_t pixel_data_size = pixel_count * 4;
-    uint32_t file_size = header_size + pixel_data_size;
 
-    uint8_t* bmp_buffer = (uint8_t*)malloc(file_size);
-    if (!bmp_buffer) {
+    uint32_t bytes_per_pixel = (color_format == COLOR_FORMAT_RGB565) ? 2 : 4;
+    uint32_t pixel_data_size = pixel_count * bytes_per_pixel;
+
+    // Allocate buffer: [Width(4)][Height(4)][Pixels...]
+    uint32_t buffer_size = 8 + pixel_data_size;
+
+    uint8_t* result_buffer = (uint8_t*)malloc(buffer_size);
+    if (!result_buffer) {
         opj_image_destroy(image);
         last_error = ERR_DECODE; // Allocation failed
         return NULL;
     }
 
-    // BMP Header
-    bmp_buffer[0] = 0x42; // 'B'
-    bmp_buffer[1] = 0x4D; // 'M'
-    memcpy(&bmp_buffer[2], &file_size, 4);
-    uint32_t reserved = 0;
-    memcpy(&bmp_buffer[6], &reserved, 4);
-    memcpy(&bmp_buffer[10], &header_size, 4);
+    // Write header
+    memcpy(result_buffer, &width, 4);
+    memcpy(result_buffer + 4, &height, 4);
 
-    // DIB Header
-    memcpy(&bmp_buffer[14], &dib_header_size, 4);
-    memcpy(&bmp_buffer[18], &width, 4);
-    int32_t neg_height = -(int32_t)height;
-    memcpy(&bmp_buffer[22], &neg_height, 4);
-    uint16_t planes = 1;
-    memcpy(&bmp_buffer[26], &planes, 2);
-    uint16_t bpp = 32;
-    memcpy(&bmp_buffer[28], &bpp, 2);
-    uint32_t compression = 0;
-    memcpy(&bmp_buffer[30], &compression, 4);
-    memcpy(&bmp_buffer[34], &pixel_data_size, 4);
-    int32_t resolution = 0;
-    memcpy(&bmp_buffer[38], &resolution, 4);
-    memcpy(&bmp_buffer[42], &resolution, 4);
-    uint32_t colors = 0;
-    memcpy(&bmp_buffer[46], &colors, 4);
-    memcpy(&bmp_buffer[50], &colors, 4);
-
-    // Pixel Data (BGRA)
+    // Pixel Data
     int32_t* r_data = image->comps[0].data;
     int32_t* g_data = image->comps[1].data;
     int32_t* b_data = image->comps[2].data;
     int32_t* a_data = get_alpha_component(image);
 
-    uint8_t* ptr = bmp_buffer + header_size;
+    uint8_t* ptr = result_buffer + 8;
 
-    if (a_data) {
-        write_pixels_with_alpha(ptr, r_data, g_data, b_data, a_data, pixel_count);
+    if (color_format == COLOR_FORMAT_RGB565) {
+        write_pixels_rgb565(ptr, r_data, g_data, b_data, pixel_count);
     } else {
-        write_pixels_no_alpha(ptr, r_data, g_data, b_data, pixel_count);
+        // ARGB8888
+        write_pixels_argb8888(ptr, r_data, g_data, b_data, a_data, pixel_count);
     }
 
     opj_image_destroy(image);
-    return bmp_buffer;
+    return result_buffer;
 }
