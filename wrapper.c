@@ -155,7 +155,21 @@ uint8_t* decodeToBmp(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint
     int32_t* r_data = image->comps[0].data;
     int32_t* g_data = image->comps[1].data;
     int32_t* b_data = image->comps[2].data;
-    int32_t* a_data = (image->numcomps > 3) ? image->comps[3].data : NULL;
+
+    int32_t* a_data = NULL;
+    if (image->numcomps > 3) {
+        // Look for alpha channel
+        for (uint32_t i = 0; i < image->numcomps; i++) {
+            if (image->comps[i].alpha != 0) {
+                a_data = image->comps[i].data;
+                break;
+            }
+        }
+        // Fallback: if not explicitly marked, assume 4th component is alpha if 4 components exist
+        if (!a_data) {
+            a_data = image->comps[3].data;
+        }
+    }
 
     uint8_t* ptr = bmp_buffer + header_size;
 
