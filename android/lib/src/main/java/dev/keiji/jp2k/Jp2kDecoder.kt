@@ -19,7 +19,7 @@ import kotlinx.coroutines.withContext
 
 class Jp2kDecoder(context: Context, private val logLevel: Int? = null) {
     private val assetManager = context.assets
-    private val sandboxFuture = JavaScriptSandbox.createConnectedInstanceAsync(context)
+    private val sandboxFuture = Jp2kSandbox.get(context)
     private val mainExecutor: Executor = ContextCompat.getMainExecutor(context)
 
     private var jsIsolate: JavaScriptIsolate? = null
@@ -37,7 +37,9 @@ class Jp2kDecoder(context: Context, private val logLevel: Int? = null) {
                 sandboxFuture.addListener({
                     try {
                         val sandbox = sandboxFuture.get()
-                        jsIsolate = sandbox.createIsolate()
+                        jsIsolate = Jp2kSandbox.createIsolate(sandbox).also { isolate ->
+                            Jp2kSandbox.setupConsoleCallback(isolate, sandbox, mainExecutor, TAG)
+                        }
                         continuation.resume(Unit)
                     } catch (exception: Exception) {
                         continuation.resumeWithException(exception)

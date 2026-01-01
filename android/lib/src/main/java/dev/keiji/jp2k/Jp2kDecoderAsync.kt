@@ -20,7 +20,8 @@ class Jp2kDecoderAsync(
     private val logLevel: Int? = null
 ) {
     private val assetManager = context.assets
-    private val sandboxFuture = JavaScriptSandbox.createConnectedInstanceAsync(context)
+    private val sandboxFuture = Jp2kSandbox.get(context)
+    private val mainExecutor: Executor = ContextCompat.getMainExecutor(context)
 
     private var jsIsolate: JavaScriptIsolate? = null
 
@@ -36,7 +37,9 @@ class Jp2kDecoderAsync(
             try {
                 // Wait for sandbox connection on the background thread
                 val sandbox = sandboxFuture.get()
-                jsIsolate = sandbox.createIsolate()
+                jsIsolate = Jp2kSandbox.createIsolate(sandbox).also { isolate ->
+                    Jp2kSandbox.setupConsoleCallback(isolate, sandbox, mainExecutor, TAG)
+                }
 
                 // Load WASM
                 loadWasm()
@@ -145,15 +148,7 @@ class Jp2kDecoderAsync(
                     log(Log.ERROR, "Error closing isolate: ${e.message}")
                 }
 
-                try {
-                    if (sandboxFuture.isDone) {
-                        sandboxFuture.get().close()
-                    } else {
-                        sandboxFuture.cancel(true)
-                    }
-                } catch (e: Exception) {
-                     log(Log.ERROR, "Error closing sandbox: ${e.message}")
-                }
+                // We share the sandbox future, so we do not close it here.
             }
             backgroundExecutor.shutdown()
         }
