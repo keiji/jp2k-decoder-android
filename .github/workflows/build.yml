@@ -76,7 +76,7 @@ jobs:
               -o openjpeg_core.wasm
 
       - name: Copy WASM to assets
-        run: cp openjpeg_core.wasm android/lib/src/main/assets/
+        run: cp -rf openjpeg_core.wasm android/lib/src/main/assets/
 
       - name: Commit and push if changed
         if: github.event_name == 'push'
