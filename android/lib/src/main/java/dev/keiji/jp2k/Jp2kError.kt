@@ -4,7 +4,7 @@ enum class Jp2kError(val code: Int) {
     None(0),
     Header(-1),
     InputDataSize(-2),
-    PixelDataSizeTooLarge(-3),
+    PixelDataSize(-3),
     Decode(-4),
     Unknown(Int.MIN_VALUE);
 
