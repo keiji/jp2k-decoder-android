@@ -13,7 +13,10 @@ import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import androidx.core.graphics.createBitmap
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class Jp2kDecoder(context: Context) {
@@ -21,7 +24,20 @@ class Jp2kDecoder(context: Context) {
     private val sandboxFuture = JavaScriptSandbox.createConnectedInstanceAsync(context)
     private val mainExecutor: Executor = ContextCompat.getMainExecutor(context)
 
+    private val coroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
     private var jsIsolate: JavaScriptIsolate? = null
+
+    fun initAsync(callback: Callback<Unit>) {
+        coroutineScope.launch {
+            try {
+                init()
+                callback.onSuccess(Unit)
+            } catch (e: Exception) {
+                callback.onError(e)
+            }
+        }
+    }
 
     suspend fun init() {
         suspendCancellableCoroutine { continuation ->
@@ -69,6 +85,17 @@ class Jp2kDecoder(context: Context) {
                     continuation.resumeWithException(IllegalStateException())
                 }
             }, mainExecutor)
+        }
+    }
+
+    fun decodeImageAsync(j2kData: ByteArray, callback: Callback<Bitmap>) {
+        coroutineScope.launch {
+            try {
+                val bitmap = decodeImage(j2kData)
+                callback.onSuccess(bitmap)
+            } catch (e: Exception) {
+                callback.onError(e)
+            }
         }
     }
 
