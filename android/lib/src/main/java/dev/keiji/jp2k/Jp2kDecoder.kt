@@ -16,10 +16,7 @@ import kotlinx.coroutines.withContext
 
 class Jp2kDecoder(
     context: Context,
-    private val maxPixels: Int = DEFAULT_MAX_PIXELS,
-    private val maxHeapSizeBytes: Long = DEFAULT_MAX_HEAP_SIZE_BYTES,
-    private val maxEvaluationReturnSizeBytes: Int = DEFAULT_MAX_EVALUATION_RETURN_SIZE_BYTES,
-    private val logLevel: Int? = null
+    private val config: Config = Config()
 ) {
     private val assetManager = context.assets
     private val sandboxFuture = Jp2kSandbox.get(context)
@@ -28,7 +25,7 @@ class Jp2kDecoder(
     private var jsIsolate: JavaScriptIsolate? = null
 
     private fun log(priority: Int, message: String) {
-        if (logLevel != null && priority >= logLevel) {
+        if (config.logLevel != null && priority >= config.logLevel) {
             Log.println(priority, TAG, message)
         }
     }
@@ -42,8 +39,8 @@ class Jp2kDecoder(
                         val sandbox = sandboxFuture.get()
                         jsIsolate = Jp2kSandbox.createIsolate(
                             sandbox = sandbox,
-                            maxHeapSizeBytes = maxHeapSizeBytes,
-                            maxEvaluationReturnSizeBytes = maxEvaluationReturnSizeBytes,
+                            maxHeapSizeBytes = config.maxHeapSizeBytes,
+                            maxEvaluationReturnSizeBytes = config.maxEvaluationReturnSizeBytes,
                         ).also { isolate ->
                             Jp2kSandbox.setupConsoleCallback(isolate, sandbox, mainExecutor, TAG)
                         }
@@ -112,7 +109,7 @@ class Jp2kDecoder(
             val jsIsolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
 
             val dataArrayString = j2kData.joinToString(",")
-            val script = "globalThis.decodeJ2K([$dataArrayString], $maxPixels);"
+            val script = "globalThis.decodeJ2K([$dataArrayString], ${config.maxPixels});"
 
             val resultFuture = jsIsolate.evaluateJavaScriptAsync(script)
 
