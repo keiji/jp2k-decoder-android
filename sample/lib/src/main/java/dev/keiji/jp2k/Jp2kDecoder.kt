@@ -4,7 +4,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
-import android.util.Base64
 import androidx.core.content.ContextCompat
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
@@ -93,8 +92,9 @@ class Jp2kDecoder(context: Context) {
             throw IllegalStateException("Decode error occurred: ${root.getString("error")}")
         }
 
-        val bmpBase64 = root.getString("bmp")
-        val bmpBytes = Base64.decode(bmpBase64, Base64.DEFAULT)
+        val bmpHex = root.getString("bmp")
+        @OptIn(ExperimentalStdlibApi::class)
+        val bmpBytes = bmpHex.hexToByteArray()
         return BitmapFactory.decodeByteArray(bmpBytes, 0, bmpBytes.size)
     }
 
@@ -152,28 +152,13 @@ class Jp2kDecoder(context: Context) {
         """
 
         private const val SCRIPT_DEFINE_DECODE_J2K = """
-            globalThis.bytesToBase64 = function(bytes) {
-                const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-                let output = '';
-                let len = bytes.length;
-                let i = 0;
-                while (i < len) {
-                    let a = bytes[i++];
-                    let b = bytes[i++];
-                    let c = bytes[i++];
-
-                    let enc1 = a >> 2;
-                    let enc2 = ((a & 3) << 4) | (b >> 4);
-                    let enc3 = ((b & 15) << 2) | (c >> 6);
-                    let enc4 = c & 63;
-
-                    if (isNaN(b)) {
-                        enc3 = enc4 = 64;
-                    } else if (isNaN(c)) {
-                        enc4 = 64;
-                    }
-
-                    output += chars.charAt(enc1) + chars.charAt(enc2) + chars.charAt(enc3) + chars.charAt(enc4);
+            globalThis.bytesToHex = function(bytes) {
+                const hexChars = "0123456789abcdef";
+                let output = "";
+                for (let i = 0; i < bytes.length; i++) {
+                    const b = bytes[i];
+                    output += hexChars[(b >> 4) & 0xf];
+                    output += hexChars[b & 0xf];
                 }
                 return output;
             };
@@ -209,14 +194,14 @@ class Jp2kDecoder(context: Context) {
                     // Create a Uint8Array view of the BMP data
                     const bmpBuffer = new Uint8Array(exports.memory.buffer, bmpPtr, bmpSize);
 
-                    const base64 = globalThis.bytesToBase64(bmpBuffer);
+                    const hexString = globalThis.bytesToHex(bmpBuffer);
 
                     // Free the BMP buffer allocated in C
                     exports.free(bmpPtr);
                     exports.free(inputPtr);
                 
                     return JSON.stringify({
-                        bmp: base64
+                        bmp: hexString
                     });
                 } catch (e) {
                     return JSON.stringify({ error: e.toString() });
