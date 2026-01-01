@@ -39,29 +39,13 @@ jobs:
       - name: Setup Emscripten
         uses: mymindstorm/setup-emsdk@v14
 
-      - name: Build OpenJPEG
-        run: |
-          mkdir -p openjpeg/build
-          cd openjpeg/build
-          emcmake cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DBUILD_CODEC=OFF
-          emmake make
-
       - name: Build WASM
         run: |
-          emcc -O3 wrapper.c \
-              -I./openjpeg/src/lib/openjp2 \
-              -I./openjpeg/build/src/lib/openjp2 \
-              -L./openjpeg/build/bin \
-              -lopenjp2 \
-              -s WASM=1 \
-              -s STANDALONE_WASM \
-              --no-entry \
-              -s ALLOW_MEMORY_GROWTH=1 \
-              -s EXPORTED_FUNCTIONS='["_decodeToBmp", "_malloc", "_free", "_getLastError"]' \
-              -o openjpeg_core.wasm
+          emcmake cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
 
       - name: Copy WASM to assets
-        run: cp openjpeg_core.wasm android/lib/src/main/assets/
+        run: cp build/openjpeg_core.wasm android/lib/src/main/assets/
 
       - name: Commit and push if changed
         if: github.event_name == 'push'
@@ -80,5 +64,5 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: openjpeg_core.wasm
-          path: openjpeg_core.wasm
+          path: build/openjpeg_core.wasm
           retention-days: 1

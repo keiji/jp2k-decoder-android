@@ -12,16 +12,14 @@ This library provides functionality to decode JPEG2000 images on Android.
 
 ### Build WASM
 
+The project uses CMake with Emscripten to build the WASM module. It creates a custom build configuration that compiles `wrapper.c` along with the necessary OpenJPEG source files (excluding encoder-specific logic where possible and relying on Link Time Optimization (LTO) to strip unused code).
+
 ```bash
-emcc -O3 wrapper.c \
-    -I./openjpeg/src/lib/openjp2 \
-    -I./openjpeg/build/src/lib/openjp2 \
-    -L./openjpeg/build/bin \
-    -lopenjp2 \
-    -s WASM=1 \
-    -s STANDALONE_WASM \
-    --no-entry \
-    -s ALLOW_MEMORY_GROWTH=1 \
-    -s EXPORTED_FUNCTIONS='["_decodeToBmp", "_malloc", "_free", "_getLastError"]' \
-    -o openjpeg_core.wasm
+# Configure
+emcmake cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+# Build
+cmake --build build
 ```
+
+This will produce `build/openjpeg_core.wasm`.
