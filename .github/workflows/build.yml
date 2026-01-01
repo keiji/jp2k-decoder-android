@@ -9,6 +9,9 @@ on:
 jobs:
   android:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -21,6 +24,18 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
+
+      - name: Run Android Lint
+        working-directory: android
+        run: ./gradlew lintDebug
+        continue-on-error: true
+
+      - name: Report Android Lint Results
+        uses: dvdandroid/action-android-lint@v1.3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          lint_xml_file: android/lib/build/reports/lint-results-debug.xml
+          reporter: github-pr-review
 
       - name: Build Android App & Lib
         working-directory: android
