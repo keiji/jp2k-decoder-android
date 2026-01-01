@@ -94,6 +94,40 @@ static opj_image_t* decode(uint8_t* data, uint32_t data_len, uint32_t max_pixels
     return decode_internal(data, data_len, OPJ_CODEC_J2K, max_pixels);
 }
 
+static int32_t* get_alpha_component(opj_image_t* image) {
+    if (image->numcomps <= 3) {
+        return NULL;
+    }
+
+    // Look for alpha channel
+    for (uint32_t i = 0; i < image->numcomps; i++) {
+        if (image->comps[i].alpha != 0) {
+            return image->comps[i].data;
+        }
+    }
+
+    // Fallback: if not explicitly marked, assume 4th component is alpha if 4 components exist
+    return image->comps[3].data;
+}
+
+static void write_pixels_with_alpha(uint8_t* dest, int32_t* r, int32_t* g, int32_t* b, int32_t* a, uint32_t count) {
+    for (uint32_t i = 0; i < count; i++) {
+        *dest++ = (uint8_t)b[i];
+        *dest++ = (uint8_t)g[i];
+        *dest++ = (uint8_t)r[i];
+        *dest++ = (uint8_t)a[i];
+    }
+}
+
+static void write_pixels_no_alpha(uint8_t* dest, int32_t* r, int32_t* g, int32_t* b, uint32_t count) {
+    for (uint32_t i = 0; i < count; i++) {
+        *dest++ = (uint8_t)b[i];
+        *dest++ = (uint8_t)g[i];
+        *dest++ = (uint8_t)r[i];
+        *dest++ = 0xFF; // Alpha
+    }
+}
+
 EMSCRIPTEN_KEEPALIVE
 uint8_t* decodeToBmp(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint32_t max_heap_size) {
     opj_image_t* image = decode(data, data_len, max_pixels, max_heap_size);
@@ -155,38 +189,14 @@ uint8_t* decodeToBmp(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint
     int32_t* r_data = image->comps[0].data;
     int32_t* g_data = image->comps[1].data;
     int32_t* b_data = image->comps[2].data;
-
-    int32_t* a_data = NULL;
-    if (image->numcomps > 3) {
-        // Look for alpha channel
-        for (uint32_t i = 0; i < image->numcomps; i++) {
-            if (image->comps[i].alpha != 0) {
-                a_data = image->comps[i].data;
-                break;
-            }
-        }
-        // Fallback: if not explicitly marked, assume 4th component is alpha if 4 components exist
-        if (!a_data) {
-            a_data = image->comps[3].data;
-        }
-    }
+    int32_t* a_data = get_alpha_component(image);
 
     uint8_t* ptr = bmp_buffer + header_size;
 
     if (a_data) {
-        for (uint32_t i = 0; i < pixel_count; i++) {
-            *ptr++ = (uint8_t)b_data[i];
-            *ptr++ = (uint8_t)g_data[i];
-            *ptr++ = (uint8_t)r_data[i];
-            *ptr++ = (uint8_t)a_data[i];
-        }
+        write_pixels_with_alpha(ptr, r_data, g_data, b_data, a_data, pixel_count);
     } else {
-        for (uint32_t i = 0; i < pixel_count; i++) {
-            *ptr++ = (uint8_t)b_data[i];
-            *ptr++ = (uint8_t)g_data[i];
-            *ptr++ = (uint8_t)r_data[i];
-            *ptr++ = 0xFF; // Alpha
-        }
+        write_pixels_no_alpha(ptr, r_data, g_data, b_data, pixel_count);
     }
 
     opj_image_destroy(image);
