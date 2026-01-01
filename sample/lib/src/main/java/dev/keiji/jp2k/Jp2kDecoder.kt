@@ -178,49 +178,6 @@ class Jp2kDecoder(context: Context) {
                 return output;
             };
 
-            globalThis.createBmp = function(width, height, rData, gData, bData) {
-                const pixelCount = width * height;
-                const bmpHeaderSize = 14;
-                const dibHeaderSize = 40;
-                const headerSize = bmpHeaderSize + dibHeaderSize;
-                const pixelDataSize = pixelCount * 4;
-                const fileSize = headerSize + pixelDataSize;
-
-                const bmpBuffer = new Uint8Array(fileSize);
-                const view = new DataView(bmpBuffer.buffer);
-
-                // BMP Header
-                view.setUint8(0, 0x42); // 'B'
-                view.setUint8(1, 0x4D); // 'M'
-                view.setUint32(2, fileSize, true);
-                view.setUint16(6, 0, true);
-                view.setUint16(8, 0, true);
-                view.setUint32(10, headerSize, true);
-
-                // DIB Header
-                view.setUint32(14, dibHeaderSize, true);
-                view.setInt32(18, width, true);
-                view.setInt32(22, -height, true); // Top-down
-                view.setUint16(26, 1, true);
-                view.setUint16(28, 32, true); // 32-bit color
-                view.setUint32(30, 0, true);
-                view.setUint32(34, pixelDataSize, true);
-                view.setInt32(38, 0, true);
-                view.setInt32(42, 0, true);
-                view.setUint32(46, 0, true);
-                view.setUint32(50, 0, true);
-
-                // Pixel Data (BGRA)
-                let ptr = headerSize;
-                for (let i = 0; i < pixelCount; i++) {
-                    bmpBuffer[ptr++] = bData[i];
-                    bmpBuffer[ptr++] = gData[i];
-                    bmpBuffer[ptr++] = rData[i];
-                    bmpBuffer[ptr++] = 255;
-                }
-                return bmpBuffer;
-            };
-
             globalThis.decodeJ2K = function(dataArrayString, maxPixels) {
                 try {
                     const exports = wasmInstance.exports;
@@ -236,37 +193,30 @@ class Jp2kDecoder(context: Context) {
                     
                     heap.set(encodedBuffer, inputPtr);
                     
-                    const imagePtr = exports.decode(inputPtr, encodedBuffer.length, maxPixels);
-                    if (imagePtr === 0) {
+                    // Call the new C function decodeToBmp
+                    const bmpPtr = exports.decodeToBmp(inputPtr, encodedBuffer.length, maxPixels);
+
+                    if (bmpPtr === 0) {
                         const errorCode = exports.getLastError();
                         exports.free(inputPtr);
-            
                         return JSON.stringify({ error: "OpenJPEG error code: " + errorCode });
                     }
-                
-                    const heapU32 = new Uint32Array(exports.memory.buffer);
-                    const width = heapU32[imagePtr / 4 + 2];
-                    const height = heapU32[imagePtr / 4 + 3];
-                    const compsPtr = heapU32[imagePtr / 4 + 6];
-                
-                    const pixelCount = width * height;
                     
-                    const compSize = 52;
-                    const rDataPtr = heapU32[(compsPtr + 0 * compSize + 44) / 4];
-                    const gDataPtr = heapU32[(compsPtr + 1 * compSize + 44) / 4];
-                    const bDataPtr = heapU32[(compsPtr + 2 * compSize + 44) / 4];
-                
-                    const rData = new Int32Array(exports.memory.buffer, rDataPtr, pixelCount);
-                    const gData = new Int32Array(exports.memory.buffer, gDataPtr, pixelCount);
-                    const bData = new Int32Array(exports.memory.buffer, bDataPtr, pixelCount);
-                
-                    const bmpBuffer = globalThis.createBmp(width, height, rData, gData, bData);
+                    // The BMP file size is stored at offset 2 (4 bytes, little endian) in the BMP header
+                    const view = new DataView(exports.memory.buffer);
+                    const bmpSize = view.getUint32(bmpPtr + 2, true);
 
-                    exports.opj_image_destroy(imagePtr);
+                    // Create a Uint8Array view of the BMP data
+                    const bmpBuffer = new Uint8Array(exports.memory.buffer, bmpPtr, bmpSize);
+
+                    const base64 = globalThis.bytesToBase64(bmpBuffer);
+
+                    // Free the BMP buffer allocated in C
+                    exports.free(bmpPtr);
                     exports.free(inputPtr);
                 
                     return JSON.stringify({
-                        bmp: globalThis.bytesToBase64(bmpBuffer)
+                        bmp: base64
                     });
                 } catch (e) {
                     return JSON.stringify({ error: e.toString() });
