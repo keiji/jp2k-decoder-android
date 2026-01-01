@@ -24,9 +24,9 @@ class Jp2kDecoder(context: Context, private val logLevel: Int? = null) {
 
     private var jsIsolate: JavaScriptIsolate? = null
 
-    private fun log(message: String) {
-        if (logLevel != null) {
-            Log.println(logLevel, TAG, message)
+    private fun log(priority: Int, message: String) {
+        if (logLevel != null && priority >= logLevel) {
+            Log.println(priority, TAG, message)
         }
     }
 
@@ -46,10 +46,10 @@ class Jp2kDecoder(context: Context, private val logLevel: Int? = null) {
             }
             loadWasm()
             val time = System.currentTimeMillis() - start
-            log("init() finished in $time msec")
+            log(Log.INFO, "init() finished in $time msec")
         } catch (e: Exception) {
             val time = System.currentTimeMillis() - start
-            log("init() failed in $time msec. Error: ${e.message}")
+            log(Log.ERROR, "init() failed in $time msec. Error: ${e.message}")
             throw e
         }
     }
@@ -90,7 +90,7 @@ class Jp2kDecoder(context: Context, private val logLevel: Int? = null) {
 
     suspend fun decodeImage(j2kData: ByteArray): Bitmap {
         val start = System.currentTimeMillis()
-        log("Input data length: ${j2kData.size}")
+        log(Log.INFO, "Input data length: ${j2kData.size}")
 
         try {
             val jsIsolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
@@ -110,7 +110,7 @@ class Jp2kDecoder(context: Context, private val logLevel: Int? = null) {
             val root = JSONObject(structureJson)
             if (root.has("error")) {
                 val errorMsg = root.getString("error")
-                log("Error: $errorMsg")
+                log(Log.ERROR, "Error: $errorMsg")
                 throw IllegalStateException("Decode error occurred: $errorMsg")
             }
 
@@ -118,17 +118,17 @@ class Jp2kDecoder(context: Context, private val logLevel: Int? = null) {
             @OptIn(ExperimentalStdlibApi::class)
             val bmpBytes = bmpHex.hexToByteArray()
 
-            log("Output data length: ${bmpBytes.size}")
+            log(Log.INFO, "Output data length: ${bmpBytes.size}")
 
             val bitmap = BitmapFactory.decodeByteArray(bmpBytes, 0, bmpBytes.size)
 
             val time = System.currentTimeMillis() - start
-            log("decodeImage() finished in $time msec")
+            log(Log.INFO, "decodeImage() finished in $time msec")
 
             return bitmap
         } catch (e: Exception) {
             val time = System.currentTimeMillis() - start
-            log("decodeImage() failed in $time msec. Error: ${e.message}")
+            log(Log.ERROR, "decodeImage() failed in $time msec. Error: ${e.message}")
             throw e
         }
     }
