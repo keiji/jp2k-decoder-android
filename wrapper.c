@@ -82,3 +82,15 @@ EMSCRIPTEN_KEEPALIVE
 opj_image_t* decodeJp2(uint8_t* data, uint32_t data_len, uint32_t max_pixels) {
     return decode_internal(data, data_len, OPJ_CODEC_JP2, max_pixels);
 }
+
+EMSCRIPTEN_KEEPALIVE
+opj_image_t* decode(uint8_t* data, uint32_t data_len, uint32_t max_pixels) {
+    if (data_len >= 4 &&
+        data[0] == 0x00 &&
+        data[1] == 0x00 &&
+        data[2] == 0x00 &&
+        data[3] == 0x0C) {
+        return decode_internal(data, data_len, OPJ_CODEC_JP2, max_pixels);
+    }
+    return decode_internal(data, data_len, OPJ_CODEC_J2K, max_pixels);
+}

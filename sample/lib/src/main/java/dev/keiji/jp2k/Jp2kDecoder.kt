@@ -76,15 +76,8 @@ class Jp2kDecoder(context: Context) {
     suspend fun decodeImage(j2kData: ByteArray): Bitmap {
         val jsIsolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
 
-        // JP2のマジックナンバーチェック (00 00 00 0C 6A 50 20 20)
-        val isJp2 = j2kData.size > 4 &&
-                j2kData[0] == 0x00.toByte() &&
-                j2kData[1] == 0x00.toByte() &&
-                j2kData[2] == 0x00.toByte() &&
-                j2kData[3] == 0x0C.toByte()
-
         val dataArrayString = j2kData.joinToString(",")
-        val script = "globalThis.decodeJ2K([$dataArrayString], $isJp2, $MAX_PIXELS);"
+        val script = "globalThis.decodeJ2K([$dataArrayString], $MAX_PIXELS);"
 
         val resultFuture = jsIsolate.evaluateJavaScriptAsync(script)
 
@@ -228,7 +221,7 @@ class Jp2kDecoder(context: Context) {
                 return bmpBuffer;
             };
 
-            globalThis.decodeJ2K = function(dataArrayString, isJp2, maxPixels) {
+            globalThis.decodeJ2K = function(dataArrayString, maxPixels) {
                 try {
                     const exports = wasmInstance.exports;
 
@@ -243,8 +236,7 @@ class Jp2kDecoder(context: Context) {
                     
                     heap.set(encodedBuffer, inputPtr);
                     
-                    const imagePtr = isJp2 ? exports.decodeJp2(inputPtr, encodedBuffer.length, maxPixels) 
-                               : exports.decodeRaw(inputPtr, encodedBuffer.length, maxPixels);
+                    const imagePtr = exports.decode(inputPtr, encodedBuffer.length, maxPixels);
                     if (imagePtr === 0) {
                         const errorCode = exports.getLastError();
                         exports.free(inputPtr);
