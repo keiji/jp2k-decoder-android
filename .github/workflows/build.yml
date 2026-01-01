@@ -23,7 +23,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v3
 
       - name: Build Android App & Lib
-        working-directory: sample
+        working-directory: android
         run: ./gradlew assembleDebug
 
   wasm:
