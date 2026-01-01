@@ -2,6 +2,8 @@ package dev.keiji.jp2k
 
 internal const val ASSET_PATH_WASM = "openjpeg_core.wasm"
 internal const val MAX_PIXELS = 16000000
+internal const val MAX_INPUT_SIZE = 128 * 1024 * 1024 // 128MB
+internal const val MIN_INPUT_SIZE = 12 // JP2 signature box length
 
 internal const val SCRIPT_IMPORT_OBJECT = """
 const wasiSnapshotPreview = {

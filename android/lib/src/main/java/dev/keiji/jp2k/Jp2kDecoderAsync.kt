@@ -95,6 +95,15 @@ class Jp2kDecoderAsync(
             val start = System.currentTimeMillis()
             log(Log.INFO, "Input data length: ${j2kData.size}")
 
+            if (j2kData.size < MIN_INPUT_SIZE) {
+                callback.onError(IllegalArgumentException("Input data is too short"))
+                return@execute
+            }
+            if (j2kData.size > MAX_INPUT_SIZE) {
+                callback.onError(IllegalArgumentException("Input data is too long"))
+                return@execute
+            }
+
             try {
                 val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
 
