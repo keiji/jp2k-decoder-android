@@ -15,12 +15,13 @@ import java.util.concurrent.Executors
 
 @OptIn(ExperimentalStdlibApi::class)
 class Jp2kDecoderAsync(
-    private val context: Context,
+    context: Context,
     private val backgroundExecutor: Executor = Executors.newSingleThreadExecutor(),
     private val logLevel: Int? = null
 ) {
     private val assetManager = context.assets
     private val sandboxFuture = Jp2kSandbox.get(context)
+    private val mainExecutor: Executor = ContextCompat.getMainExecutor(context)
 
     private var jsIsolate: JavaScriptIsolate? = null
 
@@ -37,7 +38,7 @@ class Jp2kDecoderAsync(
                 // Wait for sandbox connection on the background thread
                 val sandbox = sandboxFuture.get()
                 jsIsolate = Jp2kSandbox.createIsolate(sandbox).also { isolate ->
-                    Jp2kSandbox.setupConsoleCallback(isolate, sandbox, ContextCompat.getMainExecutor(context), TAG)
+                    Jp2kSandbox.setupConsoleCallback(isolate, sandbox, mainExecutor, TAG)
                 }
 
                 // Load WASM
