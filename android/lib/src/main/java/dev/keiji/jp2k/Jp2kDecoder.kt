@@ -37,8 +37,9 @@ class Jp2kDecoder(context: Context, private val logLevel: Int? = null) {
                 sandboxFuture.addListener({
                     try {
                         val sandbox = sandboxFuture.get()
-                        jsIsolate = Jp2kSandbox.createIsolate(sandbox)
-                        Jp2kSandbox.setupConsoleCallback(jsIsolate!!, sandbox, mainExecutor, TAG)
+                        jsIsolate = Jp2kSandbox.createIsolate(sandbox).also { isolate ->
+                            Jp2kSandbox.setupConsoleCallback(isolate, sandbox, mainExecutor, TAG)
+                        }
                         continuation.resume(Unit)
                     } catch (exception: Exception) {
                         continuation.resumeWithException(exception)
