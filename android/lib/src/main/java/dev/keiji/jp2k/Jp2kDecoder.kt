@@ -13,14 +13,20 @@ import org.json.JSONObject
 import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.jvm.JvmName
 import androidx.core.graphics.createBitmap
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.suspendCoroutine
 
 class Jp2kDecoder(context: Context, private val logLevel: Int? = null) {
     private val assetManager = context.assets
     private val sandboxFuture = JavaScriptSandbox.createConnectedInstanceAsync(context)
     private val mainExecutor: Executor = ContextCompat.getMainExecutor(context)
+    private val coroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     private var jsIsolate: JavaScriptIsolate? = null
 
@@ -30,27 +36,45 @@ class Jp2kDecoder(context: Context, private val logLevel: Int? = null) {
         }
     }
 
-    suspend fun init() {
-        val start = System.currentTimeMillis()
-        try {
-            suspendCancellableCoroutine { continuation ->
-                sandboxFuture.addListener({
-                    try {
-                        val sandbox = sandboxFuture.get()
-                        jsIsolate = sandbox.createIsolate()
-                        continuation.resume(Unit)
-                    } catch (exception: Exception) {
-                        continuation.resumeWithException(exception)
-                    }
-                }, mainExecutor)
+    suspend fun init() = suspendCoroutine { continuation ->
+        initAsync(object : Callback<Unit> {
+            override fun onSuccess(result: Unit) {
+                continuation.resume(result)
             }
-            loadWasm()
-            val time = System.currentTimeMillis() - start
-            log(Log.INFO, "init() finished in $time msec")
-        } catch (e: Exception) {
-            val time = System.currentTimeMillis() - start
-            log(Log.ERROR, "init() failed in $time msec. Error: ${e.message}")
-            throw e
+
+            override fun onError(e: Throwable) {
+                continuation.resumeWithException(e)
+            }
+        })
+    }
+
+    @JvmName("initAsync")
+    fun initAsync(callback: Callback<Unit>) {
+        coroutineScope.launch {
+            val start = System.currentTimeMillis()
+            try {
+                withContext(Dispatchers.Default) {
+                    suspendCancellableCoroutine { continuation ->
+                        sandboxFuture.addListener({
+                            try {
+                                val sandbox = sandboxFuture.get()
+                                jsIsolate = sandbox.createIsolate()
+                                continuation.resume(Unit)
+                            } catch (exception: Exception) {
+                                continuation.resumeWithException(exception)
+                            }
+                        }, mainExecutor)
+                    }
+                    loadWasm()
+                }
+                val time = System.currentTimeMillis() - start
+                log(Log.INFO, "init() finished in $time msec")
+                callback.onSuccess(Unit)
+            } catch (e: Exception) {
+                val time = System.currentTimeMillis() - start
+                log(Log.ERROR, "init() failed in $time msec. Error: ${e.message}")
+                callback.onError(e)
+            }
         }
     }
 
@@ -88,48 +112,65 @@ class Jp2kDecoder(context: Context, private val logLevel: Int? = null) {
         }
     }
 
-    suspend fun decodeImage(j2kData: ByteArray): Bitmap {
-        val start = System.currentTimeMillis()
-        log(Log.INFO, "Input data length: ${j2kData.size}")
-
-        try {
-            val jsIsolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
-
-            val dataArrayString = j2kData.joinToString(",")
-            val script = "globalThis.decodeJ2K([$dataArrayString], $MAX_PIXELS);"
-
-            val resultFuture = jsIsolate.evaluateJavaScriptAsync(script)
-
-            val structureJson = suspendCancellableCoroutine { continuation ->
-                resultFuture?.addListener({
-                    val jsonResult = resultFuture.get()
-                    continuation.resume(jsonResult)
-                }, mainExecutor)
+    suspend fun decodeImage(j2kData: ByteArray): Bitmap = suspendCoroutine { continuation ->
+        decodeImageAsync(j2kData, object : Callback<Bitmap> {
+            override fun onSuccess(result: Bitmap) {
+                continuation.resume(result)
             }
 
-            val root = JSONObject(structureJson)
-            if (root.has("error")) {
-                val errorMsg = root.getString("error")
-                log(Log.ERROR, "Error: $errorMsg")
-                throw IllegalStateException("Decode error occurred: $errorMsg")
+            override fun onError(e: Throwable) {
+                continuation.resumeWithException(e)
             }
+        })
+    }
 
-            val bmpHex = root.getString("bmp")
-            @OptIn(ExperimentalStdlibApi::class)
-            val bmpBytes = bmpHex.hexToByteArray()
+    @JvmName("decodeImageAsync")
+    fun decodeImageAsync(j2kData: ByteArray, callback: Callback<Bitmap>) {
+        coroutineScope.launch {
+            val start = System.currentTimeMillis()
+            log(Log.INFO, "Input data length: ${j2kData.size}")
 
-            log(Log.INFO, "Output data length: ${bmpBytes.size}")
+            try {
+                val bitmap = withContext(Dispatchers.Default) {
+                    val jsIsolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
 
-            val bitmap = BitmapFactory.decodeByteArray(bmpBytes, 0, bmpBytes.size)
+                    val dataArrayString = j2kData.joinToString(",")
+                    val script = "globalThis.decodeJ2K([$dataArrayString], $MAX_PIXELS);"
 
-            val time = System.currentTimeMillis() - start
-            log(Log.INFO, "decodeImage() finished in $time msec")
+                    val resultFuture = jsIsolate.evaluateJavaScriptAsync(script)
 
-            return bitmap
-        } catch (e: Exception) {
-            val time = System.currentTimeMillis() - start
-            log(Log.ERROR, "decodeImage() failed in $time msec. Error: ${e.message}")
-            throw e
+                    val structureJson = suspendCancellableCoroutine { continuation ->
+                        resultFuture?.addListener({
+                            val jsonResult = resultFuture.get()
+                            continuation.resume(jsonResult)
+                        }, mainExecutor)
+                    }
+
+                    val root = JSONObject(structureJson)
+                    if (root.has("error")) {
+                        val errorMsg = root.getString("error")
+                        log(Log.ERROR, "Error: $errorMsg")
+                        throw IllegalStateException("Decode error occurred: $errorMsg")
+                    }
+
+                    val bmpHex = root.getString("bmp")
+                    @OptIn(ExperimentalStdlibApi::class)
+                    val bmpBytes = bmpHex.hexToByteArray()
+
+                    log(Log.INFO, "Output data length: ${bmpBytes.size}")
+
+                    BitmapFactory.decodeByteArray(bmpBytes, 0, bmpBytes.size)
+                }
+
+                val time = System.currentTimeMillis() - start
+                log(Log.INFO, "decodeImage() finished in $time msec")
+
+                callback.onSuccess(bitmap)
+            } catch (e: Exception) {
+                val time = System.currentTimeMillis() - start
+                log(Log.ERROR, "decodeImage() failed in $time msec. Error: ${e.message}")
+                callback.onError(e)
+            }
         }
     }
 
