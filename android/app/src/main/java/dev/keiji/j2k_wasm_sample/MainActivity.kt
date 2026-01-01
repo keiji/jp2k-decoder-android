@@ -26,7 +26,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
-    private val jp2kDecoder by lazy { Jp2kDecoder(applicationContext) }
+    private val jp2kDecoderLazy = lazy { Jp2kDecoder(applicationContext) }
+    private val jp2kDecoder by jp2kDecoderLazy
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (jp2kDecoderLazy.isInitialized()) {
+            jp2kDecoder.release()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
