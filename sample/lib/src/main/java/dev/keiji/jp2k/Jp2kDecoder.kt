@@ -159,6 +159,75 @@ class Jp2kDecoder(context: Context) {
         """
 
         private const val SCRIPT_DEFINE_DECODE_J2K = """
+            globalThis.bytesToBase64 = function(bytes) {
+                const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+                let output = '';
+                let len = bytes.length;
+                let i = 0;
+                while (i < len) {
+                    let a = bytes[i++];
+                    let b = bytes[i++];
+                    let c = bytes[i++];
+
+                    let enc1 = a >> 2;
+                    let enc2 = ((a & 3) << 4) | (b >> 4);
+                    let enc3 = ((b & 15) << 2) | (c >> 6);
+                    let enc4 = c & 63;
+
+                    if (isNaN(b)) {
+                        enc3 = enc4 = 64;
+                    } else if (isNaN(c)) {
+                        enc4 = 64;
+                    }
+
+                    output += chars.charAt(enc1) + chars.charAt(enc2) + chars.charAt(enc3) + chars.charAt(enc4);
+                }
+                return output;
+            };
+
+            globalThis.createBmp = function(width, height, rData, gData, bData) {
+                const pixelCount = width * height;
+                const bmpHeaderSize = 14;
+                const dibHeaderSize = 40;
+                const headerSize = bmpHeaderSize + dibHeaderSize;
+                const pixelDataSize = pixelCount * 4;
+                const fileSize = headerSize + pixelDataSize;
+
+                const bmpBuffer = new Uint8Array(fileSize);
+                const view = new DataView(bmpBuffer.buffer);
+
+                // BMP Header
+                view.setUint8(0, 0x42); // 'B'
+                view.setUint8(1, 0x4D); // 'M'
+                view.setUint32(2, fileSize, true);
+                view.setUint16(6, 0, true);
+                view.setUint16(8, 0, true);
+                view.setUint32(10, headerSize, true);
+
+                // DIB Header
+                view.setUint32(14, dibHeaderSize, true);
+                view.setInt32(18, width, true);
+                view.setInt32(22, -height, true); // Top-down
+                view.setUint16(26, 1, true);
+                view.setUint16(28, 32, true); // 32-bit color
+                view.setUint32(30, 0, true);
+                view.setUint32(34, pixelDataSize, true);
+                view.setInt32(38, 0, true);
+                view.setInt32(42, 0, true);
+                view.setUint32(46, 0, true);
+                view.setUint32(50, 0, true);
+
+                // Pixel Data (BGRA)
+                let ptr = headerSize;
+                for (let i = 0; i < pixelCount; i++) {
+                    bmpBuffer[ptr++] = bData[i];
+                    bmpBuffer[ptr++] = gData[i];
+                    bmpBuffer[ptr++] = rData[i];
+                    bmpBuffer[ptr++] = 255;
+                }
+                return bmpBuffer;
+            };
+
             globalThis.decodeJ2K = function(dataArrayString, isJp2, maxPixels) {
                 try {
                     const exports = wasmInstance.exports;
@@ -199,64 +268,13 @@ class Jp2kDecoder(context: Context) {
                     const gData = new Int32Array(exports.memory.buffer, gDataPtr, pixelCount);
                     const bData = new Int32Array(exports.memory.buffer, bDataPtr, pixelCount);
                 
-                    // Construct BMP
-                    const bmpHeaderSize = 14;
-                    const dibHeaderSize = 40;
-                    const headerSize = bmpHeaderSize + dibHeaderSize;
-                    const pixelDataSize = pixelCount * 4;
-                    const fileSize = headerSize + pixelDataSize;
-
-                    const bmpBuffer = new Uint8Array(fileSize);
-                    const view = new DataView(bmpBuffer.buffer);
-
-                    // BMP Header
-                    // Signature "BM"
-                    view.setUint8(0, 0x42);
-                    view.setUint8(1, 0x4D);
-                    // FileSize
-                    view.setUint32(2, fileSize, true);
-                    // Reserved
-                    view.setUint16(6, 0, true);
-                    view.setUint16(8, 0, true);
-                    // Offset
-                    view.setUint32(10, headerSize, true);
-
-                    // DIB Header (BITMAPINFOHEADER)
-                    view.setUint32(14, dibHeaderSize, true);
-                    view.setInt32(18, width, true);
-                    view.setInt32(22, -height, true); // Negative height for top-down
-                    view.setUint16(26, 1, true); // Planes
-                    view.setUint16(28, 32, true); // BitCount
-                    view.setUint32(30, 0, true); // Compression (BI_RGB)
-                    view.setUint32(34, pixelDataSize, true); // ImageSize
-                    view.setInt32(38, 0, true); // XpixelsPerM
-                    view.setInt32(42, 0, true); // YpixelsPerM
-                    view.setUint32(46, 0, true); // ColorsUsed
-                    view.setUint32(50, 0, true); // ColorsImportant
-
-                    // Pixel Data (BGRA)
-                    let ptr = headerSize;
-                    for (let i = 0; i < pixelCount; i++) {
-                        bmpBuffer[ptr++] = bData[i];
-                        bmpBuffer[ptr++] = gData[i];
-                        bmpBuffer[ptr++] = rData[i];
-                        bmpBuffer[ptr++] = 255;
-                    }
+                    const bmpBuffer = globalThis.createBmp(width, height, rData, gData, bData);
 
                     exports.opj_image_destroy(imagePtr);
                     exports.free(inputPtr);
                 
-                    // Base64 Encode
-                    // Convert Uint8Array to binary string efficiently
-                    let binary = "";
-                    const len = bmpBuffer.byteLength;
-                    const chunkSize = 8192;
-                    for (let i = 0; i < len; i += chunkSize) {
-                        binary += String.fromCharCode.apply(null, bmpBuffer.subarray(i, Math.min(i + chunkSize, len)));
-                    }
-
                     return JSON.stringify({
-                        bmp: btoa(binary)
+                        bmp: globalThis.bytesToBase64(bmpBuffer)
                     });
                 } catch (e) {
                     return JSON.stringify({ error: e.toString() });
