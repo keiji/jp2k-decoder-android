@@ -28,7 +28,7 @@ const wasiSnapshotPreview = {
                 total += len;
             }
             view.setUint32(p_nwritten, total, true);
-            // console.log("WASM_LOG: " + msg);
+            console.log("WASM_LOG: " + msg);
             return 0;
         },
     fd_close: (fd) => 0,
