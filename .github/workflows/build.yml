@@ -2,9 +2,9 @@ name: Build
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "main", "feature/**" ]
   pull_request:
-    branches: [ "main", "master" ]
+    branches: [ "main", "feature/**" ]
 
 jobs:
   android:
@@ -41,7 +41,7 @@ jobs:
         run: |
           mkdir -p openjpeg/build
           cd openjpeg/build
-          emcmake cmake .. -DCMAKE_BUILD_TYPE=Release
+          emcmake cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DBUILD_STATIC_LIBS=ON
           emmake make
 
       - name: Build WASM
