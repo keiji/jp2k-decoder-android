@@ -1,5 +1,6 @@
 package dev.keiji.jp2k
 
+// 512MB: Sufficient to decode large high-resolution images (e.g. 4000x3000) which may require significant internal buffer space.
 const val DEFAULT_MAX_HEAP_SIZE_BYTES = 512L * 1024 * 1024
 
 // 256MB: Sufficient to return the decoded pixel data (e.g. 4000x3000 * 4 bytes/pixel ~= 48MB) plus overhead as a Hex string or byte array.
@@ -9,7 +10,6 @@ const val DEFAULT_MAX_PIXELS = 16000000
 
 internal const val ASSET_PATH_WASM = "openjpeg_core.wasm"
 
-// 512MB: Sufficient to decode large high-resolution images (e.g. 4000x3000) which may require significant internal buffer space.
 internal const val MAX_INPUT_SIZE = 128 * 1024 * 1024 // 128MB
 internal const val MIN_INPUT_SIZE = 12 // JP2 signature box length
 
