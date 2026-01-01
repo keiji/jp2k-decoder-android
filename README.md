@@ -12,7 +12,31 @@ Historically, native image decoders have been a significant security risk. This 
 *   **WASM & Jetpack JavaScript Engine:** The native library is compiled to WebAssembly (WASM) and executed using the [Jetpack JavaScript Engine](https://developer.android.com/jetpack/androidx/releases/javascriptengine).
 *   **Enhanced Security:** By running within the WASM engine's sandbox, the decoding process is isolated, offering a relatively higher level of safety compared to direct native execution.
 
-### Build WASM
+## How to build
+
+### 1. Initialize Submodules
+
+Ensure you have cloned the repository with submodules, or initialize them:
+
+```bash
+git submodule update --init --recursive
+```
+
+### 2. Build OpenJPEG
+
+First, build the OpenJPEG library. This requires [Emscripten](https://emscripten.org/) to be installed and active in your environment.
+
+```bash
+mkdir -p openjpeg/build
+cd openjpeg/build
+emcmake cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DBUILD_CODEC=OFF
+emmake make
+cd ../..
+```
+
+### 3. Build WASM module
+
+Compile the C wrapper and link it with the OpenJPEG library to create the WASM module.
 
 ```bash
 emcc -O3 wrapper.c \
