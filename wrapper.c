@@ -10,7 +10,10 @@
 #define ERR_DATA_SIZE -2 // データサイズエラー（制限オーバーまたはサイズ不足）
 #define ERR_DECODE -3    // デコード処理失敗
 
-// この値はOpenJPEGやJPEG 2000規格による制限ではなく、WASM環境でのメモリ枯渇を防ぐための本ライブラリ独自の制限値です。
+// この値（128MB）はWASM規格上の制限ではありません。
+// 本ライブラリではWASMヒープを512MB（DEFAULT_MAX_HEAP_SIZE_BYTES）に設定しており、
+// その約1/4を入力データの上限とすることで、デコード処理や展開後の画像データ（BMP）用の
+// メモリ領域を確保し、OOM（Out Of Memory）を防ぐための経験的な安全策として設定しています。
 #define MAX_INPUT_SIZE (128 * 1024 * 1024) // 128MB
 #define MIN_INPUT_SIZE 12 // JP2 signature box length
 
