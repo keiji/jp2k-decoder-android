@@ -10,11 +10,6 @@
 #define ERR_DATA_SIZE -2 // データサイズエラー（制限オーバーまたはサイズ不足）
 #define ERR_DECODE -3    // デコード処理失敗
 
-// この値（128MB）はWASM規格上の制限ではありません。
-// 本ライブラリではWASMヒープを512MB（DEFAULT_MAX_HEAP_SIZE_BYTES）に設定しており、
-// その約1/4を入力データの上限とすることで、デコード処理や展開後の画像データ（BMP）用の
-// メモリ領域を確保し、OOM（Out Of Memory）を防ぐための経験的な安全策として設定しています。
-#define MAX_INPUT_SIZE (128 * 1024 * 1024) // 128MB
 #define MIN_INPUT_SIZE 12 // JP2 signature box length
 
 int last_error = ERR_NONE;
@@ -80,8 +75,10 @@ static opj_image_t* decode_internal(uint8_t* data, uint32_t data_len, OPJ_CODEC_
     return l_image;
 }
 
-static opj_image_t* decode(uint8_t* data, uint32_t data_len, uint32_t max_pixels) {
-    if (data_len < MIN_INPUT_SIZE || data_len > MAX_INPUT_SIZE) {
+static opj_image_t* decode(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint32_t max_heap_size) {
+    uint32_t max_input_size = max_heap_size / 4;
+
+    if (data_len < MIN_INPUT_SIZE || data_len > max_input_size) {
         last_error = ERR_DATA_SIZE;
         return NULL;
     }
@@ -97,8 +94,8 @@ static opj_image_t* decode(uint8_t* data, uint32_t data_len, uint32_t max_pixels
 }
 
 EMSCRIPTEN_KEEPALIVE
-uint8_t* decodeToBmp(uint8_t* data, uint32_t data_len, uint32_t max_pixels) {
-    opj_image_t* image = decode(data, data_len, max_pixels);
+uint8_t* decodeToBmp(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint32_t max_heap_size) {
+    opj_image_t* image = decode(data, data_len, max_pixels, max_heap_size);
     if (!image) {
         return NULL;
     }
