@@ -61,14 +61,14 @@ jobs:
               -o openjpeg_core.wasm
 
       - name: Copy WASM to assets
-        run: cp openjpeg_core.wasm sample/app/src/main/assets/
+        run: cp openjpeg_core.wasm sample/lib/src/main/assets/
 
       - name: Commit and push if changed
         if: github.event_name == 'push'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add sample/app/src/main/assets/openjpeg_core.wasm
+          git add sample/lib/src/main/assets/openjpeg_core.wasm
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
