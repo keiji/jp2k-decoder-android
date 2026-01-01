@@ -38,11 +38,7 @@ class Jp2kDecoderAsync(
                 val sandbox = sandboxFuture.get()
                 jsIsolate = Jp2kSandbox.createIsolate(sandbox)
 
-                if (sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_CONSOLE_MESSAGING)) {
-                    jsIsolate?.setConsoleCallback(ContextCompat.getMainExecutor(context)) { consoleMessage ->
-                        Log.v(TAG, consoleMessage.message)
-                    }
-                }
+                Jp2kSandbox.setupConsoleCallback(jsIsolate!!, sandbox, ContextCompat.getMainExecutor(context), TAG)
 
                 // Load WASM
                 loadWasm()

@@ -1,10 +1,12 @@
 package dev.keiji.jp2k
 
 import android.content.Context
+import android.util.Log
 import androidx.javascriptengine.IsolateStartupParameters
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
 import com.google.common.util.concurrent.ListenableFuture
+import java.util.concurrent.Executor
 
 object Jp2kSandbox {
     // 512MB: Sufficient to decode large high-resolution images (e.g. 4000x3000) which may require significant internal buffer space.
@@ -34,5 +36,13 @@ object Jp2kSandbox {
             params.maxEvaluationReturnSizeBytes = MAX_EVALUATION_RETURN_SIZE_BYTES
         }
         return sandbox.createIsolate(params)
+    }
+
+    fun setupConsoleCallback(isolate: JavaScriptIsolate, sandbox: JavaScriptSandbox, executor: Executor, tag: String) {
+        if (sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_CONSOLE_MESSAGING)) {
+            isolate.setConsoleCallback(executor) { consoleMessage ->
+                Log.v(tag, consoleMessage.message)
+            }
+        }
     }
 }
