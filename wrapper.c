@@ -6,9 +6,12 @@
 
 // エラーコードの定義
 #define ERR_NONE 0
-#define ERR_HEADER -1    // ヘッダ読み込み失敗（データ破損など）
-#define ERR_TOO_LARGE -2 // サイズ制限オーバー
-#define ERR_DECODE -3    // デコード処理失敗
+#define ERR_HEADER -1          // ヘッダ読み込み失敗（データ破損など）
+#define ERR_INPUT_DATA_SIZE -2 // 入力データサイズエラー（制限オーバーまたはサイズ不足）
+#define ERR_PIXEL_DATA_SIZE -3 // デコード後のピクセルデータサイズエラー（制限オーバー）
+#define ERR_DECODE -4          // デコード処理失敗
+
+#define MIN_INPUT_SIZE 12 // JP2 signature box length
 
 int last_error = ERR_NONE;
 
@@ -58,7 +61,7 @@ static opj_image_t* decode_internal(uint8_t* data, uint32_t data_len, OPJ_CODEC_
         uint32_t height = l_image->y1 - l_image->y0;
         
         if (max_pixels > 0 && ((uint64_t)width * height) > max_pixels) {
-            last_error = ERR_TOO_LARGE; // サイズオーバー
+            last_error = ERR_PIXEL_DATA_SIZE; // サイズオーバー
             opj_image_destroy(l_image);
             l_image = NULL;
         } else if (!opj_decode(l_codec, l_stream, l_image)) {
@@ -73,7 +76,14 @@ static opj_image_t* decode_internal(uint8_t* data, uint32_t data_len, OPJ_CODEC_
     return l_image;
 }
 
-static opj_image_t* decode(uint8_t* data, uint32_t data_len, uint32_t max_pixels) {
+static opj_image_t* decode(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint32_t max_heap_size) {
+    uint32_t max_input_size = max_heap_size / 4;
+
+    if (data_len < MIN_INPUT_SIZE || data_len > max_input_size) {
+        last_error = ERR_INPUT_DATA_SIZE;
+        return NULL;
+    }
+
     if (data_len >= 4 &&
         data[0] == 0x00 &&
         data[1] == 0x00 &&
@@ -85,8 +95,8 @@ static opj_image_t* decode(uint8_t* data, uint32_t data_len, uint32_t max_pixels
 }
 
 EMSCRIPTEN_KEEPALIVE
-uint8_t* decodeToBmp(uint8_t* data, uint32_t data_len, uint32_t max_pixels) {
-    opj_image_t* image = decode(data, data_len, max_pixels);
+uint8_t* decodeToBmp(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint32_t max_heap_size) {
+    opj_image_t* image = decode(data, data_len, max_pixels, max_heap_size);
     if (!image) {
         return NULL;
     }

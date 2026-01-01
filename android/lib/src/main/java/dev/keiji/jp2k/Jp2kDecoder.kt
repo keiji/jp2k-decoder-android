@@ -104,15 +104,13 @@ class Jp2kDecoder(
         if (j2kData.size < MIN_INPUT_SIZE) {
             throw IllegalArgumentException("Input data is too short")
         }
-        if (j2kData.size > MAX_INPUT_SIZE) {
-            throw IllegalArgumentException("Input data is too long")
-        }
+        // MAX_INPUT_SIZE check is now handled in WASM based on maxHeapSizeBytes
 
         try {
             val jsIsolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
 
             val dataArrayString = j2kData.joinToString(",")
-            val script = "globalThis.decodeJ2K([$dataArrayString], $maxPixels);"
+            val script = "globalThis.decodeJ2K([$dataArrayString], $maxPixels, $maxHeapSizeBytes);"
 
             val resultFuture = jsIsolate.evaluateJavaScriptAsync(script)
 
@@ -179,7 +177,7 @@ class Jp2kDecoder(
                 return output;
             };
 
-            globalThis.decodeJ2K = function(dataArrayString, maxPixels) {
+            globalThis.decodeJ2K = function(dataArrayString, maxPixels, maxHeapSize) {
                 try {
                     const exports = wasmInstance.exports;
 
@@ -194,8 +192,8 @@ class Jp2kDecoder(
                     
                     heap.set(encodedBuffer, inputPtr);
                     
-                    // Call the new C function decodeToBmp
-                    const bmpPtr = exports.decodeToBmp(inputPtr, encodedBuffer.length, maxPixels);
+                    // Call the new C function decodeToBmp with maxHeapSize
+                    const bmpPtr = exports.decodeToBmp(inputPtr, encodedBuffer.length, maxPixels, maxHeapSize);
 
                     if (bmpPtr === 0) {
                         const errorCode = exports.getLastError();
