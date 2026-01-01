@@ -31,23 +31,67 @@ class Jp2kDecoderAsyncTest {
     }
 
     @Test
+    fun testInitAsync() {
+        val latch = CountDownLatch(1)
+        val resultRef = AtomicReference<Unit?>()
+        val errorRef = AtomicReference<Throwable?>()
+
+        decoder.init(object : Callback<Unit> {
+            override fun onSuccess(result: Unit) {
+                resultRef.set(Unit)
+                latch.countDown()
+            }
+
+            override fun onError(error: Exception) {
+                errorRef.set(error)
+                latch.countDown()
+            }
+        })
+
+        val completed = latch.await(5, TimeUnit.SECONDS)
+        if (!completed) {
+            fail("Test timed out")
+        }
+
+        val error = errorRef.get()
+        if (error != null) {
+            fail("Decoding failed with error: ${error.message}")
+        }
+
+        val result = resultRef.get()
+        assertNotNull("result should not be null", result)
+    }
+
+    @Test
     fun testDecodeAsync() {
         val latch = CountDownLatch(1)
         val resultRef = AtomicReference<Bitmap?>()
         val errorRef = AtomicReference<Throwable?>()
 
-        val inputStream = context.assets.open("karin.jp2")
-        val bytes = inputStream.readBytes()
-        inputStream.close()
+        val bytes = context.assets.open("karin.jp2").use {
+            it.readBytes()
+        }
 
-        decoder.decodeImageAsync(bytes, object : Callback<Bitmap> {
-            override fun onSuccess(result: Bitmap) {
-                resultRef.set(result)
-                latch.countDown()
+        fun decodeImage() {
+            decoder.decodeImage(bytes, object : Callback<Bitmap> {
+                override fun onSuccess(result: Bitmap) {
+                    resultRef.set(result)
+                    latch.countDown()
+                }
+
+                override fun onError(error: Exception) {
+                    errorRef.set(error)
+                    latch.countDown()
+                }
+            })
+        }
+        decoder.init(object : Callback<Unit> {
+            override fun onSuccess(result: Unit) {
+                decodeImage()
             }
 
-            override fun onError(t: Throwable) {
-                errorRef.set(t)
+            override fun onError(error: Exception) {
+                errorRef.set(error)
                 latch.countDown()
             }
         })

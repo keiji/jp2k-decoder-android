@@ -3,10 +3,7 @@ package dev.keiji.jp2k
 import android.graphics.Bitmap
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import kotlinx.coroutines.test.runTest
 import org.junit.After
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
@@ -29,7 +26,7 @@ class Jp2kDecoderAsyncValidationTest {
                 latch.countDown()
             }
 
-            override fun onError(error: Throwable) {
+            override fun onError(error: Exception) {
                 latch.countDown()
             }
         })
@@ -52,7 +49,7 @@ class Jp2kDecoderAsyncValidationTest {
                 latch.countDown()
             }
 
-            override fun onError(error: Throwable) {
+            override fun onError(error: Exception) {
                 if (error is IllegalArgumentException) {
                     // Passed
                 } else {
