@@ -31,6 +31,9 @@ jobs:
         run: ./gradlew lintDebug
         continue-on-error: true
 
+      - name: Install Reviewdog
+        uses: reviewdog/action-setup@v1
+
       - name: Report Android Lint Results
         uses: dvdandroid/action-android-lint@v1
         with:
