@@ -10,6 +10,7 @@
 #define ERR_DATA_SIZE -2 // データサイズエラー（制限オーバーまたはサイズ不足）
 #define ERR_DECODE -3    // デコード処理失敗
 
+// この値はOpenJPEGやJPEG 2000規格による制限ではなく、WASM環境でのメモリ枯渇を防ぐための本ライブラリ独自の制限値です。
 #define MAX_INPUT_SIZE (128 * 1024 * 1024) // 128MB
 #define MIN_INPUT_SIZE 12 // JP2 signature box length
 
