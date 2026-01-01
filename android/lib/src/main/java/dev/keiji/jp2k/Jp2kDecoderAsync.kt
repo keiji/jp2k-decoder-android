@@ -14,12 +14,13 @@ import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 
 @OptIn(ExperimentalStdlibApi::class)
-class Jp2kDecoderAsync(context: Context, private val logLevel: Int? = null) {
+class Jp2kDecoderAsync(
+    context: Context,
+    private val backgroundExecutor: Executor = Executors.newSingleThreadExecutor(),
+    private val logLevel: Int? = null
+) {
     private val assetManager = context.assets
     private val sandboxFuture = JavaScriptSandbox.createConnectedInstanceAsync(context)
-
-    // Background executor for heavy processing
-    private val backgroundExecutor = Executors.newSingleThreadExecutor()
 
     private var jsIsolate: JavaScriptIsolate? = null
 
@@ -31,7 +32,7 @@ class Jp2kDecoderAsync(context: Context, private val logLevel: Int? = null) {
 
     fun init(callback: Callback<Unit>) {
         val start = System.currentTimeMillis()
-        backgroundExecutor.submit {
+        backgroundExecutor.execute {
             try {
                 // Wait for sandbox connection on the background thread
                 val sandbox = sandboxFuture.get()
@@ -87,7 +88,7 @@ class Jp2kDecoderAsync(context: Context, private val logLevel: Int? = null) {
     }
 
     fun decodeImage(j2kData: ByteArray, callback: Callback<Bitmap>) {
-        backgroundExecutor.submit {
+        backgroundExecutor.execute {
             val start = System.currentTimeMillis()
             log(Log.INFO, "Input data length: ${j2kData.size}")
 
@@ -135,7 +136,7 @@ class Jp2kDecoderAsync(context: Context, private val logLevel: Int? = null) {
     }
 
     fun release() {
-        if (!backgroundExecutor.isShutdown) {
+        if (backgroundExecutor is java.util.concurrent.ExecutorService && !backgroundExecutor.isShutdown) {
             backgroundExecutor.execute {
                 try {
                     jsIsolate?.close()
@@ -160,56 +161,6 @@ class Jp2kDecoderAsync(context: Context, private val logLevel: Int? = null) {
 
     companion object {
         private const val TAG = "Jp2kDecoderAsync"
-
-        private const val ASSET_PATH_WASM = "openjpeg_core.wasm"
-        private const val MAX_PIXELS = 16000000
-
-        private const val SCRIPT_IMPORT_OBJECT = """
-        const wasiSnapshotPreview = {
-            // 環境変数の数とサイズ
-            environ_sizes_get: (p_environ_count, p_environ_buf_size) => {
-                const view = new DataView(wasmInstance.exports.memory.buffer);
-                view.setUint32(p_environ_count, 0, true);
-                view.setUint32(p_environ_buf_size, 0, true);
-                return 0;
-            },
-            // 環境変数の実データを書き込む
-            environ_get: (p_environ, p_environ_buf) => 0,
-
-            // 標準出力・エラー出力
-            fd_write: (fd, iovs, iovs_len, p_nwritten) => {
-                    const view = new DataView(wasmInstance.exports.memory.buffer);
-                    let total = 0;
-                    let msg = "";
-                    for (let i = 0; i < iovs_len; i++) {
-                        const ptr = view.getUint32(iovs + i * 8, true);
-                        const len = view.getUint32(iovs + i * 8 + 4, true);
-                        const strBytes = new Uint8Array(wasmInstance.exports.memory.buffer, ptr, len);
-                        msg += new TextDecoder().decode(strBytes);
-                        total += len;
-                    }
-                    view.setUint32(p_nwritten, total, true);
-                    console.log("WASM_LOG: " + msg);
-                    return 0;
-                },
-            fd_close: (fd) => 0,
-            fd_seek: (fd, offset_low, offset_high, whence, p_new_offset) => 0,
-
-            // プログラム終了
-            proc_exit: (code) => {
-                console.log("WASM exited with code: " + code);
-            }
-        };
-        const env = {
-            emscripten_notify_memory_growth: (index) => {
-                // DO NOTHING
-            }
-        };
-        const importObject = {
-            wasi_snapshot_preview1: wasiSnapshotPreview,
-            env: env,
-        };
-        """
 
         private const val SCRIPT_DEFINE_DECODE_J2K = """
             globalThis.bytesToHex = function(bytes) {
