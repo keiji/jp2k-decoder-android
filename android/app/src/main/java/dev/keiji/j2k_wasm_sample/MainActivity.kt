@@ -26,10 +26,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
-    private val jp2kDecoder by lazy { Jp2kDecoder(applicationContext) }
+    private lateinit var jp2kDecoder: Jp2kDecoder
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        jp2kDecoder = Jp2kDecoder(applicationContext)
+
         enableEdgeToEdge()
 
         setContent {
@@ -73,6 +75,13 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (::jp2kDecoder.isInitialized) {
+            jp2kDecoder.release()
         }
     }
 
