@@ -21,6 +21,7 @@ class Jp2kDecoder(context: Context, private val logLevel: Int? = null) {
     private val assetManager = context.assets
     private val sandboxFuture = JavaScriptSandbox.createConnectedInstanceAsync(context)
     private val mainExecutor: Executor = ContextCompat.getMainExecutor(context)
+    private val directExecutor = Executor { it.run() }
 
     private var jsIsolate: JavaScriptIsolate? = null
 
@@ -88,7 +89,7 @@ class Jp2kDecoder(context: Context, private val logLevel: Int? = null) {
                                 log(Log.ERROR, "init() failed in $time msec. Error: ${e.message}")
                                 mainExecutor.execute { callback.onError(e) }
                             }
-                        }, backgroundExecutor)
+                        }, directExecutor)
 
                     } catch (e: Exception) {
                         val time = System.currentTimeMillis() - start
@@ -121,52 +122,56 @@ class Jp2kDecoder(context: Context, private val logLevel: Int? = null) {
         val start = System.currentTimeMillis()
         log(Log.INFO, "Input data length: ${j2kData.size}")
 
-        backgroundExecutor.execute {
-            try {
-                val jsIsolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
-
-                val dataArrayString = j2kData.joinToString(",")
-                val script = "globalThis.decodeJ2K([$dataArrayString], $MAX_PIXELS);"
-
-                val resultFuture = jsIsolate.evaluateJavaScriptAsync(script)
-                resultFuture?.addListener({
-                    try {
-                        val structureJson = resultFuture.get()
-                        val root = JSONObject(structureJson)
-                        if (root.has("error")) {
-                            val errorMsg = root.getString("error")
-                            log(Log.ERROR, "Error: $errorMsg")
-                            throw IllegalStateException("Decode error occurred: $errorMsg")
-                        }
-
-                        val bmpHex = root.getString("bmp")
-                        @OptIn(ExperimentalStdlibApi::class)
-                        val bmpBytes = bmpHex.hexToByteArray()
-
-                        log(Log.INFO, "Output data length: ${bmpBytes.size}")
-
-                        val bitmap = BitmapFactory.decodeByteArray(bmpBytes, 0, bmpBytes.size)
-
-                        val time = System.currentTimeMillis() - start
-                        log(Log.INFO, "decodeImage() finished in $time msec")
-
-                        mainExecutor.execute { callback.onSuccess(bitmap) }
-                    } catch (e: Exception) {
-                        val time = System.currentTimeMillis() - start
-                        log(Log.ERROR, "decodeImage() failed in $time msec. Error: ${e.message}")
-                        mainExecutor.execute { callback.onError(e) }
-                    }
-                }, backgroundExecutor)
-            } catch (e: Exception) {
-                val time = System.currentTimeMillis() - start
-                log(Log.ERROR, "decodeImage() failed in $time msec. Error: ${e.message}")
-                mainExecutor.execute { callback.onError(e) }
+        try {
+            val isolate = jsIsolate
+            if (isolate == null) {
+                mainExecutor.execute { callback.onError(IllegalStateException("Jp2kDecoder has not been initialized.")) }
+                return
             }
+
+            val dataArrayString = j2kData.joinToString(",")
+            val script = "globalThis.decodeJ2K([$dataArrayString], $MAX_PIXELS);"
+
+            val resultFuture = isolate.evaluateJavaScriptAsync(script)
+            resultFuture?.addListener({
+                try {
+                    val structureJson = resultFuture.get()
+                    val root = JSONObject(structureJson)
+                    if (root.has("error")) {
+                        val errorMsg = root.getString("error")
+                        log(Log.ERROR, "Error: $errorMsg")
+                        throw IllegalStateException("Decode error occurred: $errorMsg")
+                    }
+
+                    val bmpHex = root.getString("bmp")
+                    @OptIn(ExperimentalStdlibApi::class)
+                    val bmpBytes = bmpHex.hexToByteArray()
+
+                    log(Log.INFO, "Output data length: ${bmpBytes.size}")
+
+                    val bitmap = BitmapFactory.decodeByteArray(bmpBytes, 0, bmpBytes.size)
+
+                    val time = System.currentTimeMillis() - start
+                    log(Log.INFO, "decodeImage() finished in $time msec")
+
+                    mainExecutor.execute { callback.onSuccess(bitmap) }
+                } catch (e: Exception) {
+                    val time = System.currentTimeMillis() - start
+                    log(Log.ERROR, "decodeImage() failed in $time msec. Error: ${e.message}")
+                    mainExecutor.execute { callback.onError(e) }
+                }
+            }, directExecutor)
+        } catch (e: Exception) {
+            val time = System.currentTimeMillis() - start
+            log(Log.ERROR, "decodeImage() failed in $time msec. Error: ${e.message}")
+            mainExecutor.execute { callback.onError(e) }
         }
     }
 
     companion object {
         private const val TAG = "Jp2kDecoder"
+
+        private val backgroundExecutor: Executor = Executors.newSingleThreadExecutor()
 
         private const val ASSET_PATH_WASM = "openjpeg_core.wasm"
         private const val MAX_PIXELS = 16000000
@@ -275,7 +280,5 @@ class Jp2kDecoder(context: Context, private val logLevel: Int? = null) {
                 }
             };            
         """
-
-        private val backgroundExecutor: Executor = Executors.newSingleThreadExecutor()
     }
 }
