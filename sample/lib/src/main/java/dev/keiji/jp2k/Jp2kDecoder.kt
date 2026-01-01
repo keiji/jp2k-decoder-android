@@ -2,7 +2,9 @@ package dev.keiji.jp2k
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.util.Base64
 import androidx.core.content.ContextCompat
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
@@ -95,30 +97,12 @@ class Jp2kDecoder(context: Context) {
 
         val root = JSONObject(structureJson)
         if (root.has("error")) {
-            throw IllegalStateException("Decode error occurred: ${root.getString("errorCode")}")
+            throw IllegalStateException("Decode error occurred: ${root.getString("error")}")
         }
 
-        val width = root.getInt("width")
-        val height = root.getInt("height")
-        val pixelsArray = root.getJSONArray("pixels")
-
-        // JSの[R,G,B,A]の並びを、Android用のIntArray(0xAARRGGBB)に変換
-        val pixelCount = width * height
-
-        val colors = IntArray(pixelCount)
-
-        for (i in 0 until pixelCount) {
-            val r = pixelsArray.getInt(i * 4)
-            val g = pixelsArray.getInt(i * 4 + 1)
-            val b = pixelsArray.getInt(i * 4 + 2)
-            val a = pixelsArray.getInt(i * 4 + 3)
-            colors[i] = Color.argb(a, r, g, b)
-        }
-
-        // Bitmapを作成してピクセルを設定
-        return createBitmap(width, height).also {
-            it.setPixels(colors, 0, width, 0, 0, width, height)
-        }
+        val bmpBase64 = root.getString("bmp")
+        val bmpBytes = Base64.decode(bmpBase64, Base64.DEFAULT)
+        return BitmapFactory.decodeByteArray(bmpBytes, 0, bmpBytes.size)
     }
 
     companion object {
@@ -175,6 +159,75 @@ class Jp2kDecoder(context: Context) {
         """
 
         private const val SCRIPT_DEFINE_DECODE_J2K = """
+            globalThis.bytesToBase64 = function(bytes) {
+                const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+                let output = '';
+                let len = bytes.length;
+                let i = 0;
+                while (i < len) {
+                    let a = bytes[i++];
+                    let b = bytes[i++];
+                    let c = bytes[i++];
+
+                    let enc1 = a >> 2;
+                    let enc2 = ((a & 3) << 4) | (b >> 4);
+                    let enc3 = ((b & 15) << 2) | (c >> 6);
+                    let enc4 = c & 63;
+
+                    if (isNaN(b)) {
+                        enc3 = enc4 = 64;
+                    } else if (isNaN(c)) {
+                        enc4 = 64;
+                    }
+
+                    output += chars.charAt(enc1) + chars.charAt(enc2) + chars.charAt(enc3) + chars.charAt(enc4);
+                }
+                return output;
+            };
+
+            globalThis.createBmp = function(width, height, rData, gData, bData) {
+                const pixelCount = width * height;
+                const bmpHeaderSize = 14;
+                const dibHeaderSize = 40;
+                const headerSize = bmpHeaderSize + dibHeaderSize;
+                const pixelDataSize = pixelCount * 4;
+                const fileSize = headerSize + pixelDataSize;
+
+                const bmpBuffer = new Uint8Array(fileSize);
+                const view = new DataView(bmpBuffer.buffer);
+
+                // BMP Header
+                view.setUint8(0, 0x42); // 'B'
+                view.setUint8(1, 0x4D); // 'M'
+                view.setUint32(2, fileSize, true);
+                view.setUint16(6, 0, true);
+                view.setUint16(8, 0, true);
+                view.setUint32(10, headerSize, true);
+
+                // DIB Header
+                view.setUint32(14, dibHeaderSize, true);
+                view.setInt32(18, width, true);
+                view.setInt32(22, -height, true); // Top-down
+                view.setUint16(26, 1, true);
+                view.setUint16(28, 32, true); // 32-bit color
+                view.setUint32(30, 0, true);
+                view.setUint32(34, pixelDataSize, true);
+                view.setInt32(38, 0, true);
+                view.setInt32(42, 0, true);
+                view.setUint32(46, 0, true);
+                view.setUint32(50, 0, true);
+
+                // Pixel Data (BGRA)
+                let ptr = headerSize;
+                for (let i = 0; i < pixelCount; i++) {
+                    bmpBuffer[ptr++] = bData[i];
+                    bmpBuffer[ptr++] = gData[i];
+                    bmpBuffer[ptr++] = rData[i];
+                    bmpBuffer[ptr++] = 255;
+                }
+                return bmpBuffer;
+            };
+
             globalThis.decodeJ2K = function(dataArrayString, isJp2, maxPixels) {
                 try {
                     const exports = wasmInstance.exports;
@@ -193,10 +246,10 @@ class Jp2kDecoder(context: Context) {
                     const imagePtr = isJp2 ? exports.decodeJp2(inputPtr, encodedBuffer.length, maxPixels) 
                                : exports.decodeRaw(inputPtr, encodedBuffer.length, maxPixels);
                     if (imagePtr === 0) {
-                        const errCode = exports.getLastError();
+                        const errorCode = exports.getLastError();
                         exports.free(inputPtr);
             
-                        return JSON.stringify({ errorCode: errorCode });
+                        return JSON.stringify({ error: "OpenJPEG error code: " + errorCode });
                     }
                 
                     const heapU32 = new Uint32Array(exports.memory.buffer);
@@ -205,7 +258,6 @@ class Jp2kDecoder(context: Context) {
                     const compsPtr = heapU32[imagePtr / 4 + 6];
                 
                     const pixelCount = width * height;
-                    const rgba = new Uint8ClampedArray(pixelCount * 4);
                     
                     const compSize = 52;
                     const rDataPtr = heapU32[(compsPtr + 0 * compSize + 44) / 4];
@@ -216,20 +268,13 @@ class Jp2kDecoder(context: Context) {
                     const gData = new Int32Array(exports.memory.buffer, gDataPtr, pixelCount);
                     const bData = new Int32Array(exports.memory.buffer, bDataPtr, pixelCount);
                 
-                    for (let i = 0; i < pixelCount; i++) {
-                        rgba[i * 4 + 0] = rData[i];
-                        rgba[i * 4 + 1] = gData[i];
-                        rgba[i * 4 + 2] = bData[i];
-                        rgba[i * 4 + 3] = 255;
-                    }
-                
+                    const bmpBuffer = globalThis.createBmp(width, height, rData, gData, bData);
+
                     exports.opj_image_destroy(imagePtr);
                     exports.free(inputPtr);
                 
                     return JSON.stringify({
-                        width: width,
-                        height: height,
-                        pixels: Array.from(rgba)
+                        bmp: globalThis.bytesToBase64(bmpBuffer)
                     });
                 } catch (e) {
                     return JSON.stringify({ error: e.toString() });
