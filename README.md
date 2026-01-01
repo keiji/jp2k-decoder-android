@@ -3,6 +3,8 @@ JPEG2000 Decoder for Android
 
 This library provides functionality to decode JPEG2000 images on Android.
 
+Historically, native image decoders have been a significant security risk. This project aims to securely perform JPEG2000 decoding within an isolated sandbox environment by running OpenJPEG as WebAssembly (WASM).
+
 ## Features
 
 *   **JPEG2000 Decoding:** Supports decoding of JPEG2000 images on Android devices.
