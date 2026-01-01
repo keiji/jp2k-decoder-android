@@ -110,10 +110,15 @@ class Jp2kDecoder(context: Context, private val logLevel: Int? = null) {
             }
 
             val root = JSONObject(structureJson)
-            if (root.has("error")) {
+            if (root.has("errorCode")) {
+                val errorCode = root.getInt("errorCode")
+                val error = Jp2kError.fromInt(errorCode)
+                log(Log.ERROR, "Error: $error")
+                throw Jp2kException(error)
+            } else if (root.has("error")) {
                 val errorMsg = root.getString("error")
                 log(Log.ERROR, "Error: $errorMsg")
-                throw IllegalStateException("Decode error occurred: $errorMsg")
+                throw Jp2kException(Jp2kError.Unknown, errorMsg)
             }
 
             val bmpHex = root.getString("bmp")
@@ -167,7 +172,7 @@ class Jp2kDecoder(context: Context, private val logLevel: Int? = null) {
 
                     // 渡されたデータの長さをチェック
                     const dataLength = encodedBuffer.length;
-                    if (dataLength === 0) return JSON.stringify({ error: "Input array is empty" });
+                    if (dataLength === 0) return JSON.stringify({ errorCode: -1 });
             
                     const inputPtr = exports.malloc(dataLength);
                     const heap = new Uint8Array(exports.memory.buffer);
@@ -180,7 +185,7 @@ class Jp2kDecoder(context: Context, private val logLevel: Int? = null) {
                     if (bmpPtr === 0) {
                         const errorCode = exports.getLastError();
                         exports.free(inputPtr);
-                        return JSON.stringify({ error: "OpenJPEG error code: " + errorCode });
+                        return JSON.stringify({ errorCode: errorCode });
                     }
                     
                     // The BMP file size is stored at offset 2 (4 bytes, little endian) in the BMP header
