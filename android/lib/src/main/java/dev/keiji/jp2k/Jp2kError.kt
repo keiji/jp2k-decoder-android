@@ -3,7 +3,7 @@ package dev.keiji.jp2k
 enum class Jp2kError(val code: Int) {
     None(0),
     Header(-1),
-    TooLarge(-2),
+    DataSize(-2),
     Decode(-3),
     Unknown(Int.MIN_VALUE);
 
