@@ -22,6 +22,6 @@ emcc -O3 wrapper.c \
     -s STANDALONE_WASM \
     --no-entry \
     -s ALLOW_MEMORY_GROWTH=1 \
-    -s EXPORTED_FUNCTIONS='["_decodeRaw", "_decodeJp2", "_malloc", "_free", "_opj_image_destroy", "_getLastError"]' \
+    -s EXPORTED_FUNCTIONS='["_decodeToBmp", "_malloc", "_free", "_getLastError"]' \
     -o openjpeg_core.wasm
 ```

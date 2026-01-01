@@ -73,18 +73,7 @@ static opj_image_t* decode_internal(uint8_t* data, uint32_t data_len, OPJ_CODEC_
     return l_image;
 }
 
-EMSCRIPTEN_KEEPALIVE
-opj_image_t* decodeRaw(uint8_t* data, uint32_t data_len, uint32_t max_pixels) {
-    return decode_internal(data, data_len, OPJ_CODEC_J2K, max_pixels);
-}
-
-EMSCRIPTEN_KEEPALIVE
-opj_image_t* decodeJp2(uint8_t* data, uint32_t data_len, uint32_t max_pixels) {
-    return decode_internal(data, data_len, OPJ_CODEC_JP2, max_pixels);
-}
-
-EMSCRIPTEN_KEEPALIVE
-opj_image_t* decode(uint8_t* data, uint32_t data_len, uint32_t max_pixels) {
+static opj_image_t* decode(uint8_t* data, uint32_t data_len, uint32_t max_pixels) {
     if (data_len >= 4 &&
         data[0] == 0x00 &&
         data[1] == 0x00 &&
@@ -93,4 +82,79 @@ opj_image_t* decode(uint8_t* data, uint32_t data_len, uint32_t max_pixels) {
         return decode_internal(data, data_len, OPJ_CODEC_JP2, max_pixels);
     }
     return decode_internal(data, data_len, OPJ_CODEC_J2K, max_pixels);
+}
+
+EMSCRIPTEN_KEEPALIVE
+uint8_t* decodeToBmp(uint8_t* data, uint32_t data_len, uint32_t max_pixels) {
+    opj_image_t* image = decode(data, data_len, max_pixels);
+    if (!image) {
+        return NULL;
+    }
+
+    uint32_t width = image->x1 - image->x0;
+    uint32_t height = image->y1 - image->y0;
+
+    if (image->numcomps < 3) {
+        opj_image_destroy(image);
+        last_error = ERR_DECODE;
+        return NULL;
+    }
+
+    uint32_t pixel_count = width * height;
+    uint32_t bmp_header_size = 14;
+    uint32_t dib_header_size = 40;
+    uint32_t header_size = bmp_header_size + dib_header_size;
+    uint32_t pixel_data_size = pixel_count * 4;
+    uint32_t file_size = header_size + pixel_data_size;
+
+    uint8_t* bmp_buffer = (uint8_t*)malloc(file_size);
+    if (!bmp_buffer) {
+        opj_image_destroy(image);
+        last_error = ERR_DECODE; // Allocation failed
+        return NULL;
+    }
+
+    // BMP Header
+    bmp_buffer[0] = 0x42; // 'B'
+    bmp_buffer[1] = 0x4D; // 'M'
+    memcpy(&bmp_buffer[2], &file_size, 4);
+    uint32_t reserved = 0;
+    memcpy(&bmp_buffer[6], &reserved, 4);
+    memcpy(&bmp_buffer[10], &header_size, 4);
+
+    // DIB Header
+    memcpy(&bmp_buffer[14], &dib_header_size, 4);
+    memcpy(&bmp_buffer[18], &width, 4);
+    int32_t neg_height = -(int32_t)height;
+    memcpy(&bmp_buffer[22], &neg_height, 4);
+    uint16_t planes = 1;
+    memcpy(&bmp_buffer[26], &planes, 2);
+    uint16_t bpp = 32;
+    memcpy(&bmp_buffer[28], &bpp, 2);
+    uint32_t compression = 0;
+    memcpy(&bmp_buffer[30], &compression, 4);
+    memcpy(&bmp_buffer[34], &pixel_data_size, 4);
+    int32_t resolution = 0;
+    memcpy(&bmp_buffer[38], &resolution, 4);
+    memcpy(&bmp_buffer[42], &resolution, 4);
+    uint32_t colors = 0;
+    memcpy(&bmp_buffer[46], &colors, 4);
+    memcpy(&bmp_buffer[50], &colors, 4);
+
+    // Pixel Data (BGRA)
+    int32_t* r_data = image->comps[0].data;
+    int32_t* g_data = image->comps[1].data;
+    int32_t* b_data = image->comps[2].data;
+
+    uint8_t* ptr = bmp_buffer + header_size;
+
+    for (uint32_t i = 0; i < pixel_count; i++) {
+        *ptr++ = (uint8_t)b_data[i];
+        *ptr++ = (uint8_t)g_data[i];
+        *ptr++ = (uint8_t)r_data[i];
+        *ptr++ = 0xFF; // Alpha
+    }
+
+    opj_image_destroy(image);
+    return bmp_buffer;
 }
