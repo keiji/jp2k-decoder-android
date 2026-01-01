@@ -3,8 +3,9 @@ package dev.keiji.jp2k
 enum class Jp2kError(val code: Int) {
     None(0),
     Header(-1),
-    DataSize(-2),
-    Decode(-3),
+    InputDataSize(-2),
+    PixelDataSizeTooLarge(-3),
+    Decode(-4),
     Unknown(Int.MIN_VALUE);
 
     companion object {
