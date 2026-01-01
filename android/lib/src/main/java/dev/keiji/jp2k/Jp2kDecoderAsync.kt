@@ -17,6 +17,9 @@ import java.util.concurrent.Executors
 class Jp2kDecoderAsync(
     context: Context,
     private val backgroundExecutor: Executor = Executors.newSingleThreadExecutor(),
+    private val maxPixels: Int = DEFAULT_MAX_PIXELS,
+    private val maxHeapSizeBytes: Long = DEFAULT_MAX_HEAP_SIZE_BYTES,
+    private val maxEvaluationReturnSizeBytes: Int = DEFAULT_MAX_EVALUATION_RETURN_SIZE_BYTES,
     private val logLevel: Int? = null
 ) {
     private val assetManager = context.assets
@@ -37,7 +40,11 @@ class Jp2kDecoderAsync(
             try {
                 // Wait for sandbox connection on the background thread
                 val sandbox = sandboxFuture.get()
-                jsIsolate = Jp2kSandbox.createIsolate(sandbox).also { isolate ->
+                jsIsolate = Jp2kSandbox.createIsolate(
+                    sandbox = sandbox,
+                    maxHeapSizeBytes = maxHeapSizeBytes,
+                    maxEvaluationReturnSizeBytes = maxEvaluationReturnSizeBytes,
+                ).also { isolate ->
                     Jp2kSandbox.setupConsoleCallback(isolate, sandbox, mainExecutor, TAG)
                 }
 
@@ -109,12 +116,13 @@ class Jp2kDecoderAsync(
 
                 // Optimization: Use Hex string instead of joinToString(",") to reduce memory overhead and string size
                 val dataHexString = j2kData.toHexString()
-                val script = "globalThis.decodeJ2K('$dataHexString', $MAX_PIXELS);"
+                val script = "globalThis.decodeJ2K('$dataHexString', $maxPixels);"
 
                 val resultFuture = isolate.evaluateJavaScriptAsync(script)
 
                 // Block and wait for result on background thread
-                val jsonResult = resultFuture?.get() ?: throw IllegalStateException("Result Future is null")
+                val jsonResult =
+                    resultFuture?.get() ?: throw IllegalStateException("Result Future is null")
 
                 val root = JSONObject(jsonResult)
                 if (root.has("errorCode")) {
@@ -136,7 +144,7 @@ class Jp2kDecoderAsync(
                 val bitmap = BitmapFactory.decodeByteArray(bmpBytes, 0, bmpBytes.size)
 
                 if (bitmap == null) {
-                     throw IllegalStateException("Bitmap decoding failed (returned null).")
+                    throw IllegalStateException("Bitmap decoding failed (returned null).")
                 }
 
                 val time = System.currentTimeMillis() - start
