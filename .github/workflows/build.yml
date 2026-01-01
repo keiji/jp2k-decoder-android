@@ -1,0 +1,66 @@
+name: Build
+
+on:
+  push:
+    branches: [ "main", "feature/**" ]
+  pull_request:
+    branches: [ "main", "feature/**" ]
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Build Android App & Lib
+        working-directory: sample
+        run: ./gradlew assembleDebug
+
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+
+      - name: Build OpenJPEG
+        run: |
+          mkdir -p openjpeg/build
+          cd openjpeg/build
+          emcmake cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DBUILD_CODEC=OFF
+          emmake make
+
+      - name: Build WASM
+        run: |
+          emcc -O3 wrapper.c \
+              -I./openjpeg/src/lib/openjp2 \
+              -I./openjpeg/build/src/lib/openjp2 \
+              -L./openjpeg/build/bin \
+              -lopenjp2 \
+              -s WASM=1 \
+              -s STANDALONE_WASM \
+              --no-entry \
+              -s ALLOW_MEMORY_GROWTH=1 \
+              -s EXPORTED_FUNCTIONS='["_decodeRaw", "_decodeJp2", "_malloc", "_free", "_opj_image_destroy", "_getLastError"]' \
+              -o openjpeg_core.wasm
+
+      - name: Upload WASM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openjpeg_core.wasm
+          path: openjpeg_core.wasm
+          retention-days: 1
