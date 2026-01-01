@@ -155,14 +155,24 @@ uint8_t* decodeToBmp(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint
     int32_t* r_data = image->comps[0].data;
     int32_t* g_data = image->comps[1].data;
     int32_t* b_data = image->comps[2].data;
+    int32_t* a_data = (image->numcomps > 3) ? image->comps[3].data : NULL;
 
     uint8_t* ptr = bmp_buffer + header_size;
 
-    for (uint32_t i = 0; i < pixel_count; i++) {
-        *ptr++ = (uint8_t)b_data[i];
-        *ptr++ = (uint8_t)g_data[i];
-        *ptr++ = (uint8_t)r_data[i];
-        *ptr++ = 0xFF; // Alpha
+    if (a_data) {
+        for (uint32_t i = 0; i < pixel_count; i++) {
+            *ptr++ = (uint8_t)b_data[i];
+            *ptr++ = (uint8_t)g_data[i];
+            *ptr++ = (uint8_t)r_data[i];
+            *ptr++ = (uint8_t)a_data[i];
+        }
+    } else {
+        for (uint32_t i = 0; i < pixel_count; i++) {
+            *ptr++ = (uint8_t)b_data[i];
+            *ptr++ = (uint8_t)g_data[i];
+            *ptr++ = (uint8_t)r_data[i];
+            *ptr++ = 0xFF; // Alpha
+        }
     }
 
     opj_image_destroy(image);
