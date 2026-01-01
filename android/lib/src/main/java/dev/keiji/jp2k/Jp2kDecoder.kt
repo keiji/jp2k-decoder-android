@@ -3,21 +3,24 @@ package dev.keiji.jp2k
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Color
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.javascriptengine.JavaScriptIsolate
-import androidx.javascriptengine.JavaScriptSandbox
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.json.JSONObject
 import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
-import androidx.core.graphics.createBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-class Jp2kDecoder(context: Context, private val logLevel: Int? = null) {
+class Jp2kDecoder(
+    context: Context,
+    private val maxPixels: Int = DEFAULT_MAX_PIXELS,
+    private val maxHeapSizeBytes: Long = DEFAULT_MAX_HEAP_SIZE_BYTES,
+    private val maxEvaluationReturnSizeBytes: Int = DEFAULT_MAX_EVALUATION_RETURN_SIZE_BYTES,
+    private val logLevel: Int? = null
+) {
     private val assetManager = context.assets
     private val sandboxFuture = Jp2kSandbox.get(context)
     private val mainExecutor: Executor = ContextCompat.getMainExecutor(context)
@@ -37,7 +40,11 @@ class Jp2kDecoder(context: Context, private val logLevel: Int? = null) {
                 sandboxFuture.addListener({
                     try {
                         val sandbox = sandboxFuture.get()
-                        jsIsolate = Jp2kSandbox.createIsolate(sandbox).also { isolate ->
+                        jsIsolate = Jp2kSandbox.createIsolate(
+                            sandbox = sandbox,
+                            maxHeapSizeBytes = maxHeapSizeBytes,
+                            maxEvaluationReturnSizeBytes = maxEvaluationReturnSizeBytes,
+                        ).also { isolate ->
                             Jp2kSandbox.setupConsoleCallback(isolate, sandbox, mainExecutor, TAG)
                         }
                         continuation.resume(Unit)
@@ -105,7 +112,7 @@ class Jp2kDecoder(context: Context, private val logLevel: Int? = null) {
             val jsIsolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
 
             val dataArrayString = j2kData.joinToString(",")
-            val script = "globalThis.decodeJ2K([$dataArrayString], $MAX_PIXELS);"
+            val script = "globalThis.decodeJ2K([$dataArrayString], $maxPixels);"
 
             val resultFuture = jsIsolate.evaluateJavaScriptAsync(script)
 
@@ -129,6 +136,7 @@ class Jp2kDecoder(context: Context, private val logLevel: Int? = null) {
             }
 
             val bmpHex = root.getString("bmp")
+
             @OptIn(ExperimentalStdlibApi::class)
             val bmpBytes = bmpHex.hexToByteArray()
 
