@@ -1,6 +1,5 @@
 package dev.keiji.jp2k
 
-import android.graphics.Bitmap
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.test.runTest
@@ -28,11 +27,17 @@ class Jp2kDecoderTest {
     }
 
     @Test
-    fun testDecode() = runTest {
-        val inputStream = context.assets.open("karin.jp2")
-        val bytes = inputStream.readBytes()
-        inputStream.close()
+    fun testInit() = runTest {
+        decoder.init()
+    }
 
+    @Test
+    fun testDecode() = runTest {
+        val bytes = context.assets.open("karin.jp2").use {
+            it.readBytes()
+        }
+
+        decoder.init()
         val bitmap = decoder.decodeImage(bytes)
 
         assertNotNull(bitmap)
