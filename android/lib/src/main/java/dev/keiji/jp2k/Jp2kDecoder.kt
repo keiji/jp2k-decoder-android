@@ -135,6 +135,15 @@ class Jp2kDecoder(context: Context, private val logLevel: Int? = null) {
         }
     }
 
+    fun release() {
+        try {
+            jsIsolate?.close()
+            jsIsolate = null
+        } catch (e: Exception) {
+            log(Log.ERROR, "Error closing isolate: ${e.message}")
+        }
+    }
+
     companion object {
         private const val TAG = "Jp2kDecoder"
 
