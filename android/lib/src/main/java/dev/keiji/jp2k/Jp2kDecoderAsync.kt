@@ -17,10 +17,7 @@ import java.util.concurrent.Executors
 class Jp2kDecoderAsync(
     context: Context,
     private val backgroundExecutor: Executor = Executors.newSingleThreadExecutor(),
-    private val maxPixels: Int = DEFAULT_MAX_PIXELS,
-    private val maxHeapSizeBytes: Long = DEFAULT_MAX_HEAP_SIZE_BYTES,
-    private val maxEvaluationReturnSizeBytes: Int = DEFAULT_MAX_EVALUATION_RETURN_SIZE_BYTES,
-    private val logLevel: Int? = null
+    private val config: Config = Config()
 ) {
     private val assetManager = context.assets
     private val sandboxFuture = Jp2kSandbox.get(context)
@@ -29,7 +26,7 @@ class Jp2kDecoderAsync(
     private var jsIsolate: JavaScriptIsolate? = null
 
     private fun log(priority: Int, message: String) {
-        if (logLevel != null && priority >= logLevel) {
+        if (config.logLevel != null && priority >= config.logLevel) {
             Log.println(priority, TAG, message)
         }
     }
@@ -42,8 +39,8 @@ class Jp2kDecoderAsync(
                 val sandbox = sandboxFuture.get()
                 jsIsolate = Jp2kSandbox.createIsolate(
                     sandbox = sandbox,
-                    maxHeapSizeBytes = maxHeapSizeBytes,
-                    maxEvaluationReturnSizeBytes = maxEvaluationReturnSizeBytes,
+                    maxHeapSizeBytes = config.maxHeapSizeBytes,
+                    maxEvaluationReturnSizeBytes = config.maxEvaluationReturnSizeBytes,
                 ).also { isolate ->
                     Jp2kSandbox.setupConsoleCallback(isolate, sandbox, mainExecutor, TAG)
                 }
@@ -113,7 +110,7 @@ class Jp2kDecoderAsync(
 
                 // Optimization: Use Hex string instead of joinToString(",") to reduce memory overhead and string size
                 val dataHexString = j2kData.toHexString()
-                val script = "globalThis.decodeJ2K('$dataHexString', $maxPixels, $maxHeapSizeBytes);"
+                val script = "globalThis.decodeJ2K('$dataHexString', ${config.maxPixels}, ${config.maxHeapSizeBytes});"
 
                 val resultFuture = isolate.evaluateJavaScriptAsync(script)
 
