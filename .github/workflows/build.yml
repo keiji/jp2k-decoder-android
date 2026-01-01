@@ -41,7 +41,7 @@ jobs:
         run: |
           mkdir -p openjpeg/build
           cd openjpeg/build
-          emcmake cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DBUILD_STATIC_LIBS=ON
+          emcmake cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DBUILD_CODEC=OFF
           emmake make
 
       - name: Build WASM
