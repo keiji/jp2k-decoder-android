@@ -1,6 +1,8 @@
 JPEG2000 Decoder for Android
 ==
 
+[![Build](https://github.com/keiji/jp2k-decoder-android/actions/workflows/build.yml/badge.svg)](https://github.com/keiji/jp2k-decoder-android/actions/workflows/build.yml)
+
 This library provides functionality to decode JPEG2000 images on Android.
 
 Historically, native image decoders have been a significant security risk. This project aims to securely perform JPEG2000 decoding within an isolated sandbox environment by running OpenJPEG as WebAssembly (WASM).
