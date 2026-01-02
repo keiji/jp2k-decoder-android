@@ -3,6 +3,8 @@ package dev.keiji.jp2k
 import android.content.Context
 import android.graphics.Bitmap
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -19,6 +21,8 @@ class Jp2kDecoder(
 ) : AutoCloseable {
     private val jp2kDecoderAsync = Jp2kDecoderAsync(config = config)
 
+    private val mutex = Mutex()
+
     /**
      * Initializes the decoder.
      *
@@ -28,16 +32,18 @@ class Jp2kDecoder(
      * @param context The Android Context.
      * @throws Exception If initialization fails.
      */
-    suspend fun init(context: Context) = suspendCancellableCoroutine { continuation ->
-        jp2kDecoderAsync.init(context, object : Callback<Unit> {
-            override fun onSuccess(result: Unit) {
-                continuation.resume(result)
-            }
+    suspend fun init(context: Context) = mutex.withLock {
+        suspendCancellableCoroutine { continuation ->
+            jp2kDecoderAsync.init(context, object : Callback<Unit> {
+                override fun onSuccess(result: Unit) {
+                    continuation.resume(result)
+                }
 
-            override fun onError(error: Exception) {
-                continuation.resumeWithException(error)
-            }
-        })
+                override fun onError(error: Exception) {
+                    continuation.resumeWithException(error)
+                }
+            })
+        }
     }
 
     /**
@@ -50,16 +56,18 @@ class Jp2kDecoder(
     suspend fun decodeImage(
         j2kData: ByteArray,
         colorFormat: ColorFormat = ColorFormat.ARGB8888,
-    ): Bitmap = suspendCancellableCoroutine { continuation ->
-        jp2kDecoderAsync.decodeImage(j2kData, colorFormat, object : Callback<Bitmap> {
-            override fun onSuccess(result: Bitmap) {
-                continuation.resume(result)
-            }
+    ): Bitmap = mutex.withLock {
+        suspendCancellableCoroutine { continuation ->
+            jp2kDecoderAsync.decodeImage(j2kData, colorFormat, object : Callback<Bitmap> {
+                override fun onSuccess(result: Bitmap) {
+                    continuation.resume(result)
+                }
 
-            override fun onError(error: Exception) {
-                continuation.resumeWithException(error)
-            }
-        })
+                override fun onError(error: Exception) {
+                    continuation.resumeWithException(error)
+                }
+            })
+        }
     }
 
     /**
