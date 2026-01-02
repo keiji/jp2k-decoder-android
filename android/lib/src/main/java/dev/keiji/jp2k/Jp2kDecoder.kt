@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Log
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.createBitmap
 import androidx.javascriptengine.JavaScriptIsolate
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.json.JSONObject
@@ -145,7 +146,7 @@ class Jp2kDecoder(
                 ColorFormat.RGB565 -> Bitmap.Config.RGB_565
                 ColorFormat.ARGB8888 -> Bitmap.Config.ARGB_8888
             }
-            val bitmap = Bitmap.createBitmap(width, height, bitmapConfig)
+            val bitmap = createBitmap(width, height, bitmapConfig)
 
             val bytesPerPixel = when (colorFormat) {
                 ColorFormat.RGB565 -> 2

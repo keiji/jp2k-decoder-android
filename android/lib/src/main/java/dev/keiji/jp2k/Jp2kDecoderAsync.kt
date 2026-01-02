@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Log
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.createBitmap
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
 import com.google.common.util.concurrent.ListenableFuture
@@ -144,10 +145,7 @@ class Jp2kDecoderAsync(
                     ColorFormat.ARGB8888 -> Bitmap.Config.ARGB_8888
                 }
 
-                val bitmap = Bitmap.createBitmap(width, height, bitmapConfig)
-                if (bitmap == null) {
-                    throw IllegalStateException("Bitmap decoding failed (returned null).")
-                }
+                val bitmap = createBitmap(width, height, bitmapConfig)
 
                 val bytesPerPixel = when (colorFormat) {
                     ColorFormat.RGB565 -> 2
