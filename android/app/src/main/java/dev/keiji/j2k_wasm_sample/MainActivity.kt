@@ -41,12 +41,12 @@ class MainActivity : ComponentActivity() {
                     LaunchedEffect(Unit) {
                         try {
                             val decodedBitmap = withContext(Dispatchers.IO) {
+                                val bytes = applicationContext.assets.open(ASSET_PATH_SAMPLE_IMAGE).use {
+                                    it.readBytes()
+                                }
                                 Jp2kDecoder().use { decoder ->
                                     decoder.init(applicationContext)
-                                    applicationContext.assets.open(ASSET_PATH_SAMPLE_IMAGE).use {
-                                        val bytes = it.readBytes()
-                                        decoder.decodeImage(bytes)
-                                    }
+                                    decoder.decodeImage(bytes)
                                 }
                             }
                             bitmap = decodedBitmap
