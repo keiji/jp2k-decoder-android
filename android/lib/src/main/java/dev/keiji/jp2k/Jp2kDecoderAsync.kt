@@ -30,6 +30,7 @@ class Jp2kDecoderAsync(
     private val config: Config = Config()
 ) {
     private val lock = Any()
+    private val executionLock = Any()
 
     @Volatile
     private var state = State.Uninitialized
@@ -75,47 +76,49 @@ class Jp2kDecoderAsync(
 
         val start = System.currentTimeMillis()
         backgroundExecutor.execute {
-            try {
-                // Wait for sandbox connection on the background thread
-                val sandbox = sandboxFuture.get()
-                val isolate = Jp2kSandbox.createIsolate(
-                    sandbox = sandbox,
-                    maxHeapSizeBytes = config.maxHeapSizeBytes,
-                    maxEvaluationReturnSizeBytes = config.maxEvaluationReturnSizeBytes,
-                ).also { isolate ->
-                    Jp2kSandbox.setupConsoleCallback(isolate, sandbox, mainExecutor, TAG)
-                }
-
-                synchronized(lock) {
-                    if (state == State.Terminated) {
-                        isolate.close()
-                        throw CancellationException("Jp2kDecoderAsync was released during initialization.")
+            synchronized(executionLock) {
+                try {
+                    // Wait for sandbox connection on the background thread
+                    val sandbox = sandboxFuture.get()
+                    val isolate = Jp2kSandbox.createIsolate(
+                        sandbox = sandbox,
+                        maxHeapSizeBytes = config.maxHeapSizeBytes,
+                        maxEvaluationReturnSizeBytes = config.maxEvaluationReturnSizeBytes,
+                    ).also { isolate ->
+                        Jp2kSandbox.setupConsoleCallback(isolate, sandbox, mainExecutor, TAG)
                     }
-                    jsIsolate = isolate
-                }
 
-                // Load WASM
-                loadWasm(isolate, assetManager)
-
-                synchronized(lock) {
-                    if (state == State.Terminated) {
-                        throw CancellationException("Jp2kDecoderAsync was released during initialization.")
+                    synchronized(lock) {
+                        if (state == State.Terminated) {
+                            isolate.close()
+                            throw CancellationException("Jp2kDecoderAsync was released during initialization.")
+                        }
+                        jsIsolate = isolate
                     }
-                    state = State.Initialized
-                }
 
-                val time = System.currentTimeMillis() - start
-                log(Log.INFO, "init() finished in $time msec")
-                callback.onSuccess(Unit)
-            } catch (e: Exception) {
-                synchronized(lock) {
-                    if (state != State.Terminated) {
-                        state = State.Uninitialized
+                    // Load WASM
+                    loadWasm(isolate, assetManager)
+
+                    synchronized(lock) {
+                        if (state == State.Terminated) {
+                            throw CancellationException("Jp2kDecoderAsync was released during initialization.")
+                        }
+                        state = State.Initialized
                     }
+
+                    val time = System.currentTimeMillis() - start
+                    log(Log.INFO, "init() finished in $time msec")
+                    callback.onSuccess(Unit)
+                } catch (e: Exception) {
+                    synchronized(lock) {
+                        if (state != State.Terminated) {
+                            state = State.Uninitialized
+                        }
+                    }
+                    val time = System.currentTimeMillis() - start
+                    log(Log.ERROR, "init() failed in $time msec. Error: ${e.message}")
+                    callback.onError(e)
                 }
-                val time = System.currentTimeMillis() - start
-                log(Log.ERROR, "init() failed in $time msec. Error: ${e.message}")
-                callback.onError(e)
             }
         }
     }
@@ -164,91 +167,118 @@ class Jp2kDecoderAsync(
      */
     fun decodeImage(j2kData: ByteArray, colorFormat: ColorFormat = ColorFormat.ARGB8888, callback: Callback<Bitmap>) {
         synchronized(lock) {
-            if (state != State.Initialized) {
-                callback.onError(IllegalStateException("Decoder is not Initialized (maybe Decoding or Terminated). Current state: $state"))
+            // Allow if Initialized OR Decoding (queueing up)
+            if (state != State.Initialized && state != State.Decoding) {
+                callback.onError(IllegalStateException("Decoder is not ready (Current state: $state)"))
                 return
             }
-            state = State.Decoding
+            // Do NOT set state to Decoding here. Wait until execution starts.
         }
 
         backgroundExecutor.execute {
-            synchronized(lock) {
-                if (state == State.Terminated) {
-                    callback.onError(CancellationException("Decoder was released."))
-                    return@execute
-                }
-            }
-
-            val start = System.currentTimeMillis()
-            log(Log.INFO, "Input data length: ${j2kData.size}")
-
-            if (j2kData.size < MIN_INPUT_SIZE) {
-                restoreStateAfterDecode()
-                callback.onError(IllegalArgumentException("Input data is too short"))
-                return@execute
-            }
-
-            try {
-                val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
-
-                // Optimization: Use Hex string instead of joinToString(",") to reduce memory overhead and string size
-                val dataHexString = j2kData.toHexString()
-                val script = "globalThis.decodeJ2K('$dataHexString', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id});"
-
-                val resultFuture = isolate.evaluateJavaScriptAsync(script)
-
-                // Block and wait for result on background thread
-                val jsonResult =
-                    resultFuture?.get() ?: throw IllegalStateException("Result Future is null")
-
-                val root = JSONObject(jsonResult)
-                if (root.has("errorCode")) {
-                    val errorCode = root.getInt("errorCode")
-                    val error = Jp2kError.fromInt(errorCode)
-                    log(Log.ERROR, "Error: $error")
-                    throw Jp2kException(error)
-                } else if (root.has("error")) {
-                    val errorMsg = root.getString("error")
-                    log(Log.ERROR, "Error: $errorMsg")
-                    throw Jp2kException(Jp2kError.Unknown, errorMsg)
-                }
-
-                val bmpHex = root.getString("bmp")
-                val bmpBytes = bmpHex.hexToByteArray()
-
-                log(Log.INFO, "Output data length: ${bmpBytes.size}")
-
-                val options = BitmapFactory.Options().apply {
-                    inPreferredConfig = when (colorFormat) {
-                        ColorFormat.RGB565 -> Bitmap.Config.RGB_565
-                        ColorFormat.ARGB8888 -> Bitmap.Config.ARGB_8888
+            // Serialize execution
+            synchronized(executionLock) {
+                // Check state again inside the serial lock
+                synchronized(lock) {
+                    if (state == State.Terminated) {
+                        callback.onError(CancellationException("Decoder was released."))
+                        return@execute
                     }
+                    // It's possible init failed or something else happened while waiting in queue
+                    if (state != State.Initialized && state != State.Decoding) {
+                         // Note: If previous task finished, state should be Initialized.
+                         // If previous task failed, state might be Initialized (if restored) or something else.
+                         // But if it is Uninitialized now, we should probably fail.
+                         // However, since we allowed 'Decoding' in the admission check,
+                         // and we are holding executionLock, we are the only one running.
+                         // So state should ideally be Initialized here (unless this is the first task).
+                         // Wait, if this is the first task, it should be Initialized.
+                         // If this is the second task, the first task finished and set it to Initialized.
+                         // So effectively, we expect Initialized here.
+                         if (state != State.Initialized) {
+                              callback.onError(IllegalStateException("Decoder state invalid before execution: $state"))
+                              return@execute
+                         }
+                    }
+                    state = State.Decoding
                 }
 
-                val bitmap = BitmapFactory.decodeByteArray(bmpBytes, 0, bmpBytes.size, options)
+                val start = System.currentTimeMillis()
+                log(Log.INFO, "Input data length: ${j2kData.size}")
 
-                if (bitmap == null) {
-                    throw IllegalStateException("Bitmap decoding failed (returned null).")
+                if (j2kData.size < MIN_INPUT_SIZE) {
+                    restoreStateAfterDecode()
+                    callback.onError(IllegalArgumentException("Input data is too short"))
+                    return@synchronized
                 }
 
-                val time = System.currentTimeMillis() - start
-                log(Log.INFO, "decodeImage() finished in $time msec")
+                try {
+                    val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
 
-                restoreStateAfterDecode()
-                if (state == State.Terminated) {
-                    callback.onError(CancellationException("Decoder was released."))
-                } else {
-                    callback.onSuccess(bitmap)
-                }
+                    // Optimization: Use Hex string instead of joinToString(",") to reduce memory overhead and string size
+                    val dataHexString = j2kData.toHexString()
+                    val script = "globalThis.decodeJ2K('$dataHexString', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id});"
 
-            } catch (e: Exception) {
-                val time = System.currentTimeMillis() - start
-                log(Log.ERROR, "decodeImage() failed in $time msec. Error: ${e.message}")
-                restoreStateAfterDecode()
-                if (state == State.Terminated) {
-                    callback.onError(CancellationException("Decoder was released."))
-                } else {
-                    callback.onError(e)
+                    val resultFuture = isolate.evaluateJavaScriptAsync(script)
+
+                    // Block and wait for result on background thread
+                    val jsonResult =
+                        resultFuture?.get() ?: throw IllegalStateException("Result Future is null")
+
+                    val root = JSONObject(jsonResult)
+                    if (root.has("errorCode")) {
+                        val errorCode = root.getInt("errorCode")
+                        val error = Jp2kError.fromInt(errorCode)
+                        log(Log.ERROR, "Error: $error")
+                        throw Jp2kException(error)
+                    } else if (root.has("error")) {
+                        val errorMsg = root.getString("error")
+                        log(Log.ERROR, "Error: $errorMsg")
+                        throw Jp2kException(Jp2kError.Unknown, errorMsg)
+                    }
+
+                    val bmpHex = root.getString("bmp")
+                    val bmpBytes = bmpHex.hexToByteArray()
+
+                    log(Log.INFO, "Output data length: ${bmpBytes.size}")
+
+                    val options = BitmapFactory.Options().apply {
+                        inPreferredConfig = when (colorFormat) {
+                            ColorFormat.RGB565 -> Bitmap.Config.RGB_565
+                            ColorFormat.ARGB8888 -> Bitmap.Config.ARGB_8888
+                        }
+                    }
+
+                    val bitmap = BitmapFactory.decodeByteArray(bmpBytes, 0, bmpBytes.size, options)
+
+                    if (bitmap == null) {
+                        throw IllegalStateException("Bitmap decoding failed (returned null).")
+                    }
+
+                    val time = System.currentTimeMillis() - start
+                    log(Log.INFO, "decodeImage() finished in $time msec")
+
+                    restoreStateAfterDecode()
+                    // Check if released during decode (unlikely due to lock, but good practice)
+                    synchronized(lock) {
+                         if (state == State.Terminated) {
+                             callback.onError(CancellationException("Decoder was released."))
+                         } else {
+                             callback.onSuccess(bitmap)
+                         }
+                    }
+
+                } catch (e: Exception) {
+                    val time = System.currentTimeMillis() - start
+                    log(Log.ERROR, "decodeImage() failed in $time msec. Error: ${e.message}")
+                    restoreStateAfterDecode()
+                    synchronized(lock) {
+                        if (state == State.Terminated) {
+                            callback.onError(CancellationException("Decoder was released."))
+                        } else {
+                            callback.onError(e)
+                        }
+                    }
                 }
             }
         }
