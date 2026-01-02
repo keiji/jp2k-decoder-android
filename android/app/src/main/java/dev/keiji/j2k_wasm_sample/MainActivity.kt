@@ -26,11 +26,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
-    private lateinit var jp2kDecoder: Jp2kDecoder
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        jp2kDecoder = Jp2kDecoder(applicationContext)
 
         enableEdgeToEdge()
 
@@ -43,10 +41,12 @@ class MainActivity : ComponentActivity() {
                     LaunchedEffect(Unit) {
                         try {
                             val decodedBitmap = withContext(Dispatchers.IO) {
-                                jp2kDecoder.init()
-                                assets.open(ASSET_PATH_SAMPLE_IMAGE).use {
-                                    val bytes = it.readBytes()
-                                    jp2kDecoder.decodeImage(bytes)
+                                Jp2kDecoder().use { decoder ->
+                                    decoder.init(applicationContext)
+                                    applicationContext.assets.open(ASSET_PATH_SAMPLE_IMAGE).use {
+                                        val bytes = it.readBytes()
+                                        decoder.decodeImage(bytes)
+                                    }
                                 }
                             }
                             bitmap = decodedBitmap
@@ -75,13 +75,6 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-        }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        if (::jp2kDecoder.isInitialized) {
-            jp2kDecoder.release()
         }
     }
 

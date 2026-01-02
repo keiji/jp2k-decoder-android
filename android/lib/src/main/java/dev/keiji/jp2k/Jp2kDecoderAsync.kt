@@ -1,16 +1,18 @@
 package dev.keiji.jp2k
 
 import android.content.Context
+import android.content.res.AssetManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
-import com.google.common.util.concurrent.ListenableFuture
 import org.json.JSONObject
+import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executor
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /**
@@ -19,21 +21,27 @@ import java.util.concurrent.Executors
  * This class provides methods to initialize and decode JPEG 2000 images asynchronously
  * using a callback mechanism. It manages its own background thread.
  *
- * @param context The Android Application Context.
  * @param backgroundExecutor The executor used for background operations. Defaults to a single-thread executor.
  * @param config The configuration object for the decoder.
  */
 @OptIn(ExperimentalStdlibApi::class)
 class Jp2kDecoderAsync(
-    context: Context,
     private val backgroundExecutor: Executor = Executors.newSingleThreadExecutor(),
     private val config: Config = Config()
 ) {
-    private val assetManager = context.assets
-    private val sandboxFuture = Jp2kSandbox.get(context)
-    private val mainExecutor: Executor = ContextCompat.getMainExecutor(context)
+    private val lock = Any()
+
+    @Volatile
+    private var state = State.Uninitialized
 
     private var jsIsolate: JavaScriptIsolate? = null
+
+    private enum class State {
+        Uninitialized,
+        Initializing,
+        Initialized,
+        Terminated
+    }
 
     private fun log(priority: Int, message: String) {
         if (config.logLevel != null && priority >= config.logLevel) {
@@ -47,15 +55,29 @@ class Jp2kDecoderAsync(
      * This method initializes the JavaScript sandbox and loads the WebAssembly module
      * on a background thread. The result is reported via the provided callback.
      *
+     * @param context The Android Context.
      * @param callback The callback to receive the initialization result.
      */
-    fun init(callback: Callback<Unit>) {
+    fun init(context: Context, callback: Callback<Unit>) {
+        synchronized(lock) {
+            if (state != State.Uninitialized) {
+                callback.onError(IllegalStateException("Jp2kDecoderAsync is not Uninitialized. Current state: $state"))
+                return
+            }
+            state = State.Initializing
+        }
+
+        // Capture resources needed for initialization from Context
+        val assetManager = context.assets
+        val mainExecutor = ContextCompat.getMainExecutor(context)
+        val sandboxFuture = Jp2kSandbox.get(context)
+
         val start = System.currentTimeMillis()
         backgroundExecutor.execute {
             try {
                 // Wait for sandbox connection on the background thread
                 val sandbox = sandboxFuture.get()
-                jsIsolate = Jp2kSandbox.createIsolate(
+                val isolate = Jp2kSandbox.createIsolate(
                     sandbox = sandbox,
                     maxHeapSizeBytes = config.maxHeapSizeBytes,
                     maxEvaluationReturnSizeBytes = config.maxEvaluationReturnSizeBytes,
@@ -63,13 +85,33 @@ class Jp2kDecoderAsync(
                     Jp2kSandbox.setupConsoleCallback(isolate, sandbox, mainExecutor, TAG)
                 }
 
+                synchronized(lock) {
+                    if (state == State.Terminated) {
+                        isolate.close()
+                        throw CancellationException("Jp2kDecoderAsync was released during initialization.")
+                    }
+                    jsIsolate = isolate
+                }
+
                 // Load WASM
-                loadWasm()
+                loadWasm(isolate, assetManager)
+
+                synchronized(lock) {
+                    if (state == State.Terminated) {
+                        throw CancellationException("Jp2kDecoderAsync was released during initialization.")
+                    }
+                    state = State.Initialized
+                }
 
                 val time = System.currentTimeMillis() - start
                 log(Log.INFO, "init() finished in $time msec")
                 callback.onSuccess(Unit)
             } catch (e: Exception) {
+                synchronized(lock) {
+                    if (state != State.Terminated) {
+                        state = State.Uninitialized
+                    }
+                }
                 val time = System.currentTimeMillis() - start
                 log(Log.ERROR, "init() failed in $time msec. Error: ${e.message}")
                 callback.onError(e)
@@ -77,7 +119,7 @@ class Jp2kDecoderAsync(
         }
     }
 
-    private fun loadWasm() {
+    private fun loadWasm(isolate: JavaScriptIsolate, assetManager: AssetManager) {
         // This runs on backgroundExecutor
         val wasmArrayString = assetManager.open(ASSET_PATH_WASM)
             .readBytes()
@@ -100,10 +142,10 @@ class Jp2kDecoderAsync(
 
         // evaluateJavaScriptAsync returns a ListenableFuture.
         // We must wait for it synchronously on this background thread.
-        val resultFuture = jsIsolate?.evaluateJavaScriptAsync(script)
+        val resultFuture = isolate.evaluateJavaScriptAsync(script)
 
         try {
-            val result = resultFuture?.get()
+            val result = resultFuture.get()
             if (result != "1") {
                 throw IllegalStateException("WASM instantiation failed.")
             }
@@ -120,7 +162,21 @@ class Jp2kDecoderAsync(
      * @param callback The callback to receive the decoded [Bitmap] or error.
      */
     fun decodeImage(j2kData: ByteArray, colorFormat: ColorFormat = ColorFormat.ARGB8888, callback: Callback<Bitmap>) {
+        synchronized(lock) {
+            if (state != State.Initialized) {
+                callback.onError(IllegalStateException("Decoder not initialized. Current state: $state"))
+                return
+            }
+        }
+
         backgroundExecutor.execute {
+            synchronized(lock) {
+                if (state != State.Initialized) {
+                    callback.onError(CancellationException("Decoder was released or not initialized."))
+                    return@execute
+                }
+            }
+
             val start = System.currentTimeMillis()
             log(Log.INFO, "Input data length: ${j2kData.size}")
 
@@ -201,7 +257,14 @@ class Jp2kDecoderAsync(
      * This closes the JavaScript isolate and shuts down the background executor.
      */
     fun release() {
-        if (backgroundExecutor is java.util.concurrent.ExecutorService && !backgroundExecutor.isShutdown) {
+        synchronized(lock) {
+            if (state == State.Terminated) {
+                return
+            }
+            state = State.Terminated
+        }
+
+        if (backgroundExecutor is ExecutorService && !backgroundExecutor.isShutdown) {
             backgroundExecutor.execute {
                 try {
                     jsIsolate?.close()
@@ -218,6 +281,11 @@ class Jp2kDecoderAsync(
 
     companion object {
         private const val TAG = "Jp2kDecoderAsync"
+        private const val MIN_INPUT_SIZE = 12 // Signature box length
+        private const val ASSET_PATH_WASM = "openjpeg_core.wasm"
+
+        // Script to import WASI polyfill
+        private const val SCRIPT_IMPORT_OBJECT = Constants.SCRIPT_IMPORT_OBJECT
 
         private const val SCRIPT_DEFINE_DECODE_J2K = """
             globalThis.bytesToHex = function(bytes) {
