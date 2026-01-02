@@ -12,14 +12,12 @@ import kotlin.coroutines.resumeWithException
  * This class handles the initialization of the JavaScript sandbox, loading the WebAssembly module,
  * and decoding JPEG 2000 images.
  *
- * @param context The Android Application Context.
  * @param config The configuration object for the decoder.
  */
 class Jp2kDecoder(
-    context: Context,
     config: Config = Config(),
-) {
-    private val jp2kDecoderAsync = Jp2kDecoderAsync(context, config = config)
+) : AutoCloseable {
+    private val jp2kDecoderAsync = Jp2kDecoderAsync(config = config)
 
     /**
      * Initializes the decoder.
@@ -27,10 +25,11 @@ class Jp2kDecoder(
      * This method must be called before using [decodeImage]. It initializes the JavaScript sandbox
      * and loads the WebAssembly module.
      *
+     * @param context The Android Context.
      * @throws Exception If initialization fails.
      */
-    suspend fun init() = suspendCancellableCoroutine { continuation ->
-        jp2kDecoderAsync.init(object : Callback<Unit> {
+    suspend fun init(context: Context) = suspendCancellableCoroutine { continuation ->
+        jp2kDecoderAsync.init(context, object : Callback<Unit> {
             override fun onSuccess(result: Unit) {
                 continuation.resume(result)
             }
@@ -70,5 +69,9 @@ class Jp2kDecoder(
      */
     fun release() {
         jp2kDecoderAsync.release()
+    }
+
+    override fun close() {
+        release()
     }
 }
