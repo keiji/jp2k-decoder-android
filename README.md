@@ -69,8 +69,7 @@ emcc -O3 wrapper.c \
     -s STANDALONE_WASM \
     --no-entry \
     -s ALLOW_MEMORY_GROWTH=1 \
-    -s INITIAL_MEMORY=4194304 \
-    -s TOTAL_STACK=1048576 \
+    -s INITIAL_MEMORY=8388608 \
     -s EXPORTED_FUNCTIONS='["_decodeToBmp", "_malloc", "_free", "_getLastError"]' \
     -o openjpeg_core.wasm
 ```
