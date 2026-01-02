@@ -138,23 +138,6 @@ class Jp2kDecoderAsync(
         WebAssembly.instantiate(wasmBuffer, importObject).then(res => {
             wasmInstance = res.instance;
 
-            try {
-                const PAGE_SIZE = 65536;
-                const initialBytes = ${config.initialWasmHeapSizeBytes ?: 0};
-                if (initialBytes > 0) {
-                     const currentBytes = wasmInstance.exports.memory.buffer.byteLength;
-                     if (currentBytes < initialBytes) {
-                         const growBytes = initialBytes - currentBytes;
-                         const growPages = Math.ceil(growBytes / PAGE_SIZE);
-                         if (growPages > 0) {
-                            wasmInstance.exports.memory.grow(growPages);
-                         }
-                     }
-                }
-            } catch (e) {
-                console.log("Failed to grow memory: " + e);
-            }
-
             $SCRIPT_DEFINE_DECODE_J2K
 
             return "1";
