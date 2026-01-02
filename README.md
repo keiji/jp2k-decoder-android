@@ -2,6 +2,7 @@ JPEG2000 Decoder for Android
 ==
 
 [![Build](https://github.com/keiji/jp2k-decoder-android/actions/workflows/build.yml/badge.svg)](https://github.com/keiji/jp2k-decoder-android/actions/workflows/build.yml)
+[![Maven Central](https://img.shields.io/maven-central/v/dev.keiji.jp2k/jp2k-decoder-android.svg?label=Maven%20Central)](https://central.sonatype.com/artifact/dev.keiji.jp2k/jp2k-decoder-android)
 
 This library provides functionality to decode JPEG2000 images on Android.
 
@@ -16,10 +17,20 @@ Historically, native image decoders have been a significant security risk. This 
 
 ## Installation
 
-Add the dependency to your module's `build.gradle.kts`:
+The binaries are available on Maven Central.
+
+To install the library, add the dependency to your module's `build.gradle.kts` (Kotlin DSL) or `build.gradle` (Groovy DSL).
+
+### Gradle (Kotlin DSL)
 
 ```kotlin
-    implementation("dev.keiji.jp2k:jp2k-decoder-android:<latest_release>")
+implementation("dev.keiji.jp2k:jp2k-decoder-android:0.1.0")
+```
+
+### Gradle (Groovy DSL)
+
+```groovy
+implementation 'dev.keiji.jp2k:jp2k-decoder-android:0.1.0'
 ```
 
 ## How to build
