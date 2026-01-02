@@ -28,7 +28,7 @@ import java.util.concurrent.Executors
 class Jp2kDecoderAsync(
     private val backgroundExecutor: Executor = Executors.newSingleThreadExecutor(),
     private val config: Config = Config()
-) {
+) : AutoCloseable {
     private val lock = Any()
     private val executionLock = Any()
 
@@ -369,6 +369,10 @@ class Jp2kDecoderAsync(
         if (backgroundExecutor is ExecutorService && !backgroundExecutor.isShutdown) {
             backgroundExecutor.shutdown()
         }
+    }
+
+    override fun close() {
+        release()
     }
 
     companion object {
