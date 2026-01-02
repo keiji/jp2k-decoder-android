@@ -47,6 +47,17 @@ jobs:
         working-directory: android
         run: ./gradlew assembleDebug
 
+      - name: Generate KDoc
+        working-directory: android
+        run: ./gradlew dokkaHtml
+
+      - name: Upload KDoc
+        uses: actions/upload-artifact@v6
+        with:
+          name: kdoc
+          path: android/lib/build/dokka/html
+          retention-days: 1
+
   wasm:
     runs-on: ubuntu-latest
     permissions:
