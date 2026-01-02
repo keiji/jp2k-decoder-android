@@ -457,6 +457,8 @@ class Jp2kDecoderAsync(
                 try {
                     if (globalThis.performance && globalThis.performance.memory) {
                         memory = globalThis.performance.memory;
+                    } else if (globalThis.console && globalThis.console.memory) {
+                        memory = globalThis.console.memory;
                     }
                 } catch (e) {}
 
