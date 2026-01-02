@@ -184,16 +184,11 @@ static void write_headers_rgb565(uint8_t* buffer, uint32_t file_size, uint32_t w
     memcpy(&buffer[62], &b_mask, 4);
 }
 
-EMSCRIPTEN_KEEPALIVE
-uint8_t* decodeToBmp(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint32_t max_heap_size, int color_format) {
-    opj_image_t* image = decode_opj(data, data_len, max_pixels, max_heap_size, color_format);
-    if (!image) return NULL;
-
+static uint8_t* convert_image_to_bmp(opj_image_t* image, int color_format) {
     uint32_t width = image->x1 - image->x0;
     uint32_t height = image->y1 - image->y0;
 
     if (image->numcomps < 3) {
-        opj_image_destroy(image);
         last_error = ERR_DECODE;
         return NULL;
     }
@@ -214,7 +209,6 @@ uint8_t* decodeToBmp(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint
 
         bmp_buffer = (uint8_t*)malloc(file_size);
         if (!bmp_buffer) {
-            opj_image_destroy(image);
             last_error = ERR_DECODE;
             return NULL;
         }
@@ -243,7 +237,6 @@ uint8_t* decodeToBmp(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint
 
         bmp_buffer = (uint8_t*)malloc(file_size);
         if (!bmp_buffer) {
-            opj_image_destroy(image);
             last_error = ERR_DECODE;
             return NULL;
         }
@@ -267,6 +260,15 @@ uint8_t* decodeToBmp(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint
             }
         }
     }
+    return bmp_buffer;
+}
+
+EMSCRIPTEN_KEEPALIVE
+uint8_t* decodeToBmp(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint32_t max_heap_size, int color_format) {
+    opj_image_t* image = decode_opj(data, data_len, max_pixels, max_heap_size, color_format);
+    if (!image) return NULL;
+
+    uint8_t* bmp_buffer = convert_image_to_bmp(image, color_format);
 
     opj_image_destroy(image);
     return bmp_buffer;

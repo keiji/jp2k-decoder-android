@@ -1,0 +1,6 @@
+#ifndef EMSCRIPTEN_H
+#define EMSCRIPTEN_H
+
+#define EMSCRIPTEN_KEEPALIVE
+
+#endif // EMSCRIPTEN_H
