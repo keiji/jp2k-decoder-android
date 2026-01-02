@@ -14,6 +14,15 @@ import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/**
+ * JPEG 2000 Decoder class using WebAssembly via Android JavaScriptEngine.
+ *
+ * This class handles the initialization of the JavaScript sandbox, loading the WebAssembly module,
+ * and decoding JPEG 2000 images.
+ *
+ * @param context The Android Application Context.
+ * @param config The configuration object for the decoder.
+ */
 class Jp2kDecoder(
     context: Context,
     private val config: Config = Config()
@@ -30,6 +39,14 @@ class Jp2kDecoder(
         }
     }
 
+    /**
+     * Initializes the decoder.
+     *
+     * This method must be called before using [decodeImage]. It initializes the JavaScript sandbox
+     * and loads the WebAssembly module.
+     *
+     * @throws Exception If initialization fails.
+     */
     suspend fun init() {
         val start = System.currentTimeMillis()
         try {
@@ -94,6 +111,16 @@ class Jp2kDecoder(
         }
     }
 
+    /**
+     * Decodes a JPEG 2000 image.
+     *
+     * @param j2kData The raw byte array of the JPEG 2000 image.
+     * @param colorFormat The desired output color format. Defaults to [ColorFormat.ARGB8888].
+     * @return The decoded [Bitmap].
+     * @throws IllegalArgumentException If the input data is too short.
+     * @throws IllegalStateException If the decoder has not been initialized.
+     * @throws Jp2kException If a decoding error occurs.
+     */
     suspend fun decodeImage(j2kData: ByteArray, colorFormat: ColorFormat = ColorFormat.ARGB8888): Bitmap {
         val start = System.currentTimeMillis()
         log(Log.INFO, "Input data length: ${j2kData.size}")
@@ -158,6 +185,11 @@ class Jp2kDecoder(
         }
     }
 
+    /**
+     * Releases resources held by the decoder.
+     *
+     * This closes the JavaScript isolate. It should be called when the decoder is no longer needed.
+     */
     fun release() {
         try {
             jsIsolate?.close()

@@ -13,6 +13,16 @@ import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 
+/**
+ * Asynchronous JPEG 2000 Decoder class using WebAssembly via Android JavaScriptEngine.
+ *
+ * This class provides methods to initialize and decode JPEG 2000 images asynchronously
+ * using a callback mechanism. It manages its own background thread.
+ *
+ * @param context The Android Application Context.
+ * @param backgroundExecutor The executor used for background operations. Defaults to a single-thread executor.
+ * @param config The configuration object for the decoder.
+ */
 @OptIn(ExperimentalStdlibApi::class)
 class Jp2kDecoderAsync(
     context: Context,
@@ -31,6 +41,14 @@ class Jp2kDecoderAsync(
         }
     }
 
+    /**
+     * Initializes the decoder asynchronously.
+     *
+     * This method initializes the JavaScript sandbox and loads the WebAssembly module
+     * on a background thread. The result is reported via the provided callback.
+     *
+     * @param callback The callback to receive the initialization result.
+     */
     fun init(callback: Callback<Unit>) {
         val start = System.currentTimeMillis()
         backgroundExecutor.execute {
@@ -94,6 +112,13 @@ class Jp2kDecoderAsync(
         }
     }
 
+    /**
+     * Decodes a JPEG 2000 image asynchronously.
+     *
+     * @param j2kData The raw byte array of the JPEG 2000 image.
+     * @param colorFormat The desired output color format.
+     * @param callback The callback to receive the decoded [Bitmap] or error.
+     */
     fun decodeImage(j2kData: ByteArray, colorFormat: ColorFormat = ColorFormat.ARGB8888, callback: Callback<Bitmap>) {
         backgroundExecutor.execute {
             val start = System.currentTimeMillis()
@@ -160,11 +185,21 @@ class Jp2kDecoderAsync(
         }
     }
 
-    // Overload for backward compatibility / easier usage if colorFormat is omitted
+    /**
+     * Decodes a JPEG 2000 image asynchronously with default color format (ARGB 8888).
+     *
+     * @param j2kData The raw byte array of the JPEG 2000 image.
+     * @param callback The callback to receive the decoded [Bitmap] or error.
+     */
     fun decodeImage(j2kData: ByteArray, callback: Callback<Bitmap>) {
         decodeImage(j2kData, ColorFormat.ARGB8888, callback)
     }
 
+    /**
+     * Releases resources held by the decoder.
+     *
+     * This closes the JavaScript isolate and shuts down the background executor.
+     */
     fun release() {
         if (backgroundExecutor is java.util.concurrent.ExecutorService && !backgroundExecutor.isShutdown) {
             backgroundExecutor.execute {
