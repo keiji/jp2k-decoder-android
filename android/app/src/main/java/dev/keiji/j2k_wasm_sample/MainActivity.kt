@@ -40,7 +40,8 @@ class MainActivity : ComponentActivity() {
             J2kwasmsampleTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
-                    var memoryUsage by remember { mutableStateOf<MemoryUsage?>(null) }
+                    var memoryUsageBefore by remember { mutableStateOf<MemoryUsage?>(null) }
+                    var memoryUsageAfter by remember { mutableStateOf<MemoryUsage?>(null) }
                     var error by remember { mutableStateOf<String?>(null) }
 
                     LaunchedEffect(Unit) {
@@ -51,13 +52,15 @@ class MainActivity : ComponentActivity() {
                                 }
                                 Jp2kDecoder().use { decoder ->
                                     decoder.init(applicationContext)
+                                    val usageBefore = decoder.getMemoryUsage()
                                     val bmp = decoder.decodeImage(bytes)
-                                    val usage = decoder.getMemoryUsage()
-                                    Pair(bmp, usage)
+                                    val usageAfter = decoder.getMemoryUsage()
+                                    Triple(bmp, usageBefore, usageAfter)
                                 }
                             }
                             bitmap = result.first
-                            memoryUsage = result.second
+                            memoryUsageBefore = result.second
+                            memoryUsageAfter = result.third
                         } catch (e: Exception) {
                             error = e.message ?: "Unknown error"
                         }
@@ -77,10 +80,9 @@ class MainActivity : ComponentActivity() {
                             )
                         }
 
-                        if (memoryUsage != null) {
+                        if (memoryUsageBefore != null && memoryUsageAfter != null) {
                             Text(
-                                text = "WASM Heap: ${memoryUsage?.wasmHeapSizeBytes}\n" +
-                                        "JS Heap: ${memoryUsage?.usedJSHeapSize} / ${memoryUsage?.totalJSHeapSize}",
+                                text = "WASM Heap: ${memoryUsageBefore?.wasmHeapSizeBytes} -> ${memoryUsageAfter?.wasmHeapSizeBytes}",
                                 modifier = Modifier
                                     .align(Alignment.TopStart)
                                     .background(Color.White.copy(alpha = 0.7f))

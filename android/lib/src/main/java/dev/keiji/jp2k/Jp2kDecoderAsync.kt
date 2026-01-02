@@ -334,9 +334,6 @@ class Jp2kDecoderAsync(
 
                     val usage = MemoryUsage(
                         wasmHeapSizeBytes = root.optLong("wasmHeapSizeBytes", 0),
-                        jsHeapSizeLimit = if (root.has("jsHeapSizeLimit")) root.getLong("jsHeapSizeLimit") else null,
-                        totalJSHeapSize = if (root.has("totalJSHeapSize")) root.getLong("totalJSHeapSize") else null,
-                        usedJSHeapSize = if (root.has("usedJSHeapSize")) root.getLong("usedJSHeapSize") else null,
                     )
                     callback.onSuccess(usage)
                 } catch (e: Exception) {
@@ -453,20 +450,8 @@ class Jp2kDecoderAsync(
                     }
                 } catch (e) {}
 
-                let memory = {};
-                try {
-                    if (globalThis.performance && globalThis.performance.memory) {
-                        memory = globalThis.performance.memory;
-                    } else if (globalThis.console && globalThis.console.memory) {
-                        memory = globalThis.console.memory;
-                    }
-                } catch (e) {}
-
                 return JSON.stringify({
                     wasmHeapSizeBytes: wasmHeap,
-                    jsHeapSizeLimit: memory.jsHeapSizeLimit,
-                    totalJSHeapSize: memory.totalJSHeapSize,
-                    usedJSHeapSize: memory.usedJSHeapSize
                 });
             };
         """
