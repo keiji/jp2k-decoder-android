@@ -40,6 +40,7 @@ class Jp2kDecoderAsync(
         Uninitialized,
         Initializing,
         Initialized,
+        Decoding,
         Terminated
     }
 
@@ -164,15 +165,16 @@ class Jp2kDecoderAsync(
     fun decodeImage(j2kData: ByteArray, colorFormat: ColorFormat = ColorFormat.ARGB8888, callback: Callback<Bitmap>) {
         synchronized(lock) {
             if (state != State.Initialized) {
-                callback.onError(IllegalStateException("Decoder not initialized. Current state: $state"))
+                callback.onError(IllegalStateException("Decoder is not Initialized (maybe Decoding or Terminated). Current state: $state"))
                 return
             }
+            state = State.Decoding
         }
 
         backgroundExecutor.execute {
             synchronized(lock) {
-                if (state != State.Initialized) {
-                    callback.onError(CancellationException("Decoder was released or not initialized."))
+                if (state == State.Terminated) {
+                    callback.onError(CancellationException("Decoder was released."))
                     return@execute
                 }
             }
@@ -181,6 +183,7 @@ class Jp2kDecoderAsync(
             log(Log.INFO, "Input data length: ${j2kData.size}")
 
             if (j2kData.size < MIN_INPUT_SIZE) {
+                restoreStateAfterDecode()
                 callback.onError(IllegalArgumentException("Input data is too short"))
                 return@execute
             }
@@ -231,12 +234,22 @@ class Jp2kDecoderAsync(
                 val time = System.currentTimeMillis() - start
                 log(Log.INFO, "decodeImage() finished in $time msec")
 
+                restoreStateAfterDecode()
                 callback.onSuccess(bitmap)
 
             } catch (e: Exception) {
                 val time = System.currentTimeMillis() - start
                 log(Log.ERROR, "decodeImage() failed in $time msec. Error: ${e.message}")
+                restoreStateAfterDecode()
                 callback.onError(e)
+            }
+        }
+    }
+
+    private fun restoreStateAfterDecode() {
+        synchronized(lock) {
+            if (state == State.Decoding) {
+                state = State.Initialized
             }
         }
     }

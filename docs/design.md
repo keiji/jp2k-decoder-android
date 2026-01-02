@@ -28,7 +28,8 @@ Androidの `JavaScriptEngine` (Jetpack) を使用して、WASM化されたOpenJP
 #### 状態定義
 *   `Uninitialized`: 初期状態。`init()` の呼び出しのみ許可されます。
 *   `Initializing`: 初期化処理中。バックグラウンドでのWASMロードやIsolate作成を行っています。
-*   `Initialized`: 初期化完了。`decodeImage()` の呼び出しが可能です。
+*   `Initialized`: 初期化完了。`decodeImage()` の呼び出しが可能な待機状態。
+*   `Decoding`: デコード処理中。この状態のときに再度 `decodeImage()` が呼ばれるとエラーになります（並行実行の禁止）。
 *   `Terminated`: 終了状態。`release()` が呼ばれた後の状態。これ以上の操作は受け付けません。
 
 #### 状態遷移図
@@ -49,23 +50,22 @@ stateDiagram-v2
     Initializing --> Uninitialized : init() failed (Exception)
     Initializing --> Terminated : release() called during init
 
-    Initialized --> Initialized : decodeImage()
+    Initialized --> Decoding : decodeImage() called
+    Decoding --> Initialized : decodeImage() finished (Success/Error)
+
+    Decoding --> Terminated : release() called
+
     Initialized --> Terminated : release() called
 
     Terminated --> [*]
-
-    note right of Initializing
-        release() check is performed
-        at multiple points during
-        background initialization.
-    end note
 ```
 
 #### スレッドセーフ設計
 *   **init()**: `Uninitialized` 状態でのみ開始可能。開始時に `Initializing` に遷移。完了時に `Initialized` に遷移。失敗時は `Uninitialized` に戻ります。
-*   **decodeImage()**: `Initialized` 状態でのみ実行可能。
+*   **decodeImage()**: `Initialized` 状態でのみ実行可能。実行開始時に `Decoding` に遷移し、完了時に `Initialized` に戻ります。これにより、デコード処理中の重複呼び出しを防止します。
 *   **release()**: 任意の状態で呼び出し可能。呼び出されると即座に `Terminated` 状態に遷移し、以降の操作をブロックします。
     *   `Initializing` 中に `release()` が呼ばれた場合、バックグラウンド処理の要所で `Terminated` チェックが行われ、初期化処理が中断 (Cancellation) されます。
+    *   `Decoding` 中に `release()` が呼ばれた場合、デコード処理完了後の状態復帰（`Initialized`への遷移）は行われません。
 
 ---
 
