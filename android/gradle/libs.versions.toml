@@ -12,7 +12,6 @@ composeBom = "2025.12.01"
 appcompat = "1.7.1"
 material = "1.13.0"
 coroutines = "1.10.2"
-dokka = "1.9.20"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -39,4 +38,3 @@ kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-cor
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 android-library = { id = "com.android.library", version.ref = "agp" }
-dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
