@@ -39,6 +39,9 @@ android {
 dependencies {
     implementation(project(":lib"))
 
+    //noinspection UseTomlInstead
+//    implementation("dev.keiji.jp2k:jp2k-decoder-android:0.1.0")
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)

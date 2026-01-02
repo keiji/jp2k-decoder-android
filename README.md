@@ -14,6 +14,14 @@ Historically, native image decoders have been a significant security risk. This 
 *   **WASM & Jetpack JavaScript Engine:** The native library is compiled to WebAssembly (WASM) and executed using the [Jetpack JavaScript Engine](https://developer.android.com/jetpack/androidx/releases/javascriptengine).
 *   **Enhanced Security:** By running within the WASM engine's sandbox, the decoding process is isolated, offering a relatively higher level of safety compared to direct native execution.
 
+## Installation
+
+Add the dependency to your module's `build.gradle.kts`:
+
+```kotlin
+    implementation("dev.keiji.jp2k:jp2k-decoder-android:<latest_release>")
+```
+
 ## How to build
 
 ### 1. Initialize Submodules
@@ -72,6 +80,17 @@ cd android
 ```
 
 The generated documentation will be available in `android/lib/build/dokka/html`.
+
+## Publish
+
+To publish the library to Maven Central Portal, export the required environment variables and run the Gradle task.
+
+```bash
+export CENTRAL_PORTAL_USERNAME=<your-username>
+export CENTRAL_PORTAL_PASSWORD=<your-password>
+cd android
+./gradlew publishAggregationToCentralPortal
+```
 
 ## License
 
