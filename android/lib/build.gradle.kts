@@ -75,7 +75,7 @@ publishing {
     publications {
         register<MavenPublication>("release") {
             groupId = "dev.keiji.jp2k"
-            artifactId = "jp2k-decoder"
+            artifactId = "jp2k-decoder-android"
 
             afterEvaluate {
                 from(components["release"])
