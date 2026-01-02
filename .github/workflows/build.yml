@@ -20,7 +20,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -47,13 +47,24 @@ jobs:
         working-directory: android
         run: ./gradlew assembleDebug
 
+      - name: Generate Documentation
+        working-directory: android
+        run: ./gradlew :lib:dokkaHtml
+
+      - name: Upload Documentation
+        uses: actions/upload-artifact@v4
+        with:
+          name: dokka-html
+          path: android/lib/build/dokka/html
+          retention-days: 1
+
   wasm:
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           submodules: recursive
 
@@ -101,7 +112,7 @@ jobs:
           fi
 
       - name: Upload WASM artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: openjpeg_core.wasm
           path: openjpeg_core.wasm
