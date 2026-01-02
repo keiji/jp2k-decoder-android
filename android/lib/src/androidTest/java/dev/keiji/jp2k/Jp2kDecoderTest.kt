@@ -103,4 +103,5 @@ class Jp2kDecoderTest {
         val usage = decoder.getMemoryUsage()
         assertNotNull(usage)
         assert(usage.wasmHeapSizeBytes > 0)
+    }
 }
