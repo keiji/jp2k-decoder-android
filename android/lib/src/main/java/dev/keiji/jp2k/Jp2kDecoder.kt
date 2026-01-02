@@ -71,6 +71,25 @@ class Jp2kDecoder(
     }
 
     /**
+     * Retrieves memory usage statistics from the JS/WASM environment.
+     *
+     * @return The [MemoryUsage] statistics.
+     */
+    suspend fun getMemoryUsage(): MemoryUsage = mutex.withLock {
+        suspendCancellableCoroutine { continuation ->
+            jp2kDecoderAsync.getMemoryUsage(object : Callback<MemoryUsage> {
+                override fun onSuccess(result: MemoryUsage) {
+                    continuation.resume(result)
+                }
+
+                override fun onError(error: Exception) {
+                    continuation.resumeWithException(error)
+                }
+            })
+        }
+    }
+
+    /**
      * Releases resources held by the decoder.
      *
      * This closes the JavaScript isolate. It should be called when the decoder is no longer needed.
