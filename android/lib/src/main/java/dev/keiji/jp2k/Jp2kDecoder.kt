@@ -107,8 +107,9 @@ class Jp2kDecoder(
         try {
             val jsIsolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
 
-            val dataArrayString = j2kData.joinToString(",")
-            val script = "globalThis.decodeJ2K([$dataArrayString], ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id});"
+            // Optimization: Use Hex string instead of joinToString(",") to reduce memory overhead and string size
+            val dataHexString = j2kData.toHexString()
+            val script = "globalThis.decodeJ2K('$dataHexString', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id});"
 
             val resultFuture = jsIsolate.evaluateJavaScriptAsync(script)
 
@@ -140,13 +141,38 @@ class Jp2kDecoder(
 
             log(Log.INFO, "Output data length: ${pixelsBytes.size}")
 
-            val bitmapConfig = if (colorFormat == ColorFormat.RGB565) {
-                Bitmap.Config.RGB_565
-            } else {
-                Bitmap.Config.ARGB_8888
+            val bitmapConfig = when (colorFormat) {
+                ColorFormat.RGB565 -> Bitmap.Config.RGB_565
+                ColorFormat.ARGB8888 -> Bitmap.Config.ARGB_8888
             }
             val bitmap = Bitmap.createBitmap(width, height, bitmapConfig)
-            bitmap.copyPixelsFromBuffer(ByteBuffer.wrap(pixelsBytes))
+
+            val bytesPerPixel = when (colorFormat) {
+                ColorFormat.RGB565 -> 2
+                ColorFormat.ARGB8888 -> 4
+            }
+            val expectedStride = width * bytesPerPixel
+
+            if (bitmap.rowBytes == expectedStride) {
+                bitmap.copyPixelsFromBuffer(ByteBuffer.wrap(pixelsBytes))
+            } else {
+                // Handle stride mismatch (padding)
+                val targetBuffer = ByteBuffer.allocate(bitmap.byteCount)
+                val srcBuffer = ByteBuffer.wrap(pixelsBytes)
+                val rowBytes = bitmap.rowBytes
+                val rowBuffer = ByteArray(expectedStride)
+
+                for (i in 0 until height) {
+                    srcBuffer.get(rowBuffer)
+                    targetBuffer.put(rowBuffer)
+                    // Skip padding bytes in target
+                    if (rowBytes > expectedStride) {
+                        targetBuffer.position(targetBuffer.position() + (rowBytes - expectedStride))
+                    }
+                }
+                targetBuffer.rewind()
+                bitmap.copyPixelsFromBuffer(targetBuffer)
+            }
 
             val time = System.currentTimeMillis() - start
             log(Log.INFO, "decodeImage() finished in $time msec")
@@ -183,11 +209,21 @@ class Jp2kDecoder(
                 return output;
             };
 
-            globalThis.decodeJ2K = function(dataArrayString, maxPixels, maxHeapSize, colorFormat) {
+            globalThis.hexToBytes = function(hex) {
+                const len = hex.length;
+                if (len === 0) return new Uint8Array(0);
+                const bytes = new Uint8Array(len / 2);
+                for (let i = 0; i < len; i += 2) {
+                    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
+                }
+                return bytes;
+            };
+
+            globalThis.decodeJ2K = function(dataHexString, maxPixels, maxHeapSize, colorFormat) {
                 try {
                     const exports = wasmInstance.exports;
 
-                    const encodedBuffer = new Uint8Array(dataArrayString);
+                    const encodedBuffer = globalThis.hexToBytes(dataHexString);
 
                     // 渡されたデータの長さをチェック
                     const dataLength = encodedBuffer.length;

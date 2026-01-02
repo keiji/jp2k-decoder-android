@@ -81,7 +81,7 @@ static opj_image_t* decode_internal(uint8_t* data, uint32_t data_len, OPJ_CODEC_
 }
 
 static opj_image_t* decode_opj(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint32_t max_heap_size, int color_format) {
-    uint32_t divider = (color_format == COLOR_FORMAT_RGB565) ? 3 : 4;
+    uint32_t divider = (color_format == COLOR_FORMAT_RGB565) ? 2 : 4;
     uint32_t max_input_size = max_heap_size / divider;
 
     if (data_len < MIN_INPUT_SIZE || data_len > max_input_size) {
@@ -116,50 +116,37 @@ static int32_t* get_alpha_component(opj_image_t* image) {
 }
 
 static void write_pixels_argb8888(uint8_t* dest, int32_t* r, int32_t* g, int32_t* b, int32_t* a, uint32_t count) {
-    // ARGB8888: A R G B (byte order in memory for Java int packing 0xAARRGGBB? Wait.)
-    // Java int 0xAARRGGBB on LE machine is stored as B G R A? No.
-    // int color = (A << 24) | (B << 16) | (G << 8) | R
-    // This int is 0xAABBGGRR.
-    // On LE machine, bytes are: RR GG BB AA.
-    // So we write R, G, B, A.
-    for (uint32_t i = 0; i < count; i++) {
-        uint8_t alpha = (a != NULL) ? (uint8_t)a[i] : 0xFF;
-        *dest++ = (uint8_t)r[i];
-        *dest++ = (uint8_t)g[i];
-        *dest++ = (uint8_t)b[i];
-        *dest++ = alpha;
+    // ARGB8888: R G B A (Byte order)
+    if (a != NULL) {
+        for (uint32_t i = 0; i < count; i++) {
+            *dest++ = (uint8_t)r[i];
+            *dest++ = (uint8_t)g[i];
+            *dest++ = (uint8_t)b[i];
+            *dest++ = (uint8_t)a[i];
+        }
+    } else {
+        for (uint32_t i = 0; i < count; i++) {
+            *dest++ = (uint8_t)r[i];
+            *dest++ = (uint8_t)g[i];
+            *dest++ = (uint8_t)b[i];
+            *dest++ = 0xFF;
+        }
     }
 }
 
 static void write_pixels_rgb565(uint8_t* dest, int32_t* r, int32_t* g, int32_t* b, uint32_t count) {
-    // RGB565: (R & 0x1f) << 11 | (G & 0x3f) << 5 | (B & 0x1f)
-    // 5 bits R, 6 bits G, 5 bits B.
-    // Short is 16 bits.
-    // LE Storage: Low byte, High byte.
-    // Value = RRRR RGGG GGGB BBBB
-    // Low Byte (bits 0-7): GGGB BBBB -> (G << 5) | B ?
-    // Wait. Value = (R << 11) | (G << 5) | B.
-    // Bits: 15..11 (R), 10..5 (G), 4..0 (B).
-    // Low Byte (0..7): Bits 0..7.
-    // Bit 0..4 is B (5 bits). Bit 5..7 is low 3 bits of G.
-    // So Low Byte = (G & 0x7) << 5 | (B & 0x1F) ?
-    // Wait. (G << 5) & 0xE0 | B.
-    // High Byte (8..15): Bits 8..15.
-    // Bit 8..10 is high 3 bits of G. Bit 11..15 is R.
-    // So High Byte = (R << 3) | (G >> 3).
-
-    // BUT, inputs r,g,b are 8-bit (0-255).
-    // So we need to scale them down.
-    // R (8) -> 5 bits: R >> 3
-    // G (8) -> 6 bits: G >> 2
-    // B (8) -> 5 bits: B >> 3
+    // RGB565: 16-bit packed pixel.
+    // Format: RRRRRGGG GGGBBBBB (5-6-5 bits)
+    // R: 5 bits, G: 6 bits, B: 5 bits.
+    // Stored in Little Endian (Low Byte, High Byte).
 
     uint16_t* ptr = (uint16_t*)dest;
 
     for (uint32_t i = 0; i < count; i++) {
-        uint16_t red = ((uint16_t)r[i] >> 3) & 0x1F;
-        uint16_t green = ((uint16_t)g[i] >> 2) & 0x3F;
-        uint16_t blue = ((uint16_t)b[i] >> 3) & 0x1F;
+        // Scale 8-bit components to 5 or 6 bits
+        uint16_t red = ((uint16_t)r[i] >> 3) & 0x1F;   // 8 -> 5 bits
+        uint16_t green = ((uint16_t)g[i] >> 2) & 0x3F; // 8 -> 6 bits
+        uint16_t blue = ((uint16_t)b[i] >> 3) & 0x1F;  // 8 -> 5 bits
 
         uint16_t color = (red << 11) | (green << 5) | blue;
         *ptr++ = color; // Stores as LE automatically

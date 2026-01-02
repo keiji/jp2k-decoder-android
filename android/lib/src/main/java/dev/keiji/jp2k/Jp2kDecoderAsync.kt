@@ -139,17 +139,42 @@ class Jp2kDecoderAsync(
 
                 log(Log.INFO, "Output data length: ${pixelsBytes.size}")
 
-                val bitmapConfig = if (colorFormat == ColorFormat.RGB565) {
-                    Bitmap.Config.RGB_565
-                } else {
-                    Bitmap.Config.ARGB_8888
+                val bitmapConfig = when (colorFormat) {
+                    ColorFormat.RGB565 -> Bitmap.Config.RGB_565
+                    ColorFormat.ARGB8888 -> Bitmap.Config.ARGB_8888
                 }
 
                 val bitmap = Bitmap.createBitmap(width, height, bitmapConfig)
                 if (bitmap == null) {
                     throw IllegalStateException("Bitmap decoding failed (returned null).")
                 }
-                bitmap.copyPixelsFromBuffer(ByteBuffer.wrap(pixelsBytes))
+
+                val bytesPerPixel = when (colorFormat) {
+                    ColorFormat.RGB565 -> 2
+                    ColorFormat.ARGB8888 -> 4
+                }
+                val expectedStride = width * bytesPerPixel
+
+                if (bitmap.rowBytes == expectedStride) {
+                    bitmap.copyPixelsFromBuffer(ByteBuffer.wrap(pixelsBytes))
+                } else {
+                    // Handle stride mismatch (padding)
+                    val targetBuffer = ByteBuffer.allocate(bitmap.byteCount)
+                    val srcBuffer = ByteBuffer.wrap(pixelsBytes)
+                    val rowBytes = bitmap.rowBytes
+                    val rowBuffer = ByteArray(expectedStride)
+
+                    for (i in 0 until height) {
+                        srcBuffer.get(rowBuffer)
+                        targetBuffer.put(rowBuffer)
+                        // Skip padding bytes in target
+                        if (rowBytes > expectedStride) {
+                            targetBuffer.position(targetBuffer.position() + (rowBytes - expectedStride))
+                        }
+                    }
+                    targetBuffer.rewind()
+                    bitmap.copyPixelsFromBuffer(targetBuffer)
+                }
 
                 val time = System.currentTimeMillis() - start
                 log(Log.INFO, "decodeImage() finished in $time msec")
