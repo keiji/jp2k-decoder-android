@@ -1,5 +1,7 @@
 import org.gradle.api.publish.maven.MavenPublication
 
+version = "0.1.0"
+
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
@@ -12,8 +14,8 @@ plugins {
 
 nmcpAggregation {
     centralPortal {
-        username = System.getenv("OSSRH_USERNAME")
-        password = System.getenv("OSSRH_PASSWORD")
+        username = System.getenv("CENTRAL_PORTAL_USERNAME")
+        password = System.getenv("CENTRAL_PORTAL_PASSWORD")
     }
 }
 
@@ -48,7 +50,19 @@ android {
     }
 }
 
-version = "0.1.0"
+dependencies {
+    nmcpAggregation(project)
+
+    implementation(libs.androidx.core.ktx)
+
+    implementation(libs.androidx.javascriptengine)
+    implementation(libs.kotlinx.coroutines.android)
+
+    testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(libs.kotlinx.coroutines.test)
+}
 
 // Register a custom Javadoc Jar task using Dokka's HTML output
 // Note: dokkaJavadocJar might exist if configured by plugin, but we explicitly define one here to be sure it uses V2 task
@@ -62,7 +76,6 @@ publishing {
         register<MavenPublication>("release") {
             groupId = "dev.keiji.jp2k"
             artifactId = "jp2k-decoder"
-            version = "0.1.0"
 
             afterEvaluate {
                 from(components["release"])
@@ -72,12 +85,12 @@ publishing {
 
             pom {
                 name.set("JPEG2000 Decoder for Android")
-                description.set("This library provides functionality to decode JPEG2000 images on Android.")
+                description.set("The library provides functionality to decode JPEG2000 images on Android.")
                 url.set("https://github.com/keiji/jp2k-decoder-android")
                 licenses {
                     license {
-                        name.set("The Apache License, Version 2.0")
-                        url.set("http://www.apache.org/licenses/LICENSE-2.0.txt")
+                        name.set("The 2-Clause BSD License")
+                        url.set("https://opensource.org/license/bsd-2-clause")
                     }
                 }
                 developers {
@@ -90,42 +103,23 @@ publishing {
                 scm {
                     connection.set("scm:git:git://github.com/keiji/jp2k-decoder-android.git")
                     developerConnection.set("scm:git:ssh://git@github.com/keiji/jp2k-decoder-android.git")
-                    url.set("https://github.com/keiji/jp2k-decoder-android")
+                    url.set("https://github.com/keiji/jp2k-decoder-android.git")
                 }
             }
         }
     }
     repositories {
         maven {
-            name = "sonatype"
-            url = uri("https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/")
+            name = "CentralPortal"
+            url = uri("https://central.sonatype.com/api/v1/publisher")
             credentials {
-                username = System.getenv("OSSRH_USERNAME")
-                password = System.getenv("OSSRH_PASSWORD")
+                username = System.getenv("CENTRAL_PORTAL_USERNAME")
+                password = System.getenv("CENTRAL_PORTAL_PASSWORD")
             }
         }
     }
 }
-
 signing {
-    val signingKey = System.getenv("SIGNING_KEY")
-    val signingPassword = System.getenv("SIGNING_PASSWORD")
-    if (!signingKey.isNullOrEmpty() && !signingPassword.isNullOrEmpty()) {
-        useInMemoryPgpKeys(signingKey, signingPassword)
-        sign(publishing.publications["release"])
-    }
-}
-
-dependencies {
-    nmcpAggregation(project)
-
-    implementation(libs.androidx.core.ktx)
-
-    implementation(libs.androidx.javascriptengine)
-    implementation(libs.kotlinx.coroutines.android)
-
-    testImplementation(libs.junit)
-    androidTestImplementation(libs.androidx.junit)
-    androidTestImplementation(libs.androidx.espresso.core)
-    androidTestImplementation(libs.kotlinx.coroutines.test)
+    useGpgCmd()
+    sign(publishing.publications)
 }
