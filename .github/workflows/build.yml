@@ -47,6 +47,17 @@ jobs:
         working-directory: android
         run: ./gradlew assembleDebug
 
+      - name: Generate Documentation
+        working-directory: android
+        run: ./gradlew :lib:dokkaHtml
+
+      - name: Upload Documentation
+        uses: actions/upload-artifact@v4
+        with:
+          name: dokka-html
+          path: android/lib/build/dokka/html
+          retention-days: 1
+
   wasm:
     runs-on: ubuntu-latest
     permissions:

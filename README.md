@@ -61,3 +61,14 @@ Unit tests for the C wrapper logic (e.g., BMP conversion) can be run without Ems
 ```bash
 bash test/run_tests.sh
 ```
+
+## Generate Documentation
+
+To generate the API documentation (KDoc), run the following command:
+
+```bash
+cd android
+./gradlew :lib:dokkaHtml
+```
+
+The generated documentation will be available in `android/lib/build/dokka/html`.
