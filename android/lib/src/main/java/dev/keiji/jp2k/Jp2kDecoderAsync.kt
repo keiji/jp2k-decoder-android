@@ -303,6 +303,50 @@ class Jp2kDecoderAsync(
     }
 
     /**
+     * Retrieves memory usage statistics from the JS/WASM environment.
+     *
+     * @param callback The callback to receive the [MemoryUsage].
+     */
+    fun getMemoryUsage(callback: Callback<MemoryUsage>) {
+        synchronized(lock) {
+            if (state != State.Initialized && state != State.Decoding) {
+                callback.onError(IllegalStateException("Decoder is not ready (Current state: $state)"))
+                return
+            }
+        }
+
+        backgroundExecutor.execute {
+            synchronized(executionLock) {
+                synchronized(lock) {
+                    if (state == State.Terminated) {
+                        callback.onError(CancellationException("Decoder was released."))
+                        return@execute
+                    }
+                }
+
+                try {
+                    val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
+                    val resultFuture = isolate.evaluateJavaScriptAsync("globalThis.getMemoryUsage()")
+
+                    val jsonResult =
+                        resultFuture?.get() ?: throw IllegalStateException("Result Future is null")
+                    val root = JSONObject(jsonResult)
+
+                    val usage = MemoryUsage(
+                        wasmHeapSizeBytes = root.optLong("wasmHeapSizeBytes", 0),
+                        jsHeapSizeLimit = if (root.has("jsHeapSizeLimit")) root.getLong("jsHeapSizeLimit") else null,
+                        totalJSHeapSize = if (root.has("totalJSHeapSize")) root.getLong("totalJSHeapSize") else null,
+                        usedJSHeapSize = if (root.has("usedJSHeapSize")) root.getLong("usedJSHeapSize") else null,
+                    )
+                    callback.onSuccess(usage)
+                } catch (e: Exception) {
+                    callback.onError(e)
+                }
+            }
+        }
+    }
+
+    /**
      * Releases resources held by the decoder.
      *
      * This closes the JavaScript isolate and shuts down the background executor.
@@ -399,6 +443,29 @@ class Jp2kDecoderAsync(
                 } catch (e) {
                     return JSON.stringify({ error: e.toString() });
                 }
+            };
+
+            globalThis.getMemoryUsage = function() {
+                let wasmHeap = 0;
+                try {
+                    if (typeof wasmInstance !== 'undefined' && wasmInstance.exports && wasmInstance.exports.memory) {
+                        wasmHeap = wasmInstance.exports.memory.buffer.byteLength;
+                    }
+                } catch (e) {}
+
+                let memory = {};
+                try {
+                    if (globalThis.performance && globalThis.performance.memory) {
+                        memory = globalThis.performance.memory;
+                    }
+                } catch (e) {}
+
+                return JSON.stringify({
+                    wasmHeapSizeBytes: wasmHeap,
+                    jsHeapSizeLimit: memory.jsHeapSizeLimit,
+                    totalJSHeapSize: memory.totalJSHeapSize,
+                    usedJSHeapSize: memory.usedJSHeapSize
+                });
             };
         """
     }

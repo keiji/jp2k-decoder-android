@@ -18,7 +18,7 @@ class Jp2kDecoderTest {
 
     @Before
     fun setUp() {
-        decoder = Jp2kDecoder(context)
+        decoder = Jp2kDecoder()
     }
 
     @After
@@ -28,7 +28,7 @@ class Jp2kDecoderTest {
 
     @Test
     fun testInit() = runTest {
-        decoder.init()
+        decoder.init(context)
     }
 
     @Test
@@ -37,12 +37,20 @@ class Jp2kDecoderTest {
             it.readBytes()
         }
 
-        decoder.init()
+        decoder.init(context)
         val bitmap = decoder.decodeImage(bytes)
 
         assertNotNull(bitmap)
         // Based on hex dump analysis: Height=480, Width=640
         assertEquals(640, bitmap.width)
         assertEquals(480, bitmap.height)
+    }
+
+    @Test
+    fun testGetMemoryUsage() = runTest {
+        decoder.init(context)
+        val usage = decoder.getMemoryUsage()
+        assertNotNull(usage)
+        assert(usage.wasmHeapSizeBytes > 0)
     }
 }
