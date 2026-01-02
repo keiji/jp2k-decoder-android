@@ -10,9 +10,10 @@ Androidの `JavaScriptEngine` (Jetpack) を使用して、WASM化されたOpenJP
 ### 受け持つ処理
 *   **WASMのロードと初期化**: `openjpeg_core.wasm` をアセットから読み込み、`JavaScriptIsolate` 上でインスタンス化します。
 *   **データの受け渡し**:
-    *   入力: JPEG2000のバイト配列をJavaScriptの配列リテラルとしてWASM側に渡します。
+    *   入力: JPEG2000のバイト配列をJavaScriptの配列リテラル（またはHex文字列）としてWASM側に渡します。
     *   出力: WASM側から返却されたJSON文字列（エラーコードまたはBMP画像のHex文字列）をパースします。
 *   **画像変換**: 返却されたBMP形式のHex文字列をバイト配列に変換し、`BitmapFactory` を使用してAndroidの `Bitmap` オブジェクトを生成します。
+    *   `ColorFormat` 指定 (RGB565 / ARGB8888) に応じて `BitmapFactory.Options` を設定し、適切なフォーマットで Bitmap を生成します。
 *   **ライフサイクル管理**: `init()`, `release()` によるサンドボックスのリソース管理を行います。
 *   **設定管理**: `Config` クラスを通じて、最大ヒープサイズや最大ピクセル数などのパラメータを管理・適用します。
 
@@ -29,11 +30,16 @@ OpenJPEGライブラリをWASMから扱いやすくするためのラッパー�
 ### 受け持つ処理
 *   **インターフェース公開**: JavaScriptから呼び出し可能な関数 `decodeToBmp` および `getLastError` をエクスポートします。
 *   **フォーマット判定**: 入力データのシグネチャを確認し、JP2形式かJ2Kコードストリームかを判定します。
-*   **BMP変換**: OpenJPEGによってデコードされた `opj_image_t` 構造体（各コンポーネントごとのデータ）を、Androidで扱いやすい 32bpp (BGRA) のBMPファイルフォーマットのバイト列に変換します。
+*   **BMP変換**: OpenJPEGによってデコードされた `opj_image_t` 構造体（各コンポーネントごとのデータ）を、指定された `color_format` に応じた BMPファイルフォーマットのバイト列に変換します。
+    *   `ARGB8888`: 32bpp (BGRA) 標準BMP。
+    *   `RGB565`: 16bpp (Bitfields) BMP。
 *   **メモリ管理**: デコード結果のBMPデータを格納するバッファの確保(`malloc`)を行います（JavaScript側で `free` されることを期待します）。
 
 ### 入力値のチェック・バリデーション
-*   **入力サイズ制限**: `max_heap_size` (Kotlin側から渡される設定値) に基づき、最大入力データサイズを動的に計算 (`max_heap_size / 4`) し、これを超える場合は `ERR_INPUT_DATA_SIZE` を返します。
+*   **入力サイズ制限**: `max_heap_size` (Kotlin側から渡される設定値) と指定された `color_format` に基づき、最大入力データサイズを動的に計算します。
+    *   `ARGB8888`: `max_heap_size / 4`
+    *   `RGB565`: `max_heap_size / 2`
+    *   これを超える場合は `ERR_INPUT_DATA_SIZE` を返します。
 *   **ピクセル数制限**: デコードされた画像の総ピクセル数（幅×高さ）が `max_pixels` (Kotlin側から渡される設定値) を超える場合、`ERR_PIXEL_DATA_SIZE` を返し、処理を中断します。
 *   **コンポーネント数**: 画像が少なくとも3つのコンポーネント（RGB）を持っているか確認します。不足している場合はエラーとします。
 
