@@ -57,6 +57,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Run C Wrapper Tests
+        run: bash test/run_tests.sh
+
       - name: Setup Emscripten
         uses: mymindstorm/setup-emsdk@v14
 

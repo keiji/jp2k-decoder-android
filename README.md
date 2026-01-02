@@ -51,3 +51,11 @@ emcc -O3 wrapper.c \
     -s EXPORTED_FUNCTIONS='["_decodeToBmp", "_malloc", "_free", "_getLastError"]' \
     -o openjpeg_core.wasm
 ```
+
+## Running Tests
+
+Unit tests for the C wrapper logic (e.g., BMP conversion) can be run without Emscripten using GCC or Clang.
+
+```bash
+bash test/run_tests.sh
+```
