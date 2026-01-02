@@ -78,7 +78,7 @@ jobs:
               -s STANDALONE_WASM \
               --no-entry \
               -s ALLOW_MEMORY_GROWTH=1 \
-              -s EXPORTED_FUNCTIONS='["_decode", "_malloc", "_free", "_getLastError"]' \
+              -s EXPORTED_FUNCTIONS='["_decodeToBmp", "_malloc", "_free", "_getLastError"]' \
               -o openjpeg_core.wasm
 
       - name: Copy WASM to assets

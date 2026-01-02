@@ -5,11 +5,9 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Log
 import androidx.core.content.ContextCompat
-import androidx.core.graphics.createBitmap
 import androidx.javascriptengine.JavaScriptIsolate
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.json.JSONObject
-import java.nio.ByteBuffer
 import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -103,7 +101,6 @@ class Jp2kDecoder(
         if (j2kData.size < MIN_INPUT_SIZE) {
             throw IllegalArgumentException("Input data is too short")
         }
-        // MAX_INPUT_SIZE check is now handled in WASM based on maxHeapSizeBytes
 
         try {
             val jsIsolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
@@ -133,47 +130,22 @@ class Jp2kDecoder(
                 throw Jp2kException(Jp2kError.Unknown, errorMsg)
             }
 
-            val width = root.getInt("width")
-            val height = root.getInt("height")
-            val pixelsHex = root.getString("pixels")
+            val bmpHex = root.getString("bmp")
 
             @OptIn(ExperimentalStdlibApi::class)
-            val pixelsBytes = pixelsHex.hexToByteArray()
+            val bmpBytes = bmpHex.hexToByteArray()
 
-            log(Log.INFO, "Output data length: ${pixelsBytes.size}")
+            log(Log.INFO, "Output data length: ${bmpBytes.size}")
 
-            val bitmapConfig = when (colorFormat) {
-                ColorFormat.RGB565 -> Bitmap.Config.RGB_565
-                ColorFormat.ARGB8888 -> Bitmap.Config.ARGB_8888
-            }
-            val bitmap = createBitmap(width, height, bitmapConfig)
-
-            val bytesPerPixel = when (colorFormat) {
-                ColorFormat.RGB565 -> 2
-                ColorFormat.ARGB8888 -> 4
-            }
-            val expectedStride = width * bytesPerPixel
-
-            if (bitmap.rowBytes == expectedStride) {
-                bitmap.copyPixelsFromBuffer(ByteBuffer.wrap(pixelsBytes))
-            } else {
-                // Handle stride mismatch (padding)
-                val targetBuffer = ByteBuffer.allocate(bitmap.byteCount)
-                val srcBuffer = ByteBuffer.wrap(pixelsBytes)
-                val rowBytes = bitmap.rowBytes
-                val rowBuffer = ByteArray(expectedStride)
-
-                for (i in 0 until height) {
-                    srcBuffer.get(rowBuffer)
-                    targetBuffer.put(rowBuffer)
-                    // Skip padding bytes in target
-                    if (rowBytes > expectedStride) {
-                        targetBuffer.position(targetBuffer.position() + (rowBytes - expectedStride))
-                    }
+            val options = BitmapFactory.Options().apply {
+                inPreferredConfig = when (colorFormat) {
+                    ColorFormat.RGB565 -> Bitmap.Config.RGB_565
+                    ColorFormat.ARGB8888 -> Bitmap.Config.ARGB_8888
                 }
-                targetBuffer.rewind()
-                bitmap.copyPixelsFromBuffer(targetBuffer)
             }
+
+            val bitmap = BitmapFactory.decodeByteArray(bmpBytes, 0, bmpBytes.size, options)
+                ?: throw IllegalStateException("Bitmap decoding failed (returned null).")
 
             val time = System.currentTimeMillis() - start
             log(Log.INFO, "decodeImage() finished in $time msec")
@@ -226,7 +198,6 @@ class Jp2kDecoder(
 
                     const encodedBuffer = globalThis.hexToBytes(dataHexString);
 
-                    // 渡されたデータの長さをチェック
                     const dataLength = encodedBuffer.length;
                     if (dataLength === 0) return JSON.stringify({ errorCode: -1 });
             
@@ -235,38 +206,27 @@ class Jp2kDecoder(
                     
                     heap.set(encodedBuffer, inputPtr);
                     
-                    // Call the new C function decode with colorFormat
-                    const resultPtr = exports.decode(inputPtr, encodedBuffer.length, maxPixels, maxHeapSize, colorFormat);
+                    // Call decodeToBmp (exported as _decodeToBmp or similar in WASM, mapped here)
+                    const bmpPtr = exports.decodeToBmp(inputPtr, encodedBuffer.length, maxPixels, maxHeapSize, colorFormat);
 
-                    if (resultPtr === 0) {
+                    if (bmpPtr === 0) {
                         const errorCode = exports.getLastError();
                         exports.free(inputPtr);
                         return JSON.stringify({ errorCode: errorCode });
                     }
                     
-                    // The result buffer has [Width(4)][Height(4)][Pixels...]
-                    // Little endian
+                    // BMP file size at offset 2
                     const view = new DataView(exports.memory.buffer);
-                    const width = view.getUint32(resultPtr, true);
-                    const height = view.getUint32(resultPtr + 4, true);
+                    const bmpSize = view.getUint32(bmpPtr + 2, true);
 
-                    const bytesPerPixel = (colorFormat === 565) ? 2 : 4;
-                    const pixelDataSize = width * height * bytesPerPixel;
+                    const bmpBuffer = new Uint8Array(exports.memory.buffer, bmpPtr, bmpSize);
+                    const hexString = globalThis.bytesToHex(bmpBuffer);
 
-                    // Create a Uint8Array view of the pixel data
-                    // Offset is 8
-                    const pixelBuffer = new Uint8Array(exports.memory.buffer, resultPtr + 8, pixelDataSize);
-
-                    const hexString = globalThis.bytesToHex(pixelBuffer);
-
-                    // Free the result buffer allocated in C
-                    exports.free(resultPtr);
+                    exports.free(bmpPtr);
                     exports.free(inputPtr);
                 
                     return JSON.stringify({
-                        width: width,
-                        height: height,
-                        pixels: hexString
+                        bmp: hexString
                     });
                 } catch (e) {
                     return JSON.stringify({ error: e.toString() });
