@@ -2,6 +2,7 @@ import org.gradle.api.publish.maven.MavenPublication
 
 plugins {
     alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.dokka)
     `maven-publish`
     signing
@@ -28,20 +29,13 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
-
     publishing {
         singleVariant("release") {
             withSourcesJar()
         }
-    }
-}
-
-dokka {
-    dokkaSourceSets.register("main") {
-        sourceRoots.from(file("src/main/java"))
     }
 }
 
