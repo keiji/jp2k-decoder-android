@@ -19,9 +19,9 @@ class Jp2kDecoderAsyncValidationTest {
 
     @Before
     fun setUp() {
-        decoder = Jp2kDecoderAsync(context)
+        decoder = Jp2kDecoderAsync()
         val latch = CountDownLatch(1)
-        decoder.init(object : Callback<Unit> {
+        decoder.init(context, object : Callback<Unit> {
             override fun onSuccess(result: Unit) {
                 latch.countDown()
             }

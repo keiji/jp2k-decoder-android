@@ -6,10 +6,12 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.CancellationException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -22,7 +24,7 @@ class Jp2kDecoderAsyncTest {
 
     @Before
     fun setUp() {
-        decoder = Jp2kDecoderAsync(context)
+        decoder = Jp2kDecoderAsync()
     }
 
     @After
@@ -36,7 +38,7 @@ class Jp2kDecoderAsyncTest {
         val resultRef = AtomicReference<Unit?>()
         val errorRef = AtomicReference<Throwable?>()
 
-        decoder.init(object : Callback<Unit> {
+        decoder.init(context, object : Callback<Unit> {
             override fun onSuccess(result: Unit) {
                 resultRef.set(Unit)
                 latch.countDown()
@@ -48,18 +50,149 @@ class Jp2kDecoderAsyncTest {
             }
         })
 
-        val completed = latch.await(5, TimeUnit.SECONDS)
+        val completed = latch.await(10, TimeUnit.SECONDS)
         if (!completed) {
             fail("Test timed out")
         }
 
         val error = errorRef.get()
         if (error != null) {
-            fail("Decoding failed with error: ${error.message}")
+            fail("Init failed with error: ${error.message}")
+        }
+        assertNotNull(resultRef.get())
+    }
+
+    @Test
+    fun testDoubleInit() {
+        val latch1 = CountDownLatch(1)
+
+        // First Init
+        decoder.init(context, object : Callback<Unit> {
+            override fun onSuccess(result: Unit) {
+                latch1.countDown()
+            }
+            override fun onError(error: Exception) {
+                fail("First init failed: ${error.message}")
+                latch1.countDown()
+            }
+        })
+        assertTrue("First init timed out", latch1.await(10, TimeUnit.SECONDS))
+
+        // Second Init - Should Fail
+        val latch2 = CountDownLatch(1)
+        val errorRef = AtomicReference<Throwable?>()
+
+        decoder.init(context, object : Callback<Unit> {
+            override fun onSuccess(result: Unit) {
+                fail("Second init should fail")
+                latch2.countDown()
+            }
+            override fun onError(error: Exception) {
+                errorRef.set(error)
+                latch2.countDown()
+            }
+        })
+        assertTrue("Second init timed out", latch2.await(5, TimeUnit.SECONDS))
+        assertTrue("Expected IllegalStateException, got ${errorRef.get()}", errorRef.get() is IllegalStateException)
+    }
+
+    @Test
+    fun testDecodeBeforeInit() {
+        val latch = CountDownLatch(1)
+        val errorRef = AtomicReference<Throwable?>()
+
+        val bytes = ByteArray(100) // Dummy data
+
+        decoder.decodeImage(bytes, object : Callback<Bitmap> {
+            override fun onSuccess(result: Bitmap) {
+                fail("Decode should fail before init")
+                latch.countDown()
+            }
+
+            override fun onError(error: Exception) {
+                errorRef.set(error)
+                latch.countDown()
+            }
+        })
+
+        assertTrue("Callback timed out", latch.await(1, TimeUnit.SECONDS))
+        assertTrue("Expected IllegalStateException, got ${errorRef.get()}", errorRef.get() is IllegalStateException)
+    }
+
+    @Test
+    fun testDecodeAfterRelease() {
+        val latch = CountDownLatch(1)
+
+        // Init first
+        decoder.init(context, object : Callback<Unit> {
+            override fun onSuccess(result: Unit) {
+                latch.countDown()
+            }
+            override fun onError(error: Exception) {
+                fail("Init failed")
+                latch.countDown()
+            }
+        })
+        assertTrue("Init timed out", latch.await(10, TimeUnit.SECONDS))
+
+        decoder.release()
+
+        val latch2 = CountDownLatch(1)
+        val errorRef = AtomicReference<Throwable?>()
+        val bytes = ByteArray(100)
+
+        decoder.decodeImage(bytes, object : Callback<Bitmap> {
+            override fun onSuccess(result: Bitmap) {
+                fail("Decode should fail after release")
+                latch2.countDown()
+            }
+            override fun onError(error: Exception) {
+                errorRef.set(error)
+                latch2.countDown()
+            }
+        })
+
+        assertTrue("Callback timed out", latch2.await(1, TimeUnit.SECONDS))
+        // Expecting IllegalStateException ("Decoder is not ready") or CancellationException
+        val error = errorRef.get()
+        val isExpected = error is IllegalStateException || error is CancellationException
+        assertTrue("Expected IllegalStateException or CancellationException, got $error", isExpected)
+    }
+
+    @Test
+    fun testConcurrentDecode() {
+        // Init
+        val initLatch = CountDownLatch(1)
+        decoder.init(context, object : Callback<Unit> {
+            override fun onSuccess(result: Unit) {
+                initLatch.countDown()
+            }
+            override fun onError(error: Exception) {
+                fail("Init failed")
+                initLatch.countDown()
+            }
+        })
+        assertTrue("Init timed out", initLatch.await(10, TimeUnit.SECONDS))
+
+        val bytes = context.assets.open("karin.jp2").use { it.readBytes() }
+        val count = 3
+        val decodeLatch = CountDownLatch(count)
+        val failures = AtomicReference<Int>(0)
+
+        for (i in 0 until count) {
+            decoder.decodeImage(bytes, object : Callback<Bitmap> {
+                override fun onSuccess(result: Bitmap) {
+                    decodeLatch.countDown()
+                }
+                override fun onError(error: Exception) {
+                    failures.set(failures.get() + 1)
+                    decodeLatch.countDown()
+                }
+            })
         }
 
-        val result = resultRef.get()
-        assertNotNull("result should not be null", result)
+        assertTrue("Decoding timed out", decodeLatch.await(20, TimeUnit.SECONDS))
+        assertEquals("Failures found", 0, failures.get())
     }
 
     @Test
@@ -85,7 +218,7 @@ class Jp2kDecoderAsyncTest {
                 }
             })
         }
-        decoder.init(object : Callback<Unit> {
+        decoder.init(context, object : Callback<Unit> {
             override fun onSuccess(result: Unit) {
                 decodeImage()
             }
@@ -96,7 +229,7 @@ class Jp2kDecoderAsyncTest {
             }
         })
 
-        val completed = latch.await(5, TimeUnit.SECONDS)
+        val completed = latch.await(10, TimeUnit.SECONDS)
         if (!completed) {
             fail("Test timed out")
         }

@@ -1,6 +1,5 @@
 package dev.keiji.jp2k
 
-import android.graphics.Bitmap
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.test.runTest
@@ -17,7 +16,7 @@ class Jp2kDecoderValidationTest {
 
     @Before
     fun setUp() {
-        decoder = Jp2kDecoder(context)
+        decoder = Jp2kDecoder()
     }
 
     @After
@@ -27,12 +26,14 @@ class Jp2kDecoderValidationTest {
 
     @Test(expected = IllegalArgumentException::class)
     fun testDecodeTooSmall() = runTest {
+        decoder.init(context)
         val bytes = ByteArray(10) // Less than MIN_INPUT_SIZE (12)
         decoder.decodeImage(bytes)
     }
 
     @Test(expected = IllegalArgumentException::class)
     fun testDecodeZeroLength() = runTest {
+        decoder.init(context)
         val bytes = ByteArray(0)
         decoder.decodeImage(bytes)
     }
