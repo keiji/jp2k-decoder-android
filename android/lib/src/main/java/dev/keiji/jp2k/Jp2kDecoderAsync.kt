@@ -235,13 +235,21 @@ class Jp2kDecoderAsync(
                 log(Log.INFO, "decodeImage() finished in $time msec")
 
                 restoreStateAfterDecode()
-                callback.onSuccess(bitmap)
+                if (state == State.Terminated) {
+                    callback.onError(CancellationException("Decoder was released."))
+                } else {
+                    callback.onSuccess(bitmap)
+                }
 
             } catch (e: Exception) {
                 val time = System.currentTimeMillis() - start
                 log(Log.ERROR, "decodeImage() failed in $time msec. Error: ${e.message}")
                 restoreStateAfterDecode()
-                callback.onError(e)
+                if (state == State.Terminated) {
+                    callback.onError(CancellationException("Decoder was released."))
+                } else {
+                    callback.onError(e)
+                }
             }
         }
     }
@@ -270,24 +278,24 @@ class Jp2kDecoderAsync(
      * This closes the JavaScript isolate and shuts down the background executor.
      */
     fun release() {
+        var isolateToClose: JavaScriptIsolate? = null
+
         synchronized(lock) {
             if (state == State.Terminated) {
                 return
             }
             state = State.Terminated
+            isolateToClose = jsIsolate
+            jsIsolate = null
+        }
+
+        try {
+            isolateToClose?.close()
+        } catch (e: Exception) {
+            log(Log.ERROR, "Error closing isolate: ${e.message}")
         }
 
         if (backgroundExecutor is ExecutorService && !backgroundExecutor.isShutdown) {
-            backgroundExecutor.execute {
-                try {
-                    jsIsolate?.close()
-                    jsIsolate = null
-                } catch (e: Exception) {
-                    log(Log.ERROR, "Error closing isolate: ${e.message}")
-                }
-
-                // We share the sandbox future, so we do not close it here.
-            }
             backgroundExecutor.shutdown()
         }
     }
