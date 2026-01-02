@@ -94,20 +94,20 @@ class Jp2kDecoder(
         }
     }
 
-    suspend fun decodeImage(j2kData: ByteArray): Bitmap {
+    suspend fun decodeImage(j2kData: ByteArray, colorFormat: ColorFormat = ColorFormat.ARGB8888): Bitmap {
         val start = System.currentTimeMillis()
         log(Log.INFO, "Input data length: ${j2kData.size}")
 
         if (j2kData.size < MIN_INPUT_SIZE) {
             throw IllegalArgumentException("Input data is too short")
         }
-        // MAX_INPUT_SIZE check is now handled in WASM based on maxHeapSizeBytes
 
         try {
             val jsIsolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
 
-            val dataArrayString = j2kData.joinToString(",")
-            val script = "globalThis.decodeJ2K([$dataArrayString], ${config.maxPixels}, ${config.maxHeapSizeBytes});"
+            // Optimization: Use Hex string instead of joinToString(",") to reduce memory overhead and string size
+            val dataHexString = j2kData.toHexString()
+            val script = "globalThis.decodeJ2K('$dataHexString', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id});"
 
             val resultFuture = jsIsolate.evaluateJavaScriptAsync(script)
 
@@ -137,7 +137,15 @@ class Jp2kDecoder(
 
             log(Log.INFO, "Output data length: ${bmpBytes.size}")
 
-            val bitmap = BitmapFactory.decodeByteArray(bmpBytes, 0, bmpBytes.size)
+            val options = BitmapFactory.Options().apply {
+                inPreferredConfig = when (colorFormat) {
+                    ColorFormat.RGB565 -> Bitmap.Config.RGB_565
+                    ColorFormat.ARGB8888 -> Bitmap.Config.ARGB_8888
+                }
+            }
+
+            val bitmap = BitmapFactory.decodeByteArray(bmpBytes, 0, bmpBytes.size, options)
+                ?: throw IllegalStateException("Bitmap decoding failed (returned null).")
 
             val time = System.currentTimeMillis() - start
             log(Log.INFO, "decodeImage() finished in $time msec")
@@ -174,13 +182,22 @@ class Jp2kDecoder(
                 return output;
             };
 
-            globalThis.decodeJ2K = function(dataArrayString, maxPixels, maxHeapSize) {
+            globalThis.hexToBytes = function(hex) {
+                const len = hex.length;
+                if (len === 0) return new Uint8Array(0);
+                const bytes = new Uint8Array(len / 2);
+                for (let i = 0; i < len; i += 2) {
+                    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
+                }
+                return bytes;
+            };
+
+            globalThis.decodeJ2K = function(dataHexString, maxPixels, maxHeapSize, colorFormat) {
                 try {
                     const exports = wasmInstance.exports;
 
-                    const encodedBuffer = new Uint8Array(dataArrayString);
+                    const encodedBuffer = globalThis.hexToBytes(dataHexString);
 
-                    // 渡されたデータの長さをチェック
                     const dataLength = encodedBuffer.length;
                     if (dataLength === 0) return JSON.stringify({ errorCode: -1 });
             
@@ -189,8 +206,8 @@ class Jp2kDecoder(
                     
                     heap.set(encodedBuffer, inputPtr);
                     
-                    // Call the new C function decodeToBmp with maxHeapSize
-                    const bmpPtr = exports.decodeToBmp(inputPtr, encodedBuffer.length, maxPixels, maxHeapSize);
+                    // Call decodeToBmp (exported as _decodeToBmp or similar in WASM, mapped here)
+                    const bmpPtr = exports.decodeToBmp(inputPtr, encodedBuffer.length, maxPixels, maxHeapSize, colorFormat);
 
                     if (bmpPtr === 0) {
                         const errorCode = exports.getLastError();
@@ -198,16 +215,13 @@ class Jp2kDecoder(
                         return JSON.stringify({ errorCode: errorCode });
                     }
                     
-                    // The BMP file size is stored at offset 2 (4 bytes, little endian) in the BMP header
+                    // BMP file size at offset 2
                     const view = new DataView(exports.memory.buffer);
                     const bmpSize = view.getUint32(bmpPtr + 2, true);
 
-                    // Create a Uint8Array view of the BMP data
                     const bmpBuffer = new Uint8Array(exports.memory.buffer, bmpPtr, bmpSize);
-
                     const hexString = globalThis.bytesToHex(bmpBuffer);
 
-                    // Free the BMP buffer allocated in C
                     exports.free(bmpPtr);
                     exports.free(inputPtr);
                 
