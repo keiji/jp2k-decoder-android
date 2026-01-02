@@ -183,8 +183,53 @@ void test_rgb565() {
     printf("RGB565 Passed.\n");
 }
 
+void test_input_validation() {
+    printf("Testing Input Validation...\n");
+
+    uint8_t dummy_data[100] = {0};
+    uint8_t* result;
+
+    // Case 1: Input size too small (< MIN_INPUT_SIZE)
+    result = decodeToBmp(dummy_data, 11, 0, 1000, COLOR_FORMAT_ARGB8888);
+    assert(result == NULL);
+    assert(last_error == ERR_INPUT_DATA_SIZE);
+
+    // Case 2: ARGB8888 size check (data_len > max_heap / 4)
+    // max_heap = 100 -> max_input = 25
+    // input = 26 -> Error
+    result = decodeToBmp(dummy_data, 26, 0, 100, COLOR_FORMAT_ARGB8888);
+    assert(result == NULL);
+    assert(last_error == ERR_INPUT_DATA_SIZE);
+
+    // Case 3: ARGB8888 size check success boundary
+    // max_heap = 100 -> max_input = 25
+    // input = 25 -> OK (proceeds to decode, fails there)
+    result = decodeToBmp(dummy_data, 25, 0, 100, COLOR_FORMAT_ARGB8888);
+    assert(result == NULL);
+    // Since stubs opj_read_header returns false, we expect ERR_HEADER
+    // But verify it PASSED the size check (NOT ERR_INPUT_DATA_SIZE)
+    assert(last_error == ERR_HEADER);
+
+    // Case 4: RGB565 size check (data_len > max_heap / 2)
+    // max_heap = 100 -> max_input = 50
+    // input = 51 -> Error
+    result = decodeToBmp(dummy_data, 51, 0, 100, COLOR_FORMAT_RGB565);
+    assert(result == NULL);
+    assert(last_error == ERR_INPUT_DATA_SIZE);
+
+    // Case 5: RGB565 size check success boundary
+    // max_heap = 100 -> max_input = 50
+    // input = 50 -> OK (proceeds to decode)
+    result = decodeToBmp(dummy_data, 50, 0, 100, COLOR_FORMAT_RGB565);
+    assert(result == NULL);
+    assert(last_error == ERR_HEADER);
+
+    printf("Input Validation Passed.\n");
+}
+
 int main() {
     test_argb8888();
     test_rgb565();
+    test_input_validation();
     return 0;
 }
