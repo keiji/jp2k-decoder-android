@@ -108,16 +108,6 @@ publishing {
             }
         }
     }
-    repositories {
-        maven {
-            name = "CentralPortal"
-            url = uri("https://central.sonatype.com/api/v1/publisher")
-            credentials {
-                username = System.getenv("CENTRAL_PORTAL_USERNAME")
-                password = System.getenv("CENTRAL_PORTAL_PASSWORD")
-            }
-        }
-    }
 }
 signing {
     useGpgCmd()
