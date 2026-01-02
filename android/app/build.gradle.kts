@@ -5,16 +5,12 @@ plugins {
 
 android {
     namespace = "dev.keiji.j2k_wasm_sample"
-    compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
-    }
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "dev.keiji.j2k_wasm_sample"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0"
 

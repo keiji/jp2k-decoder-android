@@ -2,16 +2,13 @@ import org.jetbrains.dokka.gradle.DokkaTask
 
 plugins {
     alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.dokka)
 }
 
 android {
     namespace = "dev.keiji.jp2k"
-    compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
-    }
+    compileSdk = 35
 
     defaultConfig {
         minSdk = 26
@@ -45,10 +42,4 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.kotlinx.coroutines.test)
-}
-
-tasks.withType<DokkaTask>().configureEach {
-    dokkaSourceSets.configureEach {
-        sourceRoots.from(file("src/main/java"))
-    }
 }
