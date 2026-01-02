@@ -72,3 +72,14 @@ cd android
 ```
 
 The generated documentation will be available in `android/lib/build/dokka/html`.
+
+## Publish
+
+To publish the library to Maven Central Portal, export the required environment variables and run the Gradle task.
+
+```bash
+export CENTRAL_PORTAL_USERNAME=<your-username>
+export CENTRAL_PORTAL_PASSWORD=<your-password>
+cd android
+./gradlew publishAggregationToCentralPortal
+```
