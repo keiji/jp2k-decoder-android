@@ -10,7 +10,7 @@ Androidの `JavaScriptEngine` (Jetpack) を使用して、WASM化されたOpenJP
 ### 受け持つ処理
 *   **WASMのロードと初期化**: `openjpeg_core.wasm` をアセットから読み込み、`JavaScriptIsolate` 上でインスタンス化します。
 *   **データの受け渡し**:
-    *   入力: JPEG2000のバイト配列をJavaScriptの配列リテラル（またはHex文字列）としてWASM側に渡します。
+    *   入力: JPEG2000のバイト配列をHex文字列としてWASM側に渡します。
     *   出力: WASM側から返却されたJSON文字列（エラーコードまたはBMP画像のHex文字列）をパースします。
 *   **画像変換**: 返却されたBMP形式のHex文字列をバイト配列に変換し、`BitmapFactory` を使用してAndroidの `Bitmap` オブジェクトを生成します。
     *   `ColorFormat` 指定 (RGB565 / ARGB8888) に応じて `BitmapFactory.Options` を設定し、適切なフォーマットで Bitmap を生成します。
