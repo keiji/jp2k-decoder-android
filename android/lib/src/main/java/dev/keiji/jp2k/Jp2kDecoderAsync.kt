@@ -130,7 +130,7 @@ class Jp2kDecoderAsync(
         var wasmInstance;
         const wasmBuffer = new Uint8Array([$wasmArrayString]);
 
-        $SCRIPT_IMPORT_OBJECT
+        $SCRIPT_IMPORT_OBJECT_LOCAL
 
         WebAssembly.instantiate(wasmBuffer, importObject).then(res => {
             wasmInstance = res.instance;
@@ -306,7 +306,8 @@ class Jp2kDecoderAsync(
         private const val ASSET_PATH_WASM = "openjpeg_core.wasm"
 
         // Script to import WASI polyfill
-        private const val SCRIPT_IMPORT_OBJECT = Constants.SCRIPT_IMPORT_OBJECT
+        // Fix: Use top-level constant from Constants.kt directly. Accessing via Class name 'Constants' is incorrect for top-level properties.
+        private const val SCRIPT_IMPORT_OBJECT_LOCAL = SCRIPT_IMPORT_OBJECT
 
         private const val SCRIPT_DEFINE_DECODE_J2K = """
             globalThis.bytesToHex = function(bytes) {
