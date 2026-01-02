@@ -4,8 +4,17 @@ plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.dokka)
+    alias(libs.plugins.nmcp)
+    alias(libs.plugins.nmcp.aggregation)
     `maven-publish`
     signing
+}
+
+nmcpAggregation {
+    centralPortal {
+        username = System.getenv("OSSRH_USERNAME")
+        password = System.getenv("OSSRH_PASSWORD")
+    }
 }
 
 android {
@@ -108,6 +117,8 @@ signing {
 }
 
 dependencies {
+    nmcpAggregation(project)
+
     implementation(libs.androidx.core.ktx)
 
     implementation(libs.androidx.javascriptengine)
