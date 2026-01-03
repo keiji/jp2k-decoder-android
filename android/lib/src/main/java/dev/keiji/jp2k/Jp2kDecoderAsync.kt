@@ -95,7 +95,7 @@ class Jp2kDecoderAsync(
                 return
             }
             if (_state != State.Uninitialized) {
-                callback.onError(IllegalStateException("Jp2kDecoderAsync is not Uninitialized. Current state: $_state"))
+                callback.onError(IllegalStateException("Cannot initialize while in state: $_state"))
                 return
             }
             _state = State.Initializing
@@ -201,7 +201,7 @@ class Jp2kDecoderAsync(
         synchronized(lock) {
             // Allow if Initialized OR Decoding (queueing up)
             if (_state != State.Initialized && _state != State.Decoding) {
-                callback.onError(IllegalStateException("Decoder is not ready (Current state: $_state)"))
+                callback.onError(IllegalStateException("Cannot decodeImage while in state: $_state"))
                 return
             }
             // Do NOT set state to Decoding here. Wait until execution starts.
@@ -342,7 +342,7 @@ class Jp2kDecoderAsync(
     fun getMemoryUsage(callback: Callback<MemoryUsage>) {
         synchronized(lock) {
             if (_state != State.Initialized && _state != State.Decoding) {
-                callback.onError(IllegalStateException("Decoder is not ready (Current state: $_state)"))
+                callback.onError(IllegalStateException("Cannot getMemoryUsage while in state: $_state"))
                 return
             }
         }
