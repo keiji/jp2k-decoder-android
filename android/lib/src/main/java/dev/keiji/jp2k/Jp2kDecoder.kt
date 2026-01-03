@@ -21,6 +21,12 @@ class Jp2kDecoder(
 ) : AutoCloseable {
     private val jp2kDecoderAsync = Jp2kDecoderAsync(config = config)
 
+    /**
+     * The current state of the decoder.
+     */
+    val state: Jp2kDecoderAsync.State
+        get() = jp2kDecoderAsync.state
+
     private val mutex = Mutex()
 
     /**

@@ -33,15 +33,43 @@ class Jp2kDecoderAsync(
     private val executionLock = Any()
 
     @Volatile
-    private var state = State.Uninitialized
+    private var _state = State.Uninitialized
+
+    /**
+     * The current state of the decoder.
+     */
+    val state: State
+        get() = _state
 
     private var jsIsolate: JavaScriptIsolate? = null
 
-    private enum class State {
+    /**
+     * Enum representing the state of the decoder.
+     */
+    enum class State {
+        /**
+         * The decoder is not initialized.
+         */
         Uninitialized,
+
+        /**
+         * The decoder is currently initializing.
+         */
         Initializing,
+
+        /**
+         * The decoder is initialized and ready to decode.
+         */
         Initialized,
+
+        /**
+         * The decoder is currently decoding an image.
+         */
         Decoding,
+
+        /**
+         * The decoder has been terminated and cannot be used anymore.
+         */
         Terminated
     }
 
@@ -62,11 +90,11 @@ class Jp2kDecoderAsync(
      */
     fun init(context: Context, callback: Callback<Unit>) {
         synchronized(lock) {
-            if (state != State.Uninitialized) {
-                callback.onError(IllegalStateException("Jp2kDecoderAsync is not Uninitialized. Current state: $state"))
+            if (_state != State.Uninitialized) {
+                callback.onError(IllegalStateException("Jp2kDecoderAsync is not Uninitialized. Current state: $_state"))
                 return
             }
-            state = State.Initializing
+            _state = State.Initializing
         }
 
         // Capture resources needed for initialization from Context
@@ -89,7 +117,7 @@ class Jp2kDecoderAsync(
                     }
 
                     synchronized(lock) {
-                        if (state == State.Terminated) {
+                        if (_state == State.Terminated) {
                             isolate.close()
                             throw CancellationException("Jp2kDecoderAsync was released during initialization.")
                         }
@@ -100,10 +128,10 @@ class Jp2kDecoderAsync(
                     loadWasm(isolate, assetManager)
 
                     synchronized(lock) {
-                        if (state == State.Terminated) {
+                        if (_state == State.Terminated) {
                             throw CancellationException("Jp2kDecoderAsync was released during initialization.")
                         }
-                        state = State.Initialized
+                        _state = State.Initialized
                     }
 
                     val time = System.currentTimeMillis() - start
@@ -111,8 +139,8 @@ class Jp2kDecoderAsync(
                     callback.onSuccess(Unit)
                 } catch (e: Exception) {
                     synchronized(lock) {
-                        if (state != State.Terminated) {
-                            state = State.Uninitialized
+                        if (_state != State.Terminated) {
+                            _state = State.Uninitialized
                         }
                     }
                     val time = System.currentTimeMillis() - start
@@ -168,8 +196,8 @@ class Jp2kDecoderAsync(
     fun decodeImage(j2kData: ByteArray, colorFormat: ColorFormat = ColorFormat.ARGB8888, callback: Callback<Bitmap>) {
         synchronized(lock) {
             // Allow if Initialized OR Decoding (queueing up)
-            if (state != State.Initialized && state != State.Decoding) {
-                callback.onError(IllegalStateException("Decoder is not ready (Current state: $state)"))
+            if (_state != State.Initialized && _state != State.Decoding) {
+                callback.onError(IllegalStateException("Decoder is not ready (Current state: $_state)"))
                 return
             }
             // Do NOT set state to Decoding here. Wait until execution starts.
@@ -180,12 +208,12 @@ class Jp2kDecoderAsync(
             synchronized(executionLock) {
                 // Check state again inside the serial lock
                 synchronized(lock) {
-                    if (state == State.Terminated) {
+                    if (_state == State.Terminated) {
                         callback.onError(CancellationException("Decoder was released."))
                         return@execute
                     }
                     // It's possible init failed or something else happened while waiting in queue
-                    if (state != State.Initialized && state != State.Decoding) {
+                    if (_state != State.Initialized && _state != State.Decoding) {
                          // Note: If previous task finished, state should be Initialized.
                          // If previous task failed, state might be Initialized (if restored) or something else.
                          // But if it is Uninitialized now, we should probably fail.
@@ -195,12 +223,12 @@ class Jp2kDecoderAsync(
                          // Wait, if this is the first task, it should be Initialized.
                          // If this is the second task, the first task finished and set it to Initialized.
                          // So effectively, we expect Initialized here.
-                         if (state != State.Initialized) {
-                              callback.onError(IllegalStateException("Decoder state invalid before execution: $state"))
+                         if (_state != State.Initialized) {
+                              callback.onError(IllegalStateException("Decoder state invalid before execution: $_state"))
                               return@execute
                          }
                     }
-                    state = State.Decoding
+                    _state = State.Decoding
                 }
 
                 val start = System.currentTimeMillis()
@@ -261,7 +289,7 @@ class Jp2kDecoderAsync(
                     restoreStateAfterDecode()
                     // Check if released during decode (unlikely due to lock, but good practice)
                     synchronized(lock) {
-                         if (state == State.Terminated) {
+                         if (_state == State.Terminated) {
                              callback.onError(CancellationException("Decoder was released."))
                          } else {
                              callback.onSuccess(bitmap)
@@ -273,7 +301,7 @@ class Jp2kDecoderAsync(
                     log(Log.ERROR, "decodeImage() failed in $time msec. Error: ${e.message}")
                     restoreStateAfterDecode()
                     synchronized(lock) {
-                        if (state == State.Terminated) {
+                        if (_state == State.Terminated) {
                             callback.onError(CancellationException("Decoder was released."))
                         } else {
                             callback.onError(e)
@@ -286,8 +314,8 @@ class Jp2kDecoderAsync(
 
     private fun restoreStateAfterDecode() {
         synchronized(lock) {
-            if (state == State.Decoding) {
-                state = State.Initialized
+            if (_state == State.Decoding) {
+                _state = State.Initialized
             }
         }
     }
@@ -309,8 +337,8 @@ class Jp2kDecoderAsync(
      */
     fun getMemoryUsage(callback: Callback<MemoryUsage>) {
         synchronized(lock) {
-            if (state != State.Initialized && state != State.Decoding) {
-                callback.onError(IllegalStateException("Decoder is not ready (Current state: $state)"))
+            if (_state != State.Initialized && _state != State.Decoding) {
+                callback.onError(IllegalStateException("Decoder is not ready (Current state: $_state)"))
                 return
             }
         }
@@ -318,7 +346,7 @@ class Jp2kDecoderAsync(
         backgroundExecutor.execute {
             synchronized(executionLock) {
                 synchronized(lock) {
-                    if (state == State.Terminated) {
+                    if (_state == State.Terminated) {
                         callback.onError(CancellationException("Decoder was released."))
                         return@execute
                     }
@@ -352,10 +380,10 @@ class Jp2kDecoderAsync(
         var isolateToClose: JavaScriptIsolate? = null
 
         synchronized(lock) {
-            if (state == State.Terminated) {
+            if (_state == State.Terminated) {
                 return
             }
-            state = State.Terminated
+            _state = State.Terminated
             isolateToClose = jsIsolate
             jsIsolate = null
         }
