@@ -58,21 +58,21 @@ sequenceDiagram
     participant OpenJPEG as OpenJPEG
 
     App->>Kotlin: decodeImage(ByteArray)
-    Kotlin->>Kotlin: Convert ByteArray to Hex String (HexString)
-    Kotlin->>Bridge: Call decodeJ2K(hexString)
+    Kotlin->>Kotlin: Convert ByteArray to Base64 String
+    Kotlin->>Bridge: Call decodeJ2K(base64String)
 
     rect rgb(240, 248, 255)
     note right of Bridge: Inside JS/WASM Sandbox
-    Bridge->>Bridge: Parse Hex to Bytes (Alloc WASM Mem) using SCRIPT_HEX_UTILS
+    Bridge->>Bridge: Parse Base64 to Bytes (Alloc WASM Mem) using SCRIPT_BYTES_BASE64_CONVERTER
     Bridge->>WASM: Invoke C function (decodeToBmp)
     WASM->>OpenJPEG: opj_decode
     OpenJPEG-->>WASM: opj_image_t (Raw Pixel Data)
     WASM->>WASM: Convert to BMP Format (Add Header)
     WASM-->>Bridge: Return Pointer
-    Bridge->>Bridge: Read Mem & Convert BMP to Hex String
-    Bridge-->>Kotlin: Return JSON { bmp: "Hex..." }
+    Bridge->>Bridge: Read Mem & Convert BMP to Base64 String
+    Bridge-->>Kotlin: Return JSON { bmp: "Base64..." }
     end
-    Kotlin->>Kotlin: Parse JSON & Hex to ByteArray
+    Kotlin->>Kotlin: Parse JSON & Base64 to ByteArray
     Kotlin->>Kotlin: BitmapFactory.decodeByteArray()
     Kotlin-->>App: Return Bitmap
 ```
@@ -88,11 +88,11 @@ Androidアプリから利用されるAPIを提供するレイヤーです。`Jp2
 *   **Jp2kSandbox**: シングルトンオブジェクトとして `JavaScriptSandbox` の接続を管理します。アプリ全体で1つの接続を再利用することで、オーバーヘッドとリソース消費を最小限に抑えます。
 
 ### 受け持つ処理
-*   **WASMのロードと初期化**: `openjpeg_core.wasm` をアセットから読み込み、バイナリをHex文字列に変換してJavaScript環境に注入します。JS側でHex文字列をバイナリ (`Uint8Array`) に復元してから `WebAssembly.instantiate` を実行します。
-*   **データの受け渡し (Hex Encoding)**:
-    *   WASM環境とのデータ授受には、バイナリデータをHex文字列（16進数文字列）にエンコードして渡す方式を採用しています。
-    *   データ転送を効率化するため、JS側のユーティリティ関数 (`hexToBytes`, `bytesToHex`) は `SCRIPT_BYTES_HEX_CONVERTER` 定数として分離・注入されます。
-*   **画像変換**: 返却されたBMP形式のHex文字列をバイト配列に変換し、`BitmapFactory` を使用してAndroidの `Bitmap` オブジェクトを生成します。
+*   **WASMのロードと初期化**: `openjpeg_core.wasm` をアセットから読み込み、バイナリをBase64文字列に変換してJavaScript環境に注入します。JS側でBase64文字列をバイナリ (`Uint8Array`) に復元してから `WebAssembly.instantiate` を実行します。
+*   **データの受け渡し (Base64 Encoding)**:
+    *   WASM環境とのデータ授受には、バイナリデータをBase64文字列にエンコードして渡す方式を採用しています。
+    *   データ転送を効率化するため、JS側のユーティリティ関数 (`base64ToBytes`, `bytesToBase64`) は `SCRIPT_BYTES_BASE64_CONVERTER` 定数として分離・注入されます。
+*   **画像変換**: 返却されたBMP形式のBase64文字列をバイト配列に変換し、`BitmapFactory` を使用してAndroidの `Bitmap` オブジェクトを生成します。
     *   `ColorFormat` 指定 (RGB565 / ARGB8888) に応じて `BitmapFactory.Options` を設定し、適切なフォーマットで Bitmap を生成します。
 *   **ライフサイクル管理**: `init()`, `release()` による `JavaScriptIsolate` のリソース管理を行います。`release()` 実行時には Isolate をクローズし、処理を強制終了します。
 *   **設定管理**: `Config` クラスを通じて、最大ヒープサイズや最大ピクセル数などのパラメータを管理・適用します。
