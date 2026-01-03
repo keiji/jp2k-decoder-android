@@ -19,8 +19,6 @@ const val DEFAULT_MAX_EVALUATION_RETURN_SIZE_BYTES = 256 * 1024 * 1024
  */
 const val DEFAULT_MAX_PIXELS = 16000000
 
-internal const val ERROR_CODE_UNKNOWN = Int.MIN_VALUE
-
 internal const val SCRIPT_IMPORT_OBJECT = """
 const wasiSnapshotPreview = {
     // 環境変数の数とサイズ
@@ -130,7 +128,7 @@ internal const val SCRIPT_BYTES_BASE64_CONVERTER = """
             };
 """
 
-internal const val SCRIPT_DEFINE_DECODE_J2K = """
+internal val SCRIPT_DEFINE_DECODE_J2K = """
             globalThis.decodeJ2K = function(dataBase64String, maxPixels, maxHeapSize, colorFormat, measureTimes) {
                 const now = function() {
                     return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
@@ -196,7 +194,7 @@ internal const val SCRIPT_DEFINE_DECODE_J2K = """
 
                     return JSON.stringify(result);
                 } catch (e) {
-                    return JSON.stringify({ errorCode: $ERROR_CODE_UNKNOWN, errorMessage: e.toString() });
+                    return JSON.stringify({ errorCode: ${Jp2kError.Unknown.code}, errorMessage: e.toString() });
                 }
             };
 

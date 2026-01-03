@@ -423,6 +423,6 @@ class Jp2kDecoderAsync(
         // Script to import WASI polyfill
         // Fix: Use top-level constant from Constants.kt directly. Accessing via Class name 'Constants' is incorrect for top-level properties.
         private const val SCRIPT_IMPORT_OBJECT_LOCAL = SCRIPT_IMPORT_OBJECT
-        private const val SCRIPT_DEFINE_DECODE_J2K = dev.keiji.jp2k.SCRIPT_DEFINE_DECODE_J2K
+        private val SCRIPT_DEFINE_DECODE_J2K = dev.keiji.jp2k.SCRIPT_DEFINE_DECODE_J2K
     }
 }
