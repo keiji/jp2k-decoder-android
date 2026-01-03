@@ -63,3 +63,79 @@ const importObject = {
     env: env,
 };
 """
+
+internal const val SCRIPT_DEFINE_DECODE_J2K = """
+            globalThis.bytesToHex = function(bytes) {
+                const hexChars = "0123456789abcdef";
+                let output = "";
+                for (let i = 0; i < bytes.length; i++) {
+                    const b = bytes[i];
+                    output += hexChars[(b >> 4) & 0xf];
+                    output += hexChars[b & 0xf];
+                }
+                return output;
+            };
+
+            globalThis.hexToBytes = function(hex) {
+                const len = hex.length;
+                if (len === 0) return new Uint8Array(0);
+                const bytes = new Uint8Array(len / 2);
+                for (let i = 0; i < len; i += 2) {
+                    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
+                }
+                return bytes;
+            };
+
+            globalThis.decodeJ2K = function(dataHexString, maxPixels, maxHeapSize, colorFormat) {
+                try {
+                    const exports = wasmInstance.exports;
+
+                    const encodedBuffer = globalThis.hexToBytes(dataHexString);
+
+                    const dataLength = encodedBuffer.length;
+                    if (dataLength === 0) return JSON.stringify({ errorCode: -1 });
+
+                    const inputPtr = exports.malloc(dataLength);
+                    const heap = new Uint8Array(exports.memory.buffer);
+
+                    heap.set(encodedBuffer, inputPtr);
+
+                    // Call decodeToBmp
+                    const bmpPtr = exports.decodeToBmp(inputPtr, encodedBuffer.length, maxPixels, maxHeapSize, colorFormat);
+
+                    if (bmpPtr === 0) {
+                        const errorCode = exports.getLastError();
+                        exports.free(inputPtr);
+                        return JSON.stringify({ errorCode: errorCode });
+                    }
+
+                    const view = new DataView(exports.memory.buffer);
+                    const bmpSize = view.getUint32(bmpPtr + 2, true);
+
+                    const bmpBuffer = new Uint8Array(exports.memory.buffer, bmpPtr, bmpSize);
+                    const hexString = globalThis.bytesToHex(bmpBuffer);
+
+                    exports.free(bmpPtr);
+                    exports.free(inputPtr);
+
+                    return JSON.stringify({
+                        bmp: hexString
+                    });
+                } catch (e) {
+                    return JSON.stringify({ error: e.toString() });
+                }
+            };
+
+            globalThis.getMemoryUsage = function() {
+                let wasmHeap = 0;
+                try {
+                    if (typeof wasmInstance !== 'undefined' && wasmInstance.exports && wasmInstance.exports.memory) {
+                        wasmHeap = wasmInstance.exports.memory.buffer.byteLength;
+                    }
+                } catch (e) {}
+
+                return JSON.stringify({
+                    wasmHeapSizeBytes: wasmHeap,
+                });
+            };
+        """

@@ -38,6 +38,13 @@ graph TB
     Wrapper -->|Link| OpenJPEG
 ```
 
+### Jp2kDecoder / Jp2kDecoderAsync
+
+本ライブラリは2つのデコーダ実装を提供します。どちらも内部的には同じWASMモジュールとサンドボックスを使用しますが、APIのスタイルが異なります。
+
+*   **Jp2kDecoder**: Kotlin Coroutinesネイティブの実装です。`suspend`関数を使用して非同期処理を行い、`Mutex`によりスレッドセーフを保証します。Kotlinプロジェクトでの使用を推奨します。
+*   **Jp2kDecoderAsync**: コールバックベースの実装です。Javaプロジェクトや、独自のExecutor管理が必要な場合に使用します。
+
 ## Data Flow (Decoding)
 
 画像デコード時のデータフローは以下の通りです。
@@ -89,16 +96,17 @@ Androidアプリから利用されるAPIを提供するレイヤーです。`Jp2
 *   **ライフサイクル管理**: `init()`, `release()` による `JavaScriptIsolate` のリソース管理を行います。`release()` 実行時には Isolate をクローズし、処理を強制終了します。
 *   **設定管理**: `Config` クラスを通じて、最大ヒープサイズや最大ピクセル数などのパラメータを管理・適用します。
 
-### State Machine (Jp2kDecoderAsync)
+### State Machine
 
-`Jp2kDecoderAsync` はスレッドセーフを保証するために内部状態 (`State`) を持ち、各メソッド呼び出し時に厳密な状態遷移チェックを行います。排他制御には `synchronized` ブロックを使用しています。
+`Jp2kDecoder` と `Jp2kDecoderAsync` は共通の `State` 定義 (`dev.keiji.jp2k.State`) を使用して状態を管理します。
 
 #### 状態定義
 *   `Uninitialized`: 初期状態。`init()` の呼び出しのみ許可されます。
 *   `Initializing`: 初期化処理中。バックグラウンドでのWASMロードやIsolate作成を行っています。
 *   `Initialized`: 初期化完了。`decodeImage()` の呼び出しが可能な待機状態。
-*   `Decoding`: デコード処理中。この状態のときに再度 `decodeImage()` が呼ばれるとキューイングまたはエラーになります（並行実行の制御）。
-*   `Terminated`: 終了状態。`release()` が呼ばれた後の状態。これ以上の操作は受け付けません。
+*   `Processing`: デコードまたはメモリ使用量取得などの処理中。
+*   `Releasing`: 終了処理中。`release()` が実行中です。
+*   `Released`: 終了状態。`release()` が完了した後の状態。これ以上の操作は受け付けません。
 
 #### 状態遷移図
 
@@ -116,35 +124,41 @@ stateDiagram-v2
 
     Initializing --> Initialized : init() success
     Initializing --> Uninitialized : init() failed (Exception)
-    Initializing --> Terminated : release() called during init
+    Initializing --> Releasing : release() called during init
 
-    Initialized --> Decoding : decodeImage() called
-    Decoding --> Initialized : decodeImage() finished (Success/Error)
+    Initialized --> Processing : decodeImage() / getMemoryUsage() called
+    Processing --> Initialized : processing finished (Success/Error)
 
-    Decoding --> Terminated : release() called
+    Processing --> Releasing : release() called
 
-    Initialized --> Terminated : release() called
+    Initialized --> Releasing : release() called
 
-    Terminated --> [*]
+    Releasing --> Released
+    Released --> [*]
 ```
 
-#### メソッドごとの挙動
+#### Jp2kDecoder (Coroutines)
 
-各状態におけるメソッド呼び出し時の挙動は以下の通りです。
+*   **init(context)**: Suspending関数。Isolateの初期化を行います。`Mutex`によりシリアライズされており、並行呼び出しは安全に制御されます。デフォルトでは `Dispatchers.Default` (またはコンストラクタで指定されたDispatcher) 上で実行されます。
+*   **decodeImage(bytes)**: Suspending関数。デコード処理を行います。`Dispatchers.Default` (またはコンストラクタで指定されたDispatcher) 上で実行されます。
+*   **release()**: 即座にIsolateをクローズし、状態を `Released` に変更します。
+
+#### Jp2kDecoderAsync (Callback)
+
+各状態におけるメソッド呼び出し時の挙動は以下の通りです。`synchronized` ブロックにより排他制御されます。
 
 | State \ Method | init() | decodeImage() | getMemoryUsage() | release() |
 | :--- | :--- | :--- | :--- | :--- |
-| **Uninitialized** | **初期化開始** | Error | Error | 終了処理 (State=Terminated) |
-| **Initializing** | Error | Error | Error | 終了処理 (State=Terminated) |
-| **Initialized** | **成功 (何もしない)** | **デコード開始** | **取得開始** | 終了処理 (State=Terminated) |
-| **Decoding** | Error | **デコード開始 (キューイング)** | **取得開始 (キューイング)** | 終了処理 (State=Terminated) |
-| **Terminated** | Error | Error | Error | **成功 (何もしない)** |
+| **Uninitialized** | **初期化開始** | Error | Error | 終了処理 (State=Released) |
+| **Initializing** | Error | Error | Error | 終了処理 (State=Released) |
+| **Initialized** | **成功 (何もしない)** | **デコード開始** | **取得開始** | 終了処理 (State=Released) |
+| **Processing** | Error | **デコード開始 (キューイング)** | **取得開始 (キューイング)** | 終了処理 (State=Released) |
+| **Released** | Error | Error | Error | **成功 (何もしない)** |
 
 * **Error**: `IllegalStateException` (またはそれに準ずるエラー) をコールバックに返却します。
-* **初期化開始**: バックグラウンドで初期化処理を開始します。
-* **デコード開始**: バックグラウンドでデコード処理を開始します。
-* **取得開始**: バックグラウンドでメモリ使用量の取得を開始します。
-* **キューイング**: 実行中の処理が完了した後、順次実行されます。
+* **初期化開始**: バックグラウンドExecutorで初期化処理を開始します。
+* **デコード開始**: バックグラウンドExecutorでデコード処理を開始します。
+* **キューイング**: シングルスレッドExecutorにより、実行中の処理が完了した後、順次実行されます。
 
 ---
 

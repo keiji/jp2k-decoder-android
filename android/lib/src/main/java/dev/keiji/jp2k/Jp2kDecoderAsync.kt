@@ -43,36 +43,6 @@ class Jp2kDecoderAsync(
 
     private var jsIsolate: JavaScriptIsolate? = null
 
-    /**
-     * Enum representing the state of the decoder.
-     */
-    enum class State {
-        /**
-         * The decoder is not initialized.
-         */
-        Uninitialized,
-
-        /**
-         * The decoder is currently initializing.
-         */
-        Initializing,
-
-        /**
-         * The decoder is initialized and ready to decode.
-         */
-        Initialized,
-
-        /**
-         * The decoder is currently decoding an image.
-         */
-        Decoding,
-
-        /**
-         * The decoder has been terminated and cannot be used anymore.
-         */
-        Terminated
-    }
-
     private fun log(priority: Int, message: String) {
         if (config.logLevel != null && priority >= config.logLevel) {
             Log.println(priority, TAG, message)
@@ -92,6 +62,10 @@ class Jp2kDecoderAsync(
         synchronized(lock) {
             if (_state == State.Initialized) {
                 callback.onSuccess(Unit)
+                return
+            }
+            if (_state == State.Released || _state == State.Releasing) {
+                callback.onError(CancellationException("Decoder was released."))
                 return
             }
             if (_state != State.Uninitialized) {
@@ -121,7 +95,7 @@ class Jp2kDecoderAsync(
                     }
 
                     synchronized(lock) {
-                        if (_state == State.Terminated) {
+                        if (_state == State.Released || _state == State.Releasing) {
                             isolate.close()
                             throw CancellationException("Jp2kDecoderAsync was released during initialization.")
                         }
@@ -132,7 +106,7 @@ class Jp2kDecoderAsync(
                     loadWasm(isolate, assetManager)
 
                     synchronized(lock) {
-                        if (_state == State.Terminated) {
+                        if (_state == State.Released || _state == State.Releasing) {
                             throw CancellationException("Jp2kDecoderAsync was released during initialization.")
                         }
                         _state = State.Initialized
@@ -143,7 +117,7 @@ class Jp2kDecoderAsync(
                     callback.onSuccess(Unit)
                 } catch (e: Exception) {
                     synchronized(lock) {
-                        if (_state != State.Terminated) {
+                        if (_state != State.Released && _state != State.Releasing) {
                             _state = State.Uninitialized
                         }
                     }
@@ -199,12 +173,12 @@ class Jp2kDecoderAsync(
      */
     fun decodeImage(j2kData: ByteArray, colorFormat: ColorFormat = ColorFormat.ARGB8888, callback: Callback<Bitmap>) {
         synchronized(lock) {
-            // Allow if Initialized OR Decoding (queueing up)
-            if (_state != State.Initialized && _state != State.Decoding) {
+            // Allow if Initialized OR Processing (queueing up)
+            if (_state != State.Initialized && _state != State.Processing) {
                 callback.onError(IllegalStateException("Cannot decodeImage while in state: $_state"))
                 return
             }
-            // Do NOT set state to Decoding here. Wait until execution starts.
+            // Do NOT set state to Processing here. Wait until execution starts.
         }
 
         backgroundExecutor.execute {
@@ -212,16 +186,16 @@ class Jp2kDecoderAsync(
             synchronized(executionLock) {
                 // Check state again inside the serial lock
                 synchronized(lock) {
-                    if (_state == State.Terminated) {
+                    if (_state == State.Released || _state == State.Releasing) {
                         callback.onError(CancellationException("Decoder was released."))
                         return@execute
                     }
                     // It's possible init failed or something else happened while waiting in queue
-                    if (_state != State.Initialized && _state != State.Decoding) {
+                    if (_state != State.Initialized && _state != State.Processing) {
                          // Note: If previous task finished, state should be Initialized.
                          // If previous task failed, state might be Initialized (if restored) or something else.
                          // But if it is Uninitialized now, we should probably fail.
-                         // However, since we allowed 'Decoding' in the admission check,
+                         // However, since we allowed 'Processing' in the admission check,
                          // and we are holding executionLock, we are the only one running.
                          // So state should ideally be Initialized here (unless this is the first task).
                          // Wait, if this is the first task, it should be Initialized.
@@ -232,7 +206,7 @@ class Jp2kDecoderAsync(
                               return@execute
                          }
                     }
-                    _state = State.Decoding
+                    _state = State.Processing
                 }
 
                 val start = System.currentTimeMillis()
@@ -293,7 +267,7 @@ class Jp2kDecoderAsync(
                     restoreStateAfterDecode()
                     // Check if released during decode (unlikely due to lock, but good practice)
                     synchronized(lock) {
-                         if (_state == State.Terminated) {
+                         if (_state == State.Released || _state == State.Releasing) {
                              callback.onError(CancellationException("Decoder was released."))
                          } else {
                              callback.onSuccess(bitmap)
@@ -305,7 +279,7 @@ class Jp2kDecoderAsync(
                     log(Log.ERROR, "decodeImage() failed in $time msec. Error: ${e.message}")
                     restoreStateAfterDecode()
                     synchronized(lock) {
-                        if (_state == State.Terminated) {
+                        if (_state == State.Released || _state == State.Releasing) {
                             callback.onError(CancellationException("Decoder was released."))
                         } else {
                             callback.onError(e)
@@ -318,7 +292,7 @@ class Jp2kDecoderAsync(
 
     private fun restoreStateAfterDecode() {
         synchronized(lock) {
-            if (_state == State.Decoding) {
+            if (_state == State.Processing) {
                 _state = State.Initialized
             }
         }
@@ -341,7 +315,11 @@ class Jp2kDecoderAsync(
      */
     fun getMemoryUsage(callback: Callback<MemoryUsage>) {
         synchronized(lock) {
-            if (_state != State.Initialized && _state != State.Decoding) {
+            if (_state == State.Released || _state == State.Releasing) {
+                callback.onError(CancellationException("Decoder was released."))
+                return
+            }
+            if (_state != State.Initialized && _state != State.Processing) {
                 callback.onError(IllegalStateException("Cannot getMemoryUsage while in state: $_state"))
                 return
             }
@@ -350,10 +328,18 @@ class Jp2kDecoderAsync(
         backgroundExecutor.execute {
             synchronized(executionLock) {
                 synchronized(lock) {
-                    if (_state == State.Terminated) {
+                    if (_state == State.Released || _state == State.Releasing) {
                         callback.onError(CancellationException("Decoder was released."))
                         return@execute
                     }
+                    if (_state != State.Initialized && _state != State.Processing) {
+                        // Queue handling logic similar to decodeImage
+                        if (_state != State.Initialized) {
+                            callback.onError(IllegalStateException("Decoder state invalid before execution: $_state"))
+                            return@execute
+                        }
+                    }
+                    _state = State.Processing
                 }
 
                 try {
@@ -367,8 +353,10 @@ class Jp2kDecoderAsync(
                     val usage = MemoryUsage(
                         wasmHeapSizeBytes = root.optLong("wasmHeapSizeBytes", 0),
                     )
+                    restoreStateAfterDecode()
                     callback.onSuccess(usage)
                 } catch (e: Exception) {
+                    restoreStateAfterDecode()
                     callback.onError(e)
                 }
             }
@@ -384,10 +372,10 @@ class Jp2kDecoderAsync(
         var isolateToClose: JavaScriptIsolate? = null
 
         synchronized(lock) {
-            if (_state == State.Terminated) {
+            if (_state == State.Released || _state == State.Releasing) {
                 return
             }
-            _state = State.Terminated
+            _state = State.Releasing
             isolateToClose = jsIsolate
             jsIsolate = null
         }
@@ -400,6 +388,10 @@ class Jp2kDecoderAsync(
 
         if (backgroundExecutor is ExecutorService && !backgroundExecutor.isShutdown) {
             backgroundExecutor.shutdown()
+        }
+
+        synchronized(lock) {
+            _state = State.Released
         }
     }
 
@@ -415,81 +407,6 @@ class Jp2kDecoderAsync(
         // Script to import WASI polyfill
         // Fix: Use top-level constant from Constants.kt directly. Accessing via Class name 'Constants' is incorrect for top-level properties.
         private const val SCRIPT_IMPORT_OBJECT_LOCAL = SCRIPT_IMPORT_OBJECT
-
-        private const val SCRIPT_DEFINE_DECODE_J2K = """
-            globalThis.bytesToHex = function(bytes) {
-                const hexChars = "0123456789abcdef";
-                let output = "";
-                for (let i = 0; i < bytes.length; i++) {
-                    const b = bytes[i];
-                    output += hexChars[(b >> 4) & 0xf];
-                    output += hexChars[b & 0xf];
-                }
-                return output;
-            };
-
-            globalThis.hexToBytes = function(hex) {
-                const len = hex.length;
-                if (len === 0) return new Uint8Array(0);
-                const bytes = new Uint8Array(len / 2);
-                for (let i = 0; i < len; i += 2) {
-                    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
-                }
-                return bytes;
-            };
-
-            globalThis.decodeJ2K = function(dataHexString, maxPixels, maxHeapSize, colorFormat) {
-                try {
-                    const exports = wasmInstance.exports;
-
-                    const encodedBuffer = globalThis.hexToBytes(dataHexString);
-
-                    const dataLength = encodedBuffer.length;
-                    if (dataLength === 0) return JSON.stringify({ errorCode: -1 });
-
-                    const inputPtr = exports.malloc(dataLength);
-                    const heap = new Uint8Array(exports.memory.buffer);
-
-                    heap.set(encodedBuffer, inputPtr);
-
-                    // Call decodeToBmp
-                    const bmpPtr = exports.decodeToBmp(inputPtr, encodedBuffer.length, maxPixels, maxHeapSize, colorFormat);
-
-                    if (bmpPtr === 0) {
-                        const errorCode = exports.getLastError();
-                        exports.free(inputPtr);
-                        return JSON.stringify({ errorCode: errorCode });
-                    }
-
-                    const view = new DataView(exports.memory.buffer);
-                    const bmpSize = view.getUint32(bmpPtr + 2, true);
-
-                    const bmpBuffer = new Uint8Array(exports.memory.buffer, bmpPtr, bmpSize);
-                    const hexString = globalThis.bytesToHex(bmpBuffer);
-
-                    exports.free(bmpPtr);
-                    exports.free(inputPtr);
-
-                    return JSON.stringify({
-                        bmp: hexString
-                    });
-                } catch (e) {
-                    return JSON.stringify({ error: e.toString() });
-                }
-            };
-
-            globalThis.getMemoryUsage = function() {
-                let wasmHeap = 0;
-                try {
-                    if (typeof wasmInstance !== 'undefined' && wasmInstance.exports && wasmInstance.exports.memory) {
-                        wasmHeap = wasmInstance.exports.memory.buffer.byteLength;
-                    }
-                } catch (e) {}
-
-                return JSON.stringify({
-                    wasmHeapSizeBytes: wasmHeap,
-                });
-            };
-        """
+        private const val SCRIPT_DEFINE_DECODE_J2K = dev.keiji.jp2k.SCRIPT_DEFINE_DECODE_J2K
     }
 }

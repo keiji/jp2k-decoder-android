@@ -78,13 +78,12 @@ class Jp2kDecoderAsyncTest {
         })
         assertTrue("First init timed out", latch1.await(10, TimeUnit.SECONDS))
 
-        // Second Init - Should Fail
+        // Second Init - Should Succeed immediately because it is already initialized
         val latch2 = CountDownLatch(1)
         val errorRef = AtomicReference<Throwable?>()
 
         decoder.init(context, object : Callback<Unit> {
             override fun onSuccess(result: Unit) {
-                fail("Second init should fail")
                 latch2.countDown()
             }
             override fun onError(error: Exception) {
@@ -93,7 +92,9 @@ class Jp2kDecoderAsyncTest {
             }
         })
         assertTrue("Second init timed out", latch2.await(5, TimeUnit.SECONDS))
-        assertTrue("Expected IllegalStateException, got ${errorRef.get()}", errorRef.get() is IllegalStateException)
+        if (errorRef.get() != null) {
+            fail("Second init failed: ${errorRef.get()?.message}")
+        }
     }
 
     @Test
