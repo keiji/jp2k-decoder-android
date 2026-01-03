@@ -115,13 +115,15 @@ class Jp2kDecoder(
 
     private suspend fun loadWasm(isolate: JavaScriptIsolate, assetManager: AssetManager) {
         withContext(coroutineDispatcher) {
-            val wasmArrayString = assetManager.open(ASSET_PATH_WASM)
+            val wasmBytes = assetManager.open(ASSET_PATH_WASM)
                 .readBytes()
-                .joinToString(",")
+            val wasmHexString = wasmBytes.toHexString()
 
             val script = """
+            $SCRIPT_BYTES_HEX_CONVERTER_LOCAL
+
             var wasmInstance;
-            const wasmBuffer = new Uint8Array([$wasmArrayString]);
+            const wasmBuffer = globalThis.hexToBytes('$wasmHexString');
 
             $SCRIPT_IMPORT_OBJECT_LOCAL
 
@@ -332,6 +334,7 @@ class Jp2kDecoder(
         private const val MIN_INPUT_SIZE = 12 // Signature box length
         private const val ASSET_PATH_WASM = "openjpeg_core.wasm"
 
+        private const val SCRIPT_BYTES_HEX_CONVERTER_LOCAL = SCRIPT_BYTES_HEX_CONVERTER
         private const val SCRIPT_IMPORT_OBJECT_LOCAL = SCRIPT_IMPORT_OBJECT
         private const val SCRIPT_DEFINE_DECODE_J2K_LOCAL = SCRIPT_DEFINE_DECODE_J2K
     }

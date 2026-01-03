@@ -64,7 +64,7 @@ const importObject = {
 };
 """
 
-internal const val SCRIPT_DEFINE_DECODE_J2K = """
+internal const val SCRIPT_BYTES_HEX_CONVERTER = """
             globalThis.bytesToHex = function(bytes) {
                 const hexChars = "0123456789abcdef";
                 let output = "";
@@ -85,7 +85,9 @@ internal const val SCRIPT_DEFINE_DECODE_J2K = """
                 }
                 return bytes;
             };
+"""
 
+internal const val SCRIPT_DEFINE_DECODE_J2K = """
             globalThis.decodeJ2K = function(dataHexString, maxPixels, maxHeapSize, colorFormat) {
                 try {
                     const exports = wasmInstance.exports;
