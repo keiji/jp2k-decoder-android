@@ -128,6 +128,24 @@ stateDiagram-v2
     Terminated --> [*]
 ```
 
+#### メソッドごとの挙動
+
+各状態におけるメソッド呼び出し時の挙動は以下の通りです。
+
+| State \ Method | init() | decodeImage() | getMemoryUsage() | release() |
+| :--- | :--- | :--- | :--- | :--- |
+| **Uninitialized** | **初期化開始** | Error | Error | 終了処理 (State=Terminated) |
+| **Initializing** | Error | Error | Error | 終了処理 (State=Terminated) |
+| **Initialized** | **成功 (何もしない)** | **デコード開始** | **取得開始** | 終了処理 (State=Terminated) |
+| **Decoding** | Error | **デコード開始 (キューイング)** | **取得開始 (キューイング)** | 終了処理 (State=Terminated) |
+| **Terminated** | Error | Error | Error | **成功 (何もしない)** |
+
+* **Error**: `IllegalStateException` (またはそれに準ずるエラー) をコールバックに返却します。
+* **初期化開始**: バックグラウンドで初期化処理を開始します。
+* **デコード開始**: バックグラウンドでデコード処理を開始します。
+* **取得開始**: バックグラウンドでメモリ使用量の取得を開始します。
+* **キューイング**: 実行中の処理が完了した後、順次実行されます。
+
 ---
 
 ## 2. wrapper.c (C Wrapper for WASM)
