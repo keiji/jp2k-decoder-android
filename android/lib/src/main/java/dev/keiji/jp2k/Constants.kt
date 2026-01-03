@@ -89,10 +89,14 @@ internal const val SCRIPT_BYTES_HEX_CONVERTER = """
 
 internal const val SCRIPT_DEFINE_DECODE_J2K = """
             globalThis.decodeJ2K = function(dataHexString, maxPixels, maxHeapSize, colorFormat, measureTimes) {
-                let t0, t1, t2, t3;
+                const now = function() {
+                    return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                };
+
+                let timeStart, timeAfterPreProcess, timeAfterDecode, timeAfterPostProcess;
                 try {
                     if (measureTimes) {
-                         t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                         timeStart = now();
                     }
 
                     const exports = wasmInstance.exports;
@@ -108,14 +112,14 @@ internal const val SCRIPT_DEFINE_DECODE_J2K = """
                     heap.set(encodedBuffer, inputPtr);
 
                     if (measureTimes) {
-                         t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                         timeAfterPreProcess = now();
                     }
 
                     // Call decodeToBmp
                     const bmpPtr = exports.decodeToBmp(inputPtr, encodedBuffer.length, maxPixels, maxHeapSize, colorFormat);
 
                     if (measureTimes) {
-                         t2 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                         timeAfterDecode = now();
                     }
 
                     if (bmpPtr === 0) {
@@ -134,7 +138,7 @@ internal const val SCRIPT_DEFINE_DECODE_J2K = """
                     exports.free(inputPtr);
 
                     if (measureTimes) {
-                         t3 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                         timeAfterPostProcess = now();
                     }
 
                     const result = {
@@ -142,9 +146,9 @@ internal const val SCRIPT_DEFINE_DECODE_J2K = """
                     };
 
                     if (measureTimes) {
-                        result.timePreProcess = t1 - t0;
-                        result.timeWasm = t2 - t1;
-                        result.timePostProcess = t3 - t2;
+                        result.timePreProcess = timeAfterPreProcess - timeStart;
+                        result.timeWasm = timeAfterDecode - timeAfterPreProcess;
+                        result.timePostProcess = timeAfterPostProcess - timeAfterDecode;
                     }
 
                     return JSON.stringify(result);
