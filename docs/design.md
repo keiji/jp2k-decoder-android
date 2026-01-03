@@ -14,18 +14,18 @@ graph TB
 
     subgraph "jp2k-decoder-android (Library)"
         subgraph "Kotlin Layer"
-            Decoder[Jp2kDecoder / Async]
-            SandboxMgr[Jp2kSandbox (Singleton)]
+            Decoder["Jp2kDecoder / Async"]
+            SandboxMgr["Jp2kSandbox (Singleton)"]
         end
 
         subgraph "Infrastructure Layer"
-            JSSandbox[JavaScriptSandbox (Jetpack)]
+            JSSandbox["JavaScriptSandbox (Jetpack)"]
             JSIsolate[JavaScriptIsolate]
         end
 
         subgraph "Runtime Layer (WASM)"
-            Wrapper[wrapper.c (WASM)]
-            OpenJPEG[OpenJPEG (WASM)]
+            Wrapper["wrapper.c (WASM)"]
+            OpenJPEG["OpenJPEG (WASM)"]
         end
     end
 
