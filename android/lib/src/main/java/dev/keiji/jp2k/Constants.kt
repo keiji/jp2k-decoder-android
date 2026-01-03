@@ -35,6 +35,9 @@ const wasiSnapshotPreview = {
     fd_write: (fd, iovs, iovs_len, p_nwritten) => {
         const view = new DataView(wasmInstance.exports.memory.buffer);
         let total = 0;
+        // iovsから書き込みデータの合計サイズを計算します。
+        // これを行わず0バイト書き込みとして返すと、呼び出し元（libc）が未完了とみなして
+        // 無限ループ（再試行）に陥る可能性があるため、データは捨てつつ「全て書き込んだ」ように振る舞います。
         for (let i = 0; i < iovs_len; i++) {
             const len = view.getUint32(iovs + i * 8 + 4, true);
             total += len;
