@@ -25,12 +25,12 @@ enum class State {
     Processing,
 
     /**
-     * The decoder is terminating.
+     * The decoder is releasing.
      */
-    Terminating,
+    Releasing,
 
     /**
-     * The decoder has been terminated and cannot be used anymore.
+     * The decoder has been released and cannot be used anymore.
      */
-    Terminated
+    Released
 }

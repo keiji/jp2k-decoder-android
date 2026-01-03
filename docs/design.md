@@ -105,8 +105,8 @@ Androidアプリから利用されるAPIを提供するレイヤーです。`Jp2
 *   `Initializing`: 初期化処理中。バックグラウンドでのWASMロードやIsolate作成を行っています。
 *   `Initialized`: 初期化完了。`decodeImage()` の呼び出しが可能な待機状態。
 *   `Processing`: デコードまたはメモリ使用量取得などの処理中。
-*   `Terminating`: 終了処理中。`release()` が実行中です。
-*   `Terminated`: 終了状態。`release()` が完了した後の状態。これ以上の操作は受け付けません。
+*   `Releasing`: 終了処理中。`release()` が実行中です。
+*   `Released`: 終了状態。`release()` が完了した後の状態。これ以上の操作は受け付けません。
 
 #### 状態遷移図
 
@@ -124,24 +124,24 @@ stateDiagram-v2
 
     Initializing --> Initialized : init() success
     Initializing --> Uninitialized : init() failed (Exception)
-    Initializing --> Terminating : release() called during init
+    Initializing --> Releasing : release() called during init
 
     Initialized --> Processing : decodeImage() / getMemoryUsage() called
     Processing --> Initialized : processing finished (Success/Error)
 
-    Processing --> Terminating : release() called
+    Processing --> Releasing : release() called
 
-    Initialized --> Terminating : release() called
+    Initialized --> Releasing : release() called
 
-    Terminating --> Terminated
-    Terminated --> [*]
+    Releasing --> Released
+    Released --> [*]
 ```
 
 #### Jp2kDecoder (Coroutines)
 
 *   **init(context)**: Suspending関数。Isolateの初期化を行います。`Mutex`によりシリアライズされており、並行呼び出しは安全に制御されます。デフォルトでは `Dispatchers.Default` (またはコンストラクタで指定されたDispatcher) 上で実行されます。
 *   **decodeImage(bytes)**: Suspending関数。デコード処理を行います。`Dispatchers.Default` (またはコンストラクタで指定されたDispatcher) 上で実行されます。
-*   **release()**: 即座にIsolateをクローズし、状態を `Terminated` に変更します。
+*   **release()**: 即座にIsolateをクローズし、状態を `Released` に変更します。
 
 #### Jp2kDecoderAsync (Callback)
 
@@ -149,11 +149,11 @@ stateDiagram-v2
 
 | State \ Method | init() | decodeImage() | getMemoryUsage() | release() |
 | :--- | :--- | :--- | :--- | :--- |
-| **Uninitialized** | **初期化開始** | Error | Error | 終了処理 (State=Terminated) |
-| **Initializing** | Error | Error | Error | 終了処理 (State=Terminated) |
-| **Initialized** | **成功 (何もしない)** | **デコード開始** | **取得開始** | 終了処理 (State=Terminated) |
-| **Processing** | Error | **デコード開始 (キューイング)** | **取得開始 (キューイング)** | 終了処理 (State=Terminated) |
-| **Terminated** | Error | Error | Error | **成功 (何もしない)** |
+| **Uninitialized** | **初期化開始** | Error | Error | 終了処理 (State=Released) |
+| **Initializing** | Error | Error | Error | 終了処理 (State=Released) |
+| **Initialized** | **成功 (何もしない)** | **デコード開始** | **取得開始** | 終了処理 (State=Released) |
+| **Processing** | Error | **デコード開始 (キューイング)** | **取得開始 (キューイング)** | 終了処理 (State=Released) |
+| **Released** | Error | Error | Error | **成功 (何もしない)** |
 
 * **Error**: `IllegalStateException` (またはそれに準ずるエラー) をコールバックに返却します。
 * **初期化開始**: バックグラウンドExecutorで初期化処理を開始します。
