@@ -52,17 +52,18 @@ sequenceDiagram
 
     App->>Kotlin: decodeImage(ByteArray)
     Kotlin->>Kotlin: Convert ByteArray to Hex String
-    Kotlin->>Bridge: Call decodeToBmp(hexString)
+    Kotlin->>Bridge: Call decodeJ2K(hexString)
 
     rect rgb(240, 248, 255)
     note right of Bridge: Inside JS/WASM Sandbox
-    Bridge->>WASM: Invoke C function
-    WASM->>WASM: Parse Hex to Bytes
+    Bridge->>Bridge: Parse Hex to Bytes (Alloc WASM Mem)
+    Bridge->>WASM: Invoke C function (decodeToBmp)
     WASM->>OpenJPEG: opj_decode
     OpenJPEG-->>WASM: opj_image_t (Raw Pixel Data)
     WASM->>WASM: Convert to BMP Format (Add Header)
-    WASM->>WASM: Convert BMP Bytes to Hex String
-    WASM-->>Bridge: Return JSON { result: "Hex..." }
+    WASM-->>Bridge: Return Pointer
+    Bridge->>Bridge: Read Mem & Convert BMP to Hex String
+    Bridge-->>Kotlin: Return JSON { bmp: "Hex..." }
     end
 
     Bridge-->>Kotlin: Return JSON String
