@@ -183,6 +183,121 @@ void test_rgb565() {
     printf("RGB565 Passed.\n");
 }
 
+void test_grayscale() {
+    printf("Testing Grayscale (1ch)...\n");
+    uint32_t width = 2;
+    uint32_t height = 1;
+    opj_image_t* image = create_mock_image(width, height, 1, 0);
+
+    // Pixel 0: 0
+    image->comps[0].data[0] = 0;
+    // Pixel 1: 255
+    image->comps[0].data[1] = 255;
+
+    // 1. Test ARGB8888 Expansion (Gray -> R=G=B, A=255)
+    uint8_t* bmp = convert_image_to_bmp(image, COLOR_FORMAT_ARGB8888);
+    assert(bmp != NULL);
+    uint8_t* pixels = bmp + 54;
+
+    // Pixel 0: B=0, G=0, R=0, A=255
+    assert(pixels[0] == 0);
+    assert(pixels[1] == 0);
+    assert(pixels[2] == 0);
+    assert(pixels[3] == 255);
+
+    // Pixel 1: B=255, G=255, R=255, A=255
+    assert(pixels[4] == 255);
+    assert(pixels[5] == 255);
+    assert(pixels[6] == 255);
+    assert(pixels[7] == 255);
+
+    free(bmp);
+
+    // 2. Test RGB565 Expansion (Gray -> R=G=B)
+    bmp = convert_image_to_bmp(image, COLOR_FORMAT_RGB565);
+    assert(bmp != NULL);
+    uint16_t* p16 = (uint16_t*)(bmp + 66);
+
+    // Pixel 0: Black (0x0000)
+    assert(p16[0] == 0x0000);
+
+    // Pixel 1: White (0xFFFF)
+    assert(p16[1] == 0xFFFF);
+
+    free(bmp);
+    opj_image_destroy(image);
+    printf("Grayscale Passed.\n");
+}
+
+void test_grayscale_alpha() {
+    printf("Testing Grayscale + Alpha (2ch)...\n");
+    uint32_t width = 1;
+    uint32_t height = 1;
+    opj_image_t* image = create_mock_image(width, height, 2, 0);
+
+    // Gray: 100
+    image->comps[0].data[0] = 100;
+    // Alpha: 200 (explicitly marked as alpha by our logic check if we set the flag,
+    // OR just by position if we assume 2nd channel is alpha?
+    // My code says: if (image->comps[1].alpha != 0) { a_data = image->comps[1].data; }
+    // So I must set the alpha flag in the mock for it to be picked up as Alpha.
+    image->comps[1].data[0] = 200;
+    image->comps[1].alpha = 1;
+
+    uint8_t* bmp = convert_image_to_bmp(image, COLOR_FORMAT_ARGB8888);
+    assert(bmp != NULL);
+    uint8_t* pixels = bmp + 54;
+
+    // B=100, G=100, R=100, A=200
+    assert(pixels[0] == 100);
+    assert(pixels[1] == 100);
+    assert(pixels[2] == 100);
+    assert(pixels[3] == 200);
+
+    free(bmp);
+    opj_image_destroy(image);
+    printf("Grayscale + Alpha Passed.\n");
+}
+
+void test_multichannel() {
+    printf("Testing Multi-channel (5ch)...\n");
+    uint32_t width = 1;
+    uint32_t height = 1;
+    opj_image_t* image = create_mock_image(width, height, 5, 0);
+
+    // Set pixel values
+    // Comp 0 (R): 255
+    image->comps[0].data[0] = 255;
+    // Comp 1 (G): 0
+    image->comps[1].data[0] = 0;
+    // Comp 2 (B): 0
+    image->comps[2].data[0] = 0;
+    // Comp 3 (A): 128 (treated as alpha if flag set, or index 3 if not)
+    // In create_mock_image, we didn't set alpha flag for index 3 unless called with with_alpha=1
+    // But get_alpha_component returns comps[3].data if no alpha flag is found and numcomps > 3
+    image->comps[3].data[0] = 128;
+    // Comp 4 (Ignored): 100
+    image->comps[4].data[0] = 100;
+
+    uint8_t* bmp = convert_image_to_bmp(image, COLOR_FORMAT_ARGB8888);
+    assert(bmp != NULL);
+    uint8_t* pixels = bmp + 54;
+
+    // Check BGRA
+    // B=0 (from comp 2)
+    assert(pixels[0] == 0);
+    // G=0 (from comp 1)
+    assert(pixels[1] == 0);
+    // R=255 (from comp 0)
+    assert(pixels[2] == 255);
+    // A=128 (from comp 3)
+    assert(pixels[3] == 128);
+
+    free(bmp);
+    opj_image_destroy(image);
+    printf("Multi-channel Passed.\n");
+}
+
 void test_input_validation() {
     printf("Testing Input Validation...\n");
 
@@ -230,6 +345,9 @@ void test_input_validation() {
 int main() {
     test_argb8888();
     test_rgb565();
+    test_grayscale();
+    test_grayscale_alpha();
+    test_multichannel();
     test_input_validation();
     return 0;
 }
