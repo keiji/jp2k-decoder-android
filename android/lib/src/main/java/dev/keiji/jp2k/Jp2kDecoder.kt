@@ -277,6 +277,9 @@ class Jp2kDecoder(
      */
     fun release() {
         val isolateToClose: JavaScriptIsolate?
+
+        // AutoCloseable.close() is not a suspend function, so we cannot use Mutex here.
+        // Instead, we use synchronized block to ensure thread safety.
         synchronized(this) {
              if (_state == State.Terminated) {
                  return
