@@ -204,6 +204,16 @@ class Jp2kDecoder(
                     throw Jp2kException(Jp2kError.Unknown, errorMsg)
                 }
 
+                if (measureTimes) {
+                    val timePreProcess = root.optDouble("timePreProcess", 0.0)
+                    val timeWasm = root.optDouble("timeWasm", 0.0)
+                    val timePostProcess = root.optDouble("timePostProcess", 0.0)
+                    log(
+                        Log.INFO,
+                        "Pre-process: $timePreProcess ms, WASM: $timeWasm ms, Post-process: $timePostProcess ms"
+                    )
+                }
+
                 val bmpBase64 = root.getString("bmp")
                 val bmpBytes = Base64.getDecoder().decode(bmpBase64)
 

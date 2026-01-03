@@ -129,7 +129,7 @@ internal const val SCRIPT_BYTES_BASE64_CONVERTER = """
 """
 
 internal const val SCRIPT_DEFINE_DECODE_J2K = """
-            globalThis.decodeJ2K = function(dataBase64String, maxPixels, maxHeapSize, colorFormat) {
+            globalThis.decodeJ2K = function(dataBase64String, maxPixels, maxHeapSize, colorFormat, measureTimes) {
                 const now = function() {
                     return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
                 };
