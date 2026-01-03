@@ -188,15 +188,33 @@ static uint8_t* convert_image_to_bmp(opj_image_t* image, int color_format) {
     uint32_t width = image->x1 - image->x0;
     uint32_t height = image->y1 - image->y0;
 
-    if (image->numcomps < 3) {
+    if (image->numcomps < 1) {
         last_error = ERR_DECODE;
         return NULL;
     }
 
-    int32_t* r_data = image->comps[0].data;
-    int32_t* g_data = image->comps[1].data;
-    int32_t* b_data = image->comps[2].data;
-    int32_t* a_data = get_alpha_component(image);
+    int32_t* r_data = NULL;
+    int32_t* g_data = NULL;
+    int32_t* b_data = NULL;
+    int32_t* a_data = NULL;
+
+    if (image->numcomps == 1) {
+        r_data = image->comps[0].data;
+        g_data = image->comps[0].data;
+        b_data = image->comps[0].data;
+    } else if (image->numcomps == 2) {
+        r_data = image->comps[0].data;
+        g_data = image->comps[0].data;
+        b_data = image->comps[0].data;
+        if (image->comps[1].alpha != 0) {
+            a_data = image->comps[1].data;
+        }
+    } else {
+        r_data = image->comps[0].data;
+        g_data = image->comps[1].data;
+        b_data = image->comps[2].data;
+        a_data = get_alpha_component(image);
+    }
 
     uint8_t* bmp_buffer = NULL;
 
