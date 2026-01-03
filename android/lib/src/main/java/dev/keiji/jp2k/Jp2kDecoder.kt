@@ -88,7 +88,7 @@ class Jp2kDecoder(
                 Jp2kSandbox.setupConsoleCallback(isolate, sandbox, mainExecutor, TAG)
             }
 
-            if (_state == State.Terminated) {
+            if (_state == State.Terminated || _state == State.Terminating) {
                 isolate.close()
                 throw CancellationException("Jp2kDecoder was released during initialization.")
             }
@@ -96,7 +96,7 @@ class Jp2kDecoder(
 
             loadWasm(isolate, assetManager)
 
-            if (_state == State.Terminated) {
+            if (_state == State.Terminated || _state == State.Terminating) {
                 throw CancellationException("Jp2kDecoder was released during initialization.")
             }
             _state = State.Initialized
@@ -104,7 +104,7 @@ class Jp2kDecoder(
             val time = System.currentTimeMillis() - start
             log(Log.INFO, "init() finished in $time msec")
         } catch (e: Exception) {
-            if (_state != State.Terminated) {
+            if (_state != State.Terminated && _state != State.Terminating) {
                 _state = State.Uninitialized
             }
             val time = System.currentTimeMillis() - start
@@ -161,7 +161,7 @@ class Jp2kDecoder(
         // Since we are using Mutex, we are already serialized.
         // If this function is called concurrently, the second call will wait here.
         // However, we need to check the state.
-        if (_state == State.Terminated) {
+        if (_state == State.Terminated || _state == State.Terminating) {
             throw CancellationException("Decoder was released.")
         }
         if (_state != State.Initialized) {
@@ -222,7 +222,7 @@ class Jp2kDecoder(
 
             restoreStateAfterDecode()
 
-            if (_state == State.Terminated) {
+            if (_state == State.Terminated || _state == State.Terminating) {
                 throw CancellationException("Decoder was released.")
             }
             bitmap
@@ -231,7 +231,7 @@ class Jp2kDecoder(
             val time = System.currentTimeMillis() - start
             log(Log.ERROR, "decodeImage() failed in $time msec. Error: ${e.message}")
             restoreStateAfterDecode()
-            if (_state == State.Terminated) {
+            if (_state == State.Terminated || _state == State.Terminating) {
                 throw CancellationException("Decoder was released.")
             }
             throw e
@@ -251,7 +251,7 @@ class Jp2kDecoder(
      * @return The [MemoryUsage] statistics.
      */
     suspend fun getMemoryUsage(): MemoryUsage = mutex.withLock {
-        if (_state == State.Terminated) {
+        if (_state == State.Terminated || _state == State.Terminating) {
              throw CancellationException("Decoder was released.")
         }
         if (_state != State.Initialized) {
@@ -281,10 +281,10 @@ class Jp2kDecoder(
         // AutoCloseable.close() is not a suspend function, so we cannot use Mutex here.
         // Instead, we use synchronized block to ensure thread safety.
         synchronized(this) {
-             if (_state == State.Terminated) {
+             if (_state == State.Terminated || _state == State.Terminating) {
                  return
              }
-             _state = State.Terminated
+             _state = State.Terminating
              isolateToClose = jsIsolate
              jsIsolate = null
         }
@@ -293,6 +293,8 @@ class Jp2kDecoder(
             isolateToClose?.close()
         } catch (e: Exception) {
             log(Log.ERROR, "Error closing isolate: ${e.message}")
+        } finally {
+            _state = State.Terminated
         }
     }
 

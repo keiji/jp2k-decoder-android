@@ -25,6 +25,11 @@ enum class State {
     Decoding,
 
     /**
+     * The decoder is terminating.
+     */
+    Terminating,
+
+    /**
      * The decoder has been terminated and cannot be used anymore.
      */
     Terminated

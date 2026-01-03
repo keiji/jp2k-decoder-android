@@ -64,6 +64,10 @@ class Jp2kDecoderAsync(
                 callback.onSuccess(Unit)
                 return
             }
+            if (_state == State.Terminated || _state == State.Terminating) {
+                callback.onError(CancellationException("Decoder was released."))
+                return
+            }
             if (_state != State.Uninitialized) {
                 callback.onError(IllegalStateException("Cannot initialize while in state: $_state"))
                 return
@@ -91,7 +95,7 @@ class Jp2kDecoderAsync(
                     }
 
                     synchronized(lock) {
-                        if (_state == State.Terminated) {
+                        if (_state == State.Terminated || _state == State.Terminating) {
                             isolate.close()
                             throw CancellationException("Jp2kDecoderAsync was released during initialization.")
                         }
@@ -102,7 +106,7 @@ class Jp2kDecoderAsync(
                     loadWasm(isolate, assetManager)
 
                     synchronized(lock) {
-                        if (_state == State.Terminated) {
+                        if (_state == State.Terminated || _state == State.Terminating) {
                             throw CancellationException("Jp2kDecoderAsync was released during initialization.")
                         }
                         _state = State.Initialized
@@ -113,7 +117,7 @@ class Jp2kDecoderAsync(
                     callback.onSuccess(Unit)
                 } catch (e: Exception) {
                     synchronized(lock) {
-                        if (_state != State.Terminated) {
+                        if (_state != State.Terminated && _state != State.Terminating) {
                             _state = State.Uninitialized
                         }
                     }
@@ -182,7 +186,7 @@ class Jp2kDecoderAsync(
             synchronized(executionLock) {
                 // Check state again inside the serial lock
                 synchronized(lock) {
-                    if (_state == State.Terminated) {
+                    if (_state == State.Terminated || _state == State.Terminating) {
                         callback.onError(CancellationException("Decoder was released."))
                         return@execute
                     }
@@ -263,7 +267,7 @@ class Jp2kDecoderAsync(
                     restoreStateAfterDecode()
                     // Check if released during decode (unlikely due to lock, but good practice)
                     synchronized(lock) {
-                         if (_state == State.Terminated) {
+                         if (_state == State.Terminated || _state == State.Terminating) {
                              callback.onError(CancellationException("Decoder was released."))
                          } else {
                              callback.onSuccess(bitmap)
@@ -275,7 +279,7 @@ class Jp2kDecoderAsync(
                     log(Log.ERROR, "decodeImage() failed in $time msec. Error: ${e.message}")
                     restoreStateAfterDecode()
                     synchronized(lock) {
-                        if (_state == State.Terminated) {
+                        if (_state == State.Terminated || _state == State.Terminating) {
                             callback.onError(CancellationException("Decoder was released."))
                         } else {
                             callback.onError(e)
@@ -311,6 +315,10 @@ class Jp2kDecoderAsync(
      */
     fun getMemoryUsage(callback: Callback<MemoryUsage>) {
         synchronized(lock) {
+            if (_state == State.Terminated || _state == State.Terminating) {
+                callback.onError(CancellationException("Decoder was released."))
+                return
+            }
             if (_state != State.Initialized && _state != State.Decoding) {
                 callback.onError(IllegalStateException("Cannot getMemoryUsage while in state: $_state"))
                 return
@@ -320,7 +328,7 @@ class Jp2kDecoderAsync(
         backgroundExecutor.execute {
             synchronized(executionLock) {
                 synchronized(lock) {
-                    if (_state == State.Terminated) {
+                    if (_state == State.Terminated || _state == State.Terminating) {
                         callback.onError(CancellationException("Decoder was released."))
                         return@execute
                     }
@@ -354,10 +362,10 @@ class Jp2kDecoderAsync(
         var isolateToClose: JavaScriptIsolate? = null
 
         synchronized(lock) {
-            if (_state == State.Terminated) {
+            if (_state == State.Terminated || _state == State.Terminating) {
                 return
             }
-            _state = State.Terminated
+            _state = State.Terminating
             isolateToClose = jsIsolate
             jsIsolate = null
         }
@@ -370,6 +378,10 @@ class Jp2kDecoderAsync(
 
         if (backgroundExecutor is ExecutorService && !backgroundExecutor.isShutdown) {
             backgroundExecutor.shutdown()
+        }
+
+        synchronized(lock) {
+            _state = State.Terminated
         }
     }
 
