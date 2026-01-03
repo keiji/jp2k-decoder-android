@@ -8,10 +8,13 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
+import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.guava.await
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -76,9 +79,7 @@ class Jp2kDecoder(
 
         val start = System.currentTimeMillis()
         try {
-            val sandbox = withContext(coroutineDispatcher) {
-                sandboxFuture.get()
-            }
+            val sandbox = sandboxFuture.await()
             val isolate = Jp2kSandbox.createIsolate(
                 sandbox = sandbox,
                 maxHeapSizeBytes = config.maxHeapSizeBytes,
@@ -275,26 +276,8 @@ class Jp2kDecoder(
      * This closes the JavaScript isolate. It should be called when the decoder is no longer needed.
      */
     fun release() {
-        // We can't use mutex.withLock here easily because it suspends.
-        // But we need to ensure thread safety.
-        // However, release is often called from main thread or finally block.
-        // We use a volatile state and simple synchronization for the critical section.
-
-        // Note: In Jp2kDecoderAsync, we synchronized(lock). Here we should do similar or launch a coroutine.
-        // But release() is typically synchronous and void.
-
-        // To keep it simple and safe:
-        // 1. Mark state as Terminated.
-        // 2. Close isolate.
-        // 3. Any ongoing coroutine checking state will see Terminated and fail/cancel.
-
-        // Since we are decoupling, let's use a synchronized block for state transition if we want to mimic the logic strictly,
-        // but mutex is for coroutines.
-        // In this specific case, mixing `mutex` and simple variable access is tricky.
-        // Let's assume `_state` is volatile.
-
         val isolateToClose: JavaScriptIsolate?
-        synchronized(this) { // Minimal sync just to get the isolate reference atomically if needed
+        synchronized(this) {
              if (_state == State.Terminated) {
                  return
              }
@@ -312,6 +295,23 @@ class Jp2kDecoder(
 
     override fun close() {
         release()
+    }
+
+    private suspend fun <T> ListenableFuture<T>.await(): T {
+        return suspendCancellableCoroutine { cont ->
+            addListener(
+                {
+                    try {
+                        cont.resume(get())
+                    } catch (e: ExecutionException) {
+                        cont.resumeWithException(e.cause ?: e)
+                    } catch (e: Exception) {
+                        cont.resumeWithException(e)
+                    }
+                },
+                { command -> command.run() }
+            )
+        }
     }
 
     companion object {
