@@ -167,8 +167,8 @@ class Jp2kDecoderAsync(
      */
     fun decodeImage(j2kData: ByteArray, colorFormat: ColorFormat = ColorFormat.ARGB8888, callback: Callback<Bitmap>) {
         synchronized(lock) {
-            // Allow if Initialized OR Decoding (queueing up)
-            if (state != State.Initialized && state != State.Decoding) {
+            // Allow if Initialized OR Decoding (queueing up) OR Initializing (queueing up)
+            if (state != State.Initialized && state != State.Decoding && state != State.Initializing) {
                 callback.onError(IllegalStateException("Decoder is not ready (Current state: $state)"))
                 return
             }
