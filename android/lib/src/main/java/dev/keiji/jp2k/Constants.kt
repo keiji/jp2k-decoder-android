@@ -129,8 +129,17 @@ internal const val SCRIPT_BYTES_BASE64_CONVERTER = """
 """
 
 internal const val SCRIPT_DEFINE_DECODE_J2K = """
-            globalThis.decodeJ2K = function(dataBase64String, maxPixels, maxHeapSize, colorFormat) {
+            globalThis.decodeJ2K = function(dataBase64String, maxPixels, maxHeapSize, colorFormat, measureTimes) {
+                const now = function() {
+                    return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                };
+
+                let timeStart, timeAfterPreProcess, timeAfterDecode, timeAfterPostProcess;
                 try {
+                    if (measureTimes) {
+                         timeStart = now();
+                    }
+
                     const exports = wasmInstance.exports;
 
                     const encodedBuffer = globalThis.base64ToBytes(dataBase64String);
@@ -143,8 +152,16 @@ internal const val SCRIPT_DEFINE_DECODE_J2K = """
 
                     heap.set(encodedBuffer, inputPtr);
 
+                    if (measureTimes) {
+                         timeAfterPreProcess = now();
+                    }
+
                     // Call decodeToBmp
                     const bmpPtr = exports.decodeToBmp(inputPtr, encodedBuffer.length, maxPixels, maxHeapSize, colorFormat);
+
+                    if (measureTimes) {
+                         timeAfterDecode = now();
+                    }
 
                     if (bmpPtr === 0) {
                         const errorCode = exports.getLastError();
@@ -161,9 +178,21 @@ internal const val SCRIPT_DEFINE_DECODE_J2K = """
                     exports.free(bmpPtr);
                     exports.free(inputPtr);
 
-                    return JSON.stringify({
+                    if (measureTimes) {
+                         timeAfterPostProcess = now();
+                    }
+
+                    const result = {
                         bmp: base64String
-                    });
+                    };
+
+                    if (measureTimes) {
+                        result.timePreProcess = timeAfterPreProcess - timeStart;
+                        result.timeWasm = timeAfterDecode - timeAfterPreProcess;
+                        result.timePostProcess = timeAfterPostProcess - timeAfterDecode;
+                    }
+
+                    return JSON.stringify(result);
                 } catch (e) {
                     return JSON.stringify({ error: e.toString() });
                 }
