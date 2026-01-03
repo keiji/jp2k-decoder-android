@@ -136,7 +136,7 @@ class Jp2kDecoderAsync(
         val wasmHexString = wasmBytes.toHexString()
 
         val script = """
-        $SCRIPT_HEX_UTILS_LOCAL
+        $SCRIPT_BYTES_HEX_CONVERTER_LOCAL
 
         var wasmInstance;
         const wasmBuffer = globalThis.hexToBytes('$wasmHexString');
@@ -406,7 +406,7 @@ class Jp2kDecoderAsync(
         private const val MIN_INPUT_SIZE = 12 // Signature box length
         private const val ASSET_PATH_WASM = "openjpeg_core.wasm"
 
-        private const val SCRIPT_HEX_UTILS_LOCAL = SCRIPT_HEX_UTILS
+        private const val SCRIPT_BYTES_HEX_CONVERTER_LOCAL = SCRIPT_BYTES_HEX_CONVERTER
         // Script to import WASI polyfill
         // Fix: Use top-level constant from Constants.kt directly. Accessing via Class name 'Constants' is incorrect for top-level properties.
         private const val SCRIPT_IMPORT_OBJECT_LOCAL = SCRIPT_IMPORT_OBJECT

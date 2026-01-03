@@ -64,7 +64,7 @@ const importObject = {
 };
 """
 
-internal const val SCRIPT_HEX_UTILS = """
+internal const val SCRIPT_BYTES_HEX_CONVERTER = """
             globalThis.bytesToHex = function(bytes) {
                 const hexChars = "0123456789abcdef";
                 let output = "";

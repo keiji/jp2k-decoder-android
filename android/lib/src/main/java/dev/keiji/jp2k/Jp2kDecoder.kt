@@ -120,7 +120,7 @@ class Jp2kDecoder(
             val wasmHexString = wasmBytes.toHexString()
 
             val script = """
-            $SCRIPT_HEX_UTILS_LOCAL
+            $SCRIPT_BYTES_HEX_CONVERTER_LOCAL
 
             var wasmInstance;
             const wasmBuffer = globalThis.hexToBytes('$wasmHexString');
@@ -334,7 +334,7 @@ class Jp2kDecoder(
         private const val MIN_INPUT_SIZE = 12 // Signature box length
         private const val ASSET_PATH_WASM = "openjpeg_core.wasm"
 
-        private const val SCRIPT_HEX_UTILS_LOCAL = SCRIPT_HEX_UTILS
+        private const val SCRIPT_BYTES_HEX_CONVERTER_LOCAL = SCRIPT_BYTES_HEX_CONVERTER
         private const val SCRIPT_IMPORT_OBJECT_LOCAL = SCRIPT_IMPORT_OBJECT
         private const val SCRIPT_DEFINE_DECODE_J2K_LOCAL = SCRIPT_DEFINE_DECODE_J2K
     }
