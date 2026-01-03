@@ -90,6 +90,10 @@ class Jp2kDecoderAsync(
      */
     fun init(context: Context, callback: Callback<Unit>) {
         synchronized(lock) {
+            if (_state == State.Initialized) {
+                callback.onSuccess(Unit)
+                return
+            }
             if (_state != State.Uninitialized) {
                 callback.onError(IllegalStateException("Jp2kDecoderAsync is not Uninitialized. Current state: $_state"))
                 return
