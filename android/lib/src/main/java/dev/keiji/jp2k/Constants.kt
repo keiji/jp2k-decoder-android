@@ -19,11 +19,6 @@ const val DEFAULT_MAX_EVALUATION_RETURN_SIZE_BYTES = 256 * 1024 * 1024
  */
 const val DEFAULT_MAX_PIXELS = 16000000
 
-internal const val ASSET_PATH_WASM = "openjpeg_core.wasm"
-
-internal const val MAX_INPUT_SIZE = 128 * 1024 * 1024 // 128MB
-internal const val MIN_INPUT_SIZE = 12 // JP2 signature box length
-
 internal const val SCRIPT_IMPORT_OBJECT = """
 const wasiSnapshotPreview = {
     // 環境変数の数とサイズ
@@ -38,20 +33,15 @@ const wasiSnapshotPreview = {
 
     // 標準出力・エラー出力
     fd_write: (fd, iovs, iovs_len, p_nwritten) => {
-            const view = new DataView(wasmInstance.exports.memory.buffer);
-            let total = 0;
-            let msg = "";
-            for (let i = 0; i < iovs_len; i++) {
-                const ptr = view.getUint32(iovs + i * 8, true);
-                const len = view.getUint32(iovs + i * 8 + 4, true);
-                const strBytes = new Uint8Array(wasmInstance.exports.memory.buffer, ptr, len);
-                msg += new TextDecoder().decode(strBytes);
-                total += len;
-            }
-            view.setUint32(p_nwritten, total, true);
-            console.log("WASM_LOG: " + msg);
-            return 0;
-        },
+        const view = new DataView(wasmInstance.exports.memory.buffer);
+        let total = 0;
+        for (let i = 0; i < iovs_len; i++) {
+            const len = view.getUint32(iovs + i * 8 + 4, true);
+            total += len;
+        }
+        view.setUint32(p_nwritten, total, true);
+        return 0;
+    },
     fd_close: (fd) => 0,
     fd_seek: (fd, offset_low, offset_high, whence, p_new_offset) => 0,
 
