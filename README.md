@@ -24,13 +24,13 @@ To install the library, add the dependency to your module's `build.gradle.kts` (
 ### Gradle (Kotlin DSL)
 
 ```kotlin
-implementation("dev.keiji.jp2k:jp2k-decoder-android:0.1.0")
+implementation("dev.keiji.jp2k:jp2k-decoder-android:0.2.0")
 ```
 
 ### Gradle (Groovy DSL)
 
 ```groovy
-implementation 'dev.keiji.jp2k:jp2k-decoder-android:0.1.0'
+implementation 'dev.keiji.jp2k:jp2k-decoder-android:0.2.0'
 ```
 
 ## How to build
