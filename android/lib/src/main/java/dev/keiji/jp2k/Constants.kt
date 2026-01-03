@@ -19,6 +19,8 @@ const val DEFAULT_MAX_EVALUATION_RETURN_SIZE_BYTES = 256 * 1024 * 1024
  */
 const val DEFAULT_MAX_PIXELS = 16000000
 
+internal const val ERROR_CODE_UNKNOWN = Int.MIN_VALUE
+
 internal const val SCRIPT_IMPORT_OBJECT = """
 const wasiSnapshotPreview = {
     // 環境変数の数とサイズ
@@ -194,7 +196,7 @@ internal const val SCRIPT_DEFINE_DECODE_J2K = """
 
                     return JSON.stringify(result);
                 } catch (e) {
-                    return JSON.stringify({ errorCode: -2147483648, errorMessage: e.toString() });
+                    return JSON.stringify({ errorCode: $ERROR_CODE_UNKNOWN, errorMessage: e.toString() });
                 }
             };
 
