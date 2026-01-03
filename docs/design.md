@@ -119,6 +119,7 @@ stateDiagram-v2
     Initializing --> Terminated : release() called during init
 
     Initialized --> Decoding : decodeImage() called
+    Initializing --> Decoding : decodeImage() called (Queued)
     Decoding --> Initialized : decodeImage() finished (Success/Error)
 
     Decoding --> Terminated : release() called
