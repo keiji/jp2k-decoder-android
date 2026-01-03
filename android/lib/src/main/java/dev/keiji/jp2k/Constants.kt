@@ -88,8 +88,13 @@ internal const val SCRIPT_BYTES_HEX_CONVERTER = """
 """
 
 internal const val SCRIPT_DEFINE_DECODE_J2K = """
-            globalThis.decodeJ2K = function(dataHexString, maxPixels, maxHeapSize, colorFormat) {
+            globalThis.decodeJ2K = function(dataHexString, maxPixels, maxHeapSize, colorFormat, measureTimes) {
+                let t0, t1, t2, t3;
                 try {
+                    if (measureTimes) {
+                         t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                    }
+
                     const exports = wasmInstance.exports;
 
                     const encodedBuffer = globalThis.hexToBytes(dataHexString);
@@ -102,8 +107,16 @@ internal const val SCRIPT_DEFINE_DECODE_J2K = """
 
                     heap.set(encodedBuffer, inputPtr);
 
+                    if (measureTimes) {
+                         t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                    }
+
                     // Call decodeToBmp
                     const bmpPtr = exports.decodeToBmp(inputPtr, encodedBuffer.length, maxPixels, maxHeapSize, colorFormat);
+
+                    if (measureTimes) {
+                         t2 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                    }
 
                     if (bmpPtr === 0) {
                         const errorCode = exports.getLastError();
@@ -120,9 +133,21 @@ internal const val SCRIPT_DEFINE_DECODE_J2K = """
                     exports.free(bmpPtr);
                     exports.free(inputPtr);
 
-                    return JSON.stringify({
+                    if (measureTimes) {
+                         t3 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                    }
+
+                    const result = {
                         bmp: hexString
-                    });
+                    };
+
+                    if (measureTimes) {
+                        result.timePreProcess = t1 - t0;
+                        result.timeWasm = t2 - t1;
+                        result.timePostProcess = t3 - t2;
+                    }
+
+                    return JSON.stringify(result);
                 } catch (e) {
                     return JSON.stringify({ error: e.toString() });
                 }

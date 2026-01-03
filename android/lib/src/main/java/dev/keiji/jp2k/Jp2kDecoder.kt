@@ -183,8 +183,9 @@ class Jp2kDecoder(
             val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
 
             val bitmap = withContext(coroutineDispatcher) {
+                val measureTimes = config.logLevel != null
                 val dataHexString = j2kData.toHexString()
-                val script = "globalThis.decodeJ2K('$dataHexString', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id});"
+                val script = "globalThis.decodeJ2K('$dataHexString', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes);"
 
                 val resultFuture = isolate.evaluateJavaScriptAsync(script)
                 val jsonResult = resultFuture.await()
@@ -200,6 +201,16 @@ class Jp2kDecoder(
                     val errorMsg = root.getString("error")
                     log(Log.ERROR, "Error: $errorMsg")
                     throw Jp2kException(Jp2kError.Unknown, errorMsg)
+                }
+
+                if (measureTimes) {
+                    val timePreProcess = root.optDouble("timePreProcess", 0.0)
+                    val timeWasm = root.optDouble("timeWasm", 0.0)
+                    val timePostProcess = root.optDouble("timePostProcess", 0.0)
+                    log(
+                        Log.INFO,
+                        "Pre-process: $timePreProcess ms, WASM: $timeWasm ms, Post-process: $timePostProcess ms"
+                    )
                 }
 
                 val bmpHex = root.getString("bmp")
