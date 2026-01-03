@@ -194,7 +194,7 @@ internal const val SCRIPT_DEFINE_DECODE_J2K = """
 
                     return JSON.stringify(result);
                 } catch (e) {
-                    return JSON.stringify({ error: e.toString() });
+                    return JSON.stringify({ errorCode: -2147483648, errorMessage: e.toString() });
                 }
             };
 

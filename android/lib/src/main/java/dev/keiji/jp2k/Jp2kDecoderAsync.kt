@@ -239,8 +239,9 @@ class Jp2kDecoderAsync(
                     if (root.has("errorCode")) {
                         val errorCode = root.getInt("errorCode")
                         val error = Jp2kError.fromInt(errorCode)
-                        log(Log.ERROR, "Error: $error")
-                        throw Jp2kException(error)
+                        val errorMessage = root.optString("errorMessage", null)
+                        log(Log.ERROR, "Error: $error, Message: $errorMessage")
+                        throw Jp2kException(error, errorMessage)
                     } else if (root.has("error")) {
                         val errorMsg = root.getString("error")
                         log(Log.ERROR, "Error: $errorMsg")
