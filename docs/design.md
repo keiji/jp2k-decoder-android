@@ -58,12 +58,12 @@ sequenceDiagram
     participant OpenJPEG as OpenJPEG
 
     App->>Kotlin: decodeImage(ByteArray)
-    Kotlin->>Kotlin: Convert ByteArray to Hex String
+    Kotlin->>Kotlin: Convert ByteArray to Hex String (HexString)
     Kotlin->>Bridge: Call decodeJ2K(hexString)
 
     rect rgb(240, 248, 255)
     note right of Bridge: Inside JS/WASM Sandbox
-    Bridge->>Bridge: Parse Hex to Bytes (Alloc WASM Mem)
+    Bridge->>Bridge: Parse Hex to Bytes (Alloc WASM Mem) using SCRIPT_HEX_UTILS
     Bridge->>WASM: Invoke C function (decodeToBmp)
     WASM->>OpenJPEG: opj_decode
     OpenJPEG-->>WASM: opj_image_t (Raw Pixel Data)
@@ -88,9 +88,10 @@ Androidアプリから利用されるAPIを提供するレイヤーです。`Jp2
 *   **Jp2kSandbox**: シングルトンオブジェクトとして `JavaScriptSandbox` の接続を管理します。アプリ全体で1つの接続を再利用することで、オーバーヘッドとリソース消費を最小限に抑えます。
 
 ### 受け持つ処理
-*   **WASMのロードと初期化**: `openjpeg_core.wasm` をアセットから読み込み、`Jp2kSandbox` から取得したサンドボックス上の `JavaScriptIsolate` でインスタンス化します。
+*   **WASMのロードと初期化**: `openjpeg_core.wasm` をアセットから読み込み、バイナリをHex文字列に変換してJavaScript環境に注入します。JS側でHex文字列をバイナリ (`Uint8Array`) に復元してから `WebAssembly.instantiate` を実行します。
 *   **データの受け渡し (Hex Encoding)**:
-    *   WASM環境とのデータ授受には、バイナリデータをHex文字列（16進数文字列）にエンコードして渡す方式を採用しています。これは、JavaScriptEngineの制約や、Base64処理のオーバーヘッド回避などを考慮した実装詳細です。
+    *   WASM環境とのデータ授受には、バイナリデータをHex文字列（16進数文字列）にエンコードして渡す方式を採用しています。
+    *   データ転送を効率化するため、JS側のユーティリティ関数 (`hexToBytes`, `bytesToHex`) は `SCRIPT_HEX_UTILS` 定数として分離・注入されます。
 *   **画像変換**: 返却されたBMP形式のHex文字列をバイト配列に変換し、`BitmapFactory` を使用してAndroidの `Bitmap` オブジェクトを生成します。
     *   `ColorFormat` 指定 (RGB565 / ARGB8888) に応じて `BitmapFactory.Options` を設定し、適切なフォーマットで Bitmap を生成します。
 *   **ライフサイクル管理**: `init()`, `release()` による `JavaScriptIsolate` のリソース管理を行います。`release()` 実行時には Isolate をクローズし、処理を強制終了します。
