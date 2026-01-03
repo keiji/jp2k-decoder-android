@@ -2,24 +2,93 @@
 
 ライブラリのアーキテクチャは、大きく分けて以下の3つのレイヤーで構成されています。
 
+## Architecture Overview
+
+本ライブラリは、AndroidのJetpack JavaScriptEngineを利用して、WASM (WebAssembly) にコンパイルされたOpenJPEGライブラリをサンドボックス環境で実行します。これにより、ネイティブコードの実行に伴うセキュリティリスクを隔離し、安全にJPEG2000画像のデコードを行います。
+
+```mermaid
+graph TB
+    subgraph "Android Application"
+        App[User App]
+    end
+
+    subgraph "jp2k-decoder-android (Library)"
+        subgraph "Kotlin Layer"
+            Decoder[Jp2kDecoder / Async]
+            SandboxMgr[Jp2kSandbox (Singleton)]
+        end
+
+        subgraph "Infrastructure Layer"
+            JSSandbox[JavaScriptSandbox (Jetpack)]
+            JSIsolate[JavaScriptIsolate]
+        end
+
+        subgraph "Runtime Layer (WASM)"
+            Wrapper[wrapper.c (WASM)]
+            OpenJPEG[OpenJPEG (WASM)]
+        end
+    end
+
+    App -->|Byte Array| Decoder
+    Decoder -->|Manage| JSSandbox
+    SandboxMgr -->|Provide| JSSandbox
+    JSSandbox -->|Create| JSIsolate
+    Decoder -->|Execute| JSIsolate
+    JSIsolate -->|Run| Wrapper
+    Wrapper -->|Link| OpenJPEG
+```
+
+## Data Flow (Decoding)
+
+画像デコード時のデータフローは以下の通りです。
+
+```mermaid
+sequenceDiagram
+    participant App as User App
+    participant Kotlin as Jp2kDecoder (Kotlin)
+    participant Bridge as JS Bridge (Evaluate)
+    participant WASM as wrapper.c (WASM)
+    participant OpenJPEG as OpenJPEG
+
+    App->>Kotlin: decodeImage(ByteArray)
+    Kotlin->>Kotlin: Convert ByteArray to Hex String
+    Kotlin->>Bridge: Call decodeToBmp(hexString)
+
+    rect rgb(240, 248, 255)
+    note right of Bridge: Inside JS/WASM Sandbox
+    Bridge->>WASM: Invoke C function
+    WASM->>WASM: Parse Hex to Bytes
+    WASM->>OpenJPEG: opj_decode
+    OpenJPEG-->>WASM: opj_image_t (Raw Pixel Data)
+    WASM->>WASM: Convert to BMP Format (Add Header)
+    WASM->>WASM: Convert BMP Bytes to Hex String
+    WASM-->>Bridge: Return JSON { result: "Hex..." }
+    end
+
+    Bridge-->>Kotlin: Return JSON String
+    Kotlin->>Kotlin: Parse JSON & Hex to ByteArray
+    Kotlin->>Kotlin: BitmapFactory.decodeByteArray()
+    Kotlin-->>App: Return Bitmap
+```
+
+---
+
 ## 1. android/lib (Kotlin/Android Layer)
 
-Androidアプリから利用されるAPIを提供するレイヤーです。`Jp2kDecoder` クラスなどがこれに該当します。
-Androidの `JavaScriptEngine` (Jetpack) を使用して、WASM化されたOpenJPEGを実行するためのサンドボックス環境を管理します。
+Androidアプリから利用されるAPIを提供するレイヤーです。`Jp2kDecoder` (Coroutine対応) および `Jp2kDecoderAsync` (Callback対応) がこれに該当します。
+
+### コンポーネント構成
+*   **Jp2kDecoder / Jp2kDecoderAsync**: ユーザー向けAPI。デコード要求を受け付け、バックグラウンドスレッドで処理を行います。
+*   **Jp2kSandbox**: シングルトンオブジェクトとして `JavaScriptSandbox` の接続を管理します。アプリ全体で1つの接続を再利用することで、オーバーヘッドとリソース消費を最小限に抑えます。
 
 ### 受け持つ処理
-*   **WASMのロードと初期化**: `openjpeg_core.wasm` をアセットから読み込み、`JavaScriptIsolate` 上でインスタンス化します。
-*   **データの受け渡し**:
-    *   入力: JPEG2000のバイト配列をHex文字列としてWASM側に渡します。
-    *   出力: WASM側から返却されたJSON文字列（エラーコードまたはBMP画像のHex文字列）をパースします。
+*   **WASMのロードと初期化**: `openjpeg_core.wasm` をアセットから読み込み、`Jp2kSandbox` から取得したサンドボックス上の `JavaScriptIsolate` でインスタンス化します。
+*   **データの受け渡し (Hex Encoding)**:
+    *   WASM環境とのデータ授受には、バイナリデータをHex文字列（16進数文字列）にエンコードして渡す方式を採用しています。これは、JavaScriptEngineの制約や、Base64処理のオーバーヘッド回避などを考慮した実装詳細です。
 *   **画像変換**: 返却されたBMP形式のHex文字列をバイト配列に変換し、`BitmapFactory` を使用してAndroidの `Bitmap` オブジェクトを生成します。
     *   `ColorFormat` 指定 (RGB565 / ARGB8888) に応じて `BitmapFactory.Options` を設定し、適切なフォーマットで Bitmap を生成します。
-*   **ライフサイクル管理**: `init()`, `release()` によるサンドボックスのリソース管理を行います。
+*   **ライフサイクル管理**: `init()`, `release()` による `JavaScriptIsolate` のリソース管理を行います。`release()` 実行時には Isolate をクローズし、処理を強制終了します。
 *   **設定管理**: `Config` クラスを通じて、最大ヒープサイズや最大ピクセル数などのパラメータを管理・適用します。
-
-### 入力値のチェック・バリデーション
-*   **入力データ長**: 入力されたバイト配列の長さが `MIN_INPUT_SIZE` (12バイト) 未満でないかチェックします。
-*   **初期化状態**: `init()` が呼ばれ、`jsIsolate` が有効であるかチェックします。
 
 ### State Machine (Jp2kDecoderAsync)
 
@@ -29,7 +98,7 @@ Androidの `JavaScriptEngine` (Jetpack) を使用して、WASM化されたOpenJP
 *   `Uninitialized`: 初期状態。`init()` の呼び出しのみ許可されます。
 *   `Initializing`: 初期化処理中。バックグラウンドでのWASMロードやIsolate作成を行っています。
 *   `Initialized`: 初期化完了。`decodeImage()` の呼び出しが可能な待機状態。
-*   `Decoding`: デコード処理中。この状態のときに再度 `decodeImage()` が呼ばれるとエラーになります（並行実行の禁止）。
+*   `Decoding`: デコード処理中。この状態のときに再度 `decodeImage()` が呼ばれるとキューイングまたはエラーになります（並行実行の制御）。
 *   `Terminated`: 終了状態。`release()` が呼ばれた後の状態。これ以上の操作は受け付けません。
 
 #### 状態遷移図
@@ -60,13 +129,6 @@ stateDiagram-v2
     Terminated --> [*]
 ```
 
-#### スレッドセーフ設計
-*   **init()**: `Uninitialized` 状態でのみ開始可能。開始時に `Initializing` に遷移。完了時に `Initialized` に遷移。失敗時は `Uninitialized` に戻ります。
-*   **decodeImage()**: `Initialized` 状態でのみ実行可能。実行開始時に `Decoding` に遷移し、完了時に `Initialized` に戻ります。これにより、デコード処理中の重複呼び出しを防止します。
-*   **release()**: 任意の状態で呼び出し可能。呼び出されると即座に `Terminated` 状態に遷移し、以降の操作をブロックします。
-    *   `Initializing` 中に `release()` が呼ばれた場合、バックグラウンド処理の要所で `Terminated` チェックが行われ、初期化処理が中断 (Cancellation) されます。
-    *   `Decoding` 中に `release()` が呼ばれた場合、デコード処理完了後の状態復帰（`Initialized`への遷移）は行われません。
-
 ---
 
 ## 2. wrapper.c (C Wrapper for WASM)
@@ -74,8 +136,8 @@ stateDiagram-v2
 OpenJPEGライブラリをWASMから扱いやすくするためのラッパーコードです。C言語で記述され、EmscriptenによってWASMにコンパイルされます。
 
 ### 受け持つ処理
-*   **インターフェース公開**: JavaScriptから呼び出し可能な関数 `decodeToBmp` および `getLastError` をエクスポートします。
-*   **フォーマット判定**: 入力データのシグネチャを確認し、JP2形式かJ2Kコードストリームかを判定します。
+*   **インターフェース公開**: JavaScriptから呼び出し可能な関数 `decodeToBmp` などをエクスポートします。
+*   **フォーマット判定**: 入力データのシグネチャを確認し、JP2形式かJ2Kコードストリームかを内部で自動判定します（OpenJPEG API利用）。
 *   **BMP変換**: OpenJPEGによってデコードされた `opj_image_t` 構造体（各コンポーネントごとのデータ）を、指定された `color_format` に応じた BMPファイルフォーマットのバイト列に変換します。
     *   `ARGB8888`: 32bpp (BGRA) 標準BMP。
     *   `RGB565`: 16bpp (Bitfields) BMP。
