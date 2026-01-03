@@ -185,8 +185,8 @@ class Jp2kDecoder(
 
             val bitmap = withContext(coroutineDispatcher) {
                 val measureTimes = config.logLevel != null
-                val dataHexString = j2kData.toHexString()
-                val script = "globalThis.decodeJ2K('$dataHexString', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes);"
+                val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
+                val script = "globalThis.decodeJ2K('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes);"
 
                 val resultFuture = isolate.evaluateJavaScriptAsync(script)
                 val jsonResult = resultFuture.await()

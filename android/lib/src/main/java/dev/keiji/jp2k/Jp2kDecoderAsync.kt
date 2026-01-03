@@ -224,10 +224,10 @@ class Jp2kDecoderAsync(
                 try {
                     val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
 
-                    // Optimization: Use Hex string instead of joinToString(",") to reduce memory overhead and string size
+                    // Optimization: Use Base64 string instead of joinToString(",") to reduce memory overhead and string size
+                    val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
                     val measureTimes = config.logLevel != null
-                    val dataHexString = j2kData.toHexString()
-                    val script = "globalThis.decodeJ2K('$dataHexString', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes);"
+                    val script = "globalThis.decodeJ2K('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes);"
 
                     val resultFuture = isolate.evaluateJavaScriptAsync(script)
 
