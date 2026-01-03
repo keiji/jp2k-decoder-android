@@ -65,8 +65,6 @@ sequenceDiagram
     Bridge->>Bridge: Read Mem & Convert BMP to Hex String
     Bridge-->>Kotlin: Return JSON { bmp: "Hex..." }
     end
-
-    Bridge-->>Kotlin: Return JSON String
     Kotlin->>Kotlin: Parse JSON & Hex to ByteArray
     Kotlin->>Kotlin: BitmapFactory.decodeByteArray()
     Kotlin-->>App: Return Bitmap
