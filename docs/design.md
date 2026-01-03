@@ -104,7 +104,7 @@ Androidアプリから利用されるAPIを提供するレイヤーです。`Jp2
 *   `Uninitialized`: 初期状態。`init()` の呼び出しのみ許可されます。
 *   `Initializing`: 初期化処理中。バックグラウンドでのWASMロードやIsolate作成を行っています。
 *   `Initialized`: 初期化完了。`decodeImage()` の呼び出しが可能な待機状態。
-*   `Decoding`: デコード処理中。
+*   `Processing`: デコードまたはメモリ使用量取得などの処理中。
 *   `Terminating`: 終了処理中。`release()` が実行中です。
 *   `Terminated`: 終了状態。`release()` が完了した後の状態。これ以上の操作は受け付けません。
 
@@ -126,10 +126,10 @@ stateDiagram-v2
     Initializing --> Uninitialized : init() failed (Exception)
     Initializing --> Terminating : release() called during init
 
-    Initialized --> Decoding : decodeImage() called
-    Decoding --> Initialized : decodeImage() finished (Success/Error)
+    Initialized --> Processing : decodeImage() / getMemoryUsage() called
+    Processing --> Initialized : processing finished (Success/Error)
 
-    Decoding --> Terminating : release() called
+    Processing --> Terminating : release() called
 
     Initialized --> Terminating : release() called
 
@@ -152,7 +152,7 @@ stateDiagram-v2
 | **Uninitialized** | **初期化開始** | Error | Error | 終了処理 (State=Terminated) |
 | **Initializing** | Error | Error | Error | 終了処理 (State=Terminated) |
 | **Initialized** | **成功 (何もしない)** | **デコード開始** | **取得開始** | 終了処理 (State=Terminated) |
-| **Decoding** | Error | **デコード開始 (キューイング)** | **取得開始 (キューイング)** | 終了処理 (State=Terminated) |
+| **Processing** | Error | **デコード開始 (キューイング)** | **取得開始 (キューイング)** | 終了処理 (State=Terminated) |
 | **Terminated** | Error | Error | Error | **成功 (何もしない)** |
 
 * **Error**: `IllegalStateException` (またはそれに準ずるエラー) をコールバックに返却します。

@@ -173,12 +173,12 @@ class Jp2kDecoderAsync(
      */
     fun decodeImage(j2kData: ByteArray, colorFormat: ColorFormat = ColorFormat.ARGB8888, callback: Callback<Bitmap>) {
         synchronized(lock) {
-            // Allow if Initialized OR Decoding (queueing up)
-            if (_state != State.Initialized && _state != State.Decoding) {
+            // Allow if Initialized OR Processing (queueing up)
+            if (_state != State.Initialized && _state != State.Processing) {
                 callback.onError(IllegalStateException("Cannot decodeImage while in state: $_state"))
                 return
             }
-            // Do NOT set state to Decoding here. Wait until execution starts.
+            // Do NOT set state to Processing here. Wait until execution starts.
         }
 
         backgroundExecutor.execute {
@@ -191,11 +191,11 @@ class Jp2kDecoderAsync(
                         return@execute
                     }
                     // It's possible init failed or something else happened while waiting in queue
-                    if (_state != State.Initialized && _state != State.Decoding) {
+                    if (_state != State.Initialized && _state != State.Processing) {
                          // Note: If previous task finished, state should be Initialized.
                          // If previous task failed, state might be Initialized (if restored) or something else.
                          // But if it is Uninitialized now, we should probably fail.
-                         // However, since we allowed 'Decoding' in the admission check,
+                         // However, since we allowed 'Processing' in the admission check,
                          // and we are holding executionLock, we are the only one running.
                          // So state should ideally be Initialized here (unless this is the first task).
                          // Wait, if this is the first task, it should be Initialized.
@@ -206,7 +206,7 @@ class Jp2kDecoderAsync(
                               return@execute
                          }
                     }
-                    _state = State.Decoding
+                    _state = State.Processing
                 }
 
                 val start = System.currentTimeMillis()
@@ -292,7 +292,7 @@ class Jp2kDecoderAsync(
 
     private fun restoreStateAfterDecode() {
         synchronized(lock) {
-            if (_state == State.Decoding) {
+            if (_state == State.Processing) {
                 _state = State.Initialized
             }
         }
@@ -319,7 +319,7 @@ class Jp2kDecoderAsync(
                 callback.onError(CancellationException("Decoder was released."))
                 return
             }
-            if (_state != State.Initialized && _state != State.Decoding) {
+            if (_state != State.Initialized && _state != State.Processing) {
                 callback.onError(IllegalStateException("Cannot getMemoryUsage while in state: $_state"))
                 return
             }
@@ -332,6 +332,14 @@ class Jp2kDecoderAsync(
                         callback.onError(CancellationException("Decoder was released."))
                         return@execute
                     }
+                    if (_state != State.Initialized && _state != State.Processing) {
+                        // Queue handling logic similar to decodeImage
+                        if (_state != State.Initialized) {
+                            callback.onError(IllegalStateException("Decoder state invalid before execution: $_state"))
+                            return@execute
+                        }
+                    }
+                    _state = State.Processing
                 }
 
                 try {
@@ -345,8 +353,10 @@ class Jp2kDecoderAsync(
                     val usage = MemoryUsage(
                         wasmHeapSizeBytes = root.optLong("wasmHeapSizeBytes", 0),
                     )
+                    restoreStateAfterDecode()
                     callback.onSuccess(usage)
                 } catch (e: Exception) {
+                    restoreStateAfterDecode()
                     callback.onError(e)
                 }
             }

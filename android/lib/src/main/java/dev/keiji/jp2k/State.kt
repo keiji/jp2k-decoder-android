@@ -20,9 +20,9 @@ enum class State {
     Initialized,
 
     /**
-     * The decoder is currently decoding an image.
+     * The decoder is currently processing.
      */
-    Decoding,
+    Processing,
 
     /**
      * The decoder is terminating.

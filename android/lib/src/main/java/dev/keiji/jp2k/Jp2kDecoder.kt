@@ -157,7 +157,7 @@ class Jp2kDecoder(
         j2kData: ByteArray,
         colorFormat: ColorFormat = ColorFormat.ARGB8888,
     ): Bitmap = mutex.withLock {
-        // Wait if in 'Decoding' state?
+        // Wait if in 'Processing' state?
         // Since we are using Mutex, we are already serialized.
         // If this function is called concurrently, the second call will wait here.
         // However, we need to check the state.
@@ -167,7 +167,7 @@ class Jp2kDecoder(
         if (_state != State.Initialized) {
             throw IllegalStateException("Cannot decodeImage while in state: $_state")
         }
-        _state = State.Decoding
+        _state = State.Processing
 
         val start = System.currentTimeMillis()
         log(Log.INFO, "Input data length: ${j2kData.size}")
@@ -239,7 +239,7 @@ class Jp2kDecoder(
     }
 
     private fun restoreStateAfterDecode() {
-        if (_state == State.Decoding) {
+        if (_state == State.Processing) {
             _state = State.Initialized
         }
     }
@@ -258,15 +258,23 @@ class Jp2kDecoder(
             throw IllegalStateException("Cannot getMemoryUsage while in state: $_state")
         }
 
-        val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
-        return withContext(coroutineDispatcher) {
-            val resultFuture = isolate.evaluateJavaScriptAsync("globalThis.getMemoryUsage()")
-            val jsonResult = resultFuture.await() ?: throw IllegalStateException("Result Future is null")
-            val root = JSONObject(jsonResult)
+        _state = State.Processing
 
-            MemoryUsage(
-                wasmHeapSizeBytes = root.optLong("wasmHeapSizeBytes", 0),
-            )
+        val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
+        try {
+            return withContext(coroutineDispatcher) {
+                val resultFuture = isolate.evaluateJavaScriptAsync("globalThis.getMemoryUsage()")
+                val jsonResult = resultFuture.await() ?: throw IllegalStateException("Result Future is null")
+                val root = JSONObject(jsonResult)
+
+                MemoryUsage(
+                    wasmHeapSizeBytes = root.optLong("wasmHeapSizeBytes", 0),
+                )
+            }
+        } finally {
+            if (_state == State.Processing) {
+                _state = State.Initialized
+            }
         }
     }
 
