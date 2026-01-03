@@ -64,35 +64,76 @@ const importObject = {
 };
 """
 
-internal const val SCRIPT_BYTES_HEX_CONVERTER = """
-            globalThis.bytesToHex = function(bytes) {
-                const hexChars = "0123456789abcdef";
+internal const val SCRIPT_BYTES_BASE64_CONVERTER = """
+            globalThis.bytesToBase64 = function(bytes) {
+                const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
                 let output = "";
-                for (let i = 0; i < bytes.length; i++) {
-                    const b = bytes[i];
-                    output += hexChars[(b >> 4) & 0xf];
-                    output += hexChars[b & 0xf];
+                for (let i = 0; i < bytes.length; i += 3) {
+                    const b1 = bytes[i];
+                    const b2 = i + 1 < bytes.length ? bytes[i + 1] : 0;
+                    const b3 = i + 2 < bytes.length ? bytes[i + 2] : 0;
+
+                    const e1 = b1 >> 2;
+                    const e2 = ((b1 & 3) << 4) | (b2 >> 4);
+                    const e3 = ((b2 & 15) << 2) | (b3 >> 6);
+                    const e4 = b3 & 63;
+
+                    output += chars.charAt(e1) + chars.charAt(e2);
+                    if (i + 1 < bytes.length) {
+                        output += chars.charAt(e3);
+                    } else {
+                        output += "=";
+                    }
+                    if (i + 2 < bytes.length) {
+                        output += chars.charAt(e4);
+                    } else {
+                        output += "=";
+                    }
                 }
                 return output;
             };
 
-            globalThis.hexToBytes = function(hex) {
-                const len = hex.length;
-                if (len === 0) return new Uint8Array(0);
-                const bytes = new Uint8Array(len / 2);
-                for (let i = 0; i < len; i += 2) {
-                    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
+            globalThis.base64ToBytes = function(base64) {
+                const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+                const lookup = new Uint8Array(256);
+                for (let i = 0; i < chars.length; i++) {
+                    lookup[chars.charCodeAt(i)] = i;
                 }
+
+                let bufferLength = base64.length * 0.75;
+                let len = base64.length;
+                let i, p = 0, encoded1, encoded2, encoded3, encoded4;
+
+                if (base64[base64.length - 1] === "=") {
+                    bufferLength--;
+                    if (base64[base64.length - 2] === "=") {
+                        bufferLength--;
+                    }
+                }
+
+                const bytes = new Uint8Array(bufferLength);
+
+                for (i = 0; i < len; i += 4) {
+                    encoded1 = lookup[base64.charCodeAt(i)];
+                    encoded2 = lookup[base64.charCodeAt(i + 1)];
+                    encoded3 = lookup[base64.charCodeAt(i + 2)];
+                    encoded4 = lookup[base64.charCodeAt(i + 3)];
+
+                    bytes[p++] = (encoded1 << 2) | (encoded2 >> 4);
+                    if (p < bufferLength) bytes[p++] = ((encoded2 & 15) << 4) | (encoded3 >> 2);
+                    if (p < bufferLength) bytes[p++] = ((encoded3 & 3) << 6) | (encoded4 & 63);
+                }
+
                 return bytes;
             };
 """
 
 internal const val SCRIPT_DEFINE_DECODE_J2K = """
-            globalThis.decodeJ2K = function(dataHexString, maxPixels, maxHeapSize, colorFormat) {
+            globalThis.decodeJ2K = function(dataBase64String, maxPixels, maxHeapSize, colorFormat) {
                 try {
                     const exports = wasmInstance.exports;
 
-                    const encodedBuffer = globalThis.hexToBytes(dataHexString);
+                    const encodedBuffer = globalThis.base64ToBytes(dataBase64String);
 
                     const dataLength = encodedBuffer.length;
                     if (dataLength === 0) return JSON.stringify({ errorCode: -1 });
@@ -115,13 +156,13 @@ internal const val SCRIPT_DEFINE_DECODE_J2K = """
                     const bmpSize = view.getUint32(bmpPtr + 2, true);
 
                     const bmpBuffer = new Uint8Array(exports.memory.buffer, bmpPtr, bmpSize);
-                    const hexString = globalThis.bytesToHex(bmpBuffer);
+                    const base64String = globalThis.bytesToBase64(bmpBuffer);
 
                     exports.free(bmpPtr);
                     exports.free(inputPtr);
 
                     return JSON.stringify({
-                        bmp: hexString
+                        bmp: base64String
                     });
                 } catch (e) {
                     return JSON.stringify({ error: e.toString() });

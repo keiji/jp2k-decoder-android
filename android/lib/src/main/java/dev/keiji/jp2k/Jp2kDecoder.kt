@@ -18,6 +18,7 @@ import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.util.Base64
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
 
@@ -117,13 +118,13 @@ class Jp2kDecoder(
         withContext(coroutineDispatcher) {
             val wasmBytes = assetManager.open(ASSET_PATH_WASM)
                 .readBytes()
-            val wasmHexString = wasmBytes.toHexString()
+            val wasmBase64String = Base64.getEncoder().encodeToString(wasmBytes)
 
             val script = """
-            $SCRIPT_BYTES_HEX_CONVERTER_LOCAL
+            $SCRIPT_BYTES_BASE64_CONVERTER_LOCAL
 
             var wasmInstance;
-            const wasmBuffer = globalThis.hexToBytes('$wasmHexString');
+            const wasmBuffer = globalThis.base64ToBytes('$wasmBase64String');
 
             $SCRIPT_IMPORT_OBJECT_LOCAL
 
@@ -183,8 +184,8 @@ class Jp2kDecoder(
             val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
 
             val bitmap = withContext(coroutineDispatcher) {
-                val dataHexString = j2kData.toHexString()
-                val script = "globalThis.decodeJ2K('$dataHexString', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id});"
+                val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
+                val script = "globalThis.decodeJ2K('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id});"
 
                 val resultFuture = isolate.evaluateJavaScriptAsync(script)
                 val jsonResult = resultFuture.await()
@@ -202,8 +203,8 @@ class Jp2kDecoder(
                     throw Jp2kException(Jp2kError.Unknown, errorMsg)
                 }
 
-                val bmpHex = root.getString("bmp")
-                val bmpBytes = bmpHex.hexToByteArray()
+                val bmpBase64 = root.getString("bmp")
+                val bmpBytes = Base64.getDecoder().decode(bmpBase64)
 
                 log(Log.INFO, "Output data length: ${bmpBytes.size}")
 
@@ -334,7 +335,7 @@ class Jp2kDecoder(
         private const val MIN_INPUT_SIZE = 12 // Signature box length
         private const val ASSET_PATH_WASM = "openjpeg_core.wasm"
 
-        private const val SCRIPT_BYTES_HEX_CONVERTER_LOCAL = SCRIPT_BYTES_HEX_CONVERTER
+        private const val SCRIPT_BYTES_BASE64_CONVERTER_LOCAL = SCRIPT_BYTES_BASE64_CONVERTER
         private const val SCRIPT_IMPORT_OBJECT_LOCAL = SCRIPT_IMPORT_OBJECT
         private const val SCRIPT_DEFINE_DECODE_J2K_LOCAL = SCRIPT_DEFINE_DECODE_J2K
     }

@@ -9,6 +9,7 @@ import androidx.core.content.ContextCompat
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
 import org.json.JSONObject
+import java.util.Base64
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executor
@@ -133,13 +134,13 @@ class Jp2kDecoderAsync(
         // This runs on backgroundExecutor
         val wasmBytes = assetManager.open(ASSET_PATH_WASM)
             .readBytes()
-        val wasmHexString = wasmBytes.toHexString()
+        val wasmBase64String = Base64.getEncoder().encodeToString(wasmBytes)
 
         val script = """
-        $SCRIPT_BYTES_HEX_CONVERTER_LOCAL
+        $SCRIPT_BYTES_BASE64_CONVERTER_LOCAL
 
         var wasmInstance;
-        const wasmBuffer = globalThis.hexToBytes('$wasmHexString');
+        const wasmBuffer = globalThis.base64ToBytes('$wasmBase64String');
 
         $SCRIPT_IMPORT_OBJECT_LOCAL
 
@@ -223,9 +224,9 @@ class Jp2kDecoderAsync(
                 try {
                     val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
 
-                    // Optimization: Use Hex string instead of joinToString(",") to reduce memory overhead and string size
-                    val dataHexString = j2kData.toHexString()
-                    val script = "globalThis.decodeJ2K('$dataHexString', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id});"
+                    // Optimization: Use Base64 string instead of joinToString(",") to reduce memory overhead and string size
+                    val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
+                    val script = "globalThis.decodeJ2K('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id});"
 
                     val resultFuture = isolate.evaluateJavaScriptAsync(script)
 
@@ -245,8 +246,8 @@ class Jp2kDecoderAsync(
                         throw Jp2kException(Jp2kError.Unknown, errorMsg)
                     }
 
-                    val bmpHex = root.getString("bmp")
-                    val bmpBytes = bmpHex.hexToByteArray()
+                    val bmpBase64 = root.getString("bmp")
+                    val bmpBytes = Base64.getDecoder().decode(bmpBase64)
 
                     log(Log.INFO, "Output data length: ${bmpBytes.size}")
 
@@ -406,7 +407,7 @@ class Jp2kDecoderAsync(
         private const val MIN_INPUT_SIZE = 12 // Signature box length
         private const val ASSET_PATH_WASM = "openjpeg_core.wasm"
 
-        private const val SCRIPT_BYTES_HEX_CONVERTER_LOCAL = SCRIPT_BYTES_HEX_CONVERTER
+        private const val SCRIPT_BYTES_BASE64_CONVERTER_LOCAL = SCRIPT_BYTES_BASE64_CONVERTER
         // Script to import WASI polyfill
         // Fix: Use top-level constant from Constants.kt directly. Accessing via Class name 'Constants' is incorrect for top-level properties.
         private const val SCRIPT_IMPORT_OBJECT_LOCAL = SCRIPT_IMPORT_OBJECT
