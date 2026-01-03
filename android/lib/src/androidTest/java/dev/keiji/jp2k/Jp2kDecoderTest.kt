@@ -73,7 +73,7 @@ class Jp2kDecoderTest {
             fail("Should throw exception")
         } catch (e: Exception) {
              // Expected
-             assertTrue("Expected IllegalStateException, got $e", e is IllegalStateException)
+             assertTrue("Expected CancellationException, got $e", e is java.util.concurrent.CancellationException)
         }
     }
 
