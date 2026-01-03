@@ -94,6 +94,12 @@ cd android
 
 The generated documentation will be available in `android/lib/build/dokka/html`.
 
+## Design Document
+
+For more details on the internal architecture, data flow, and state management, please refer to the [Design Document](docs/design.md).
+
+*Note: The design document is currently available in Japanese only.*
+
 ## Publish
 
 To publish the library to Maven Central Portal, export the required environment variables and run the Gradle task.
