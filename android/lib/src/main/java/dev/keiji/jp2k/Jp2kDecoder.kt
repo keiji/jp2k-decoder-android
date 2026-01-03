@@ -8,6 +8,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.sync.Mutex
@@ -24,10 +25,12 @@ import java.util.concurrent.ExecutionException
  * and decoding JPEG 2000 images.
  *
  * @param config The configuration object for the decoder.
+ * @param coroutineDispatcher The CoroutineDispatcher to use for background tasks. Defaults to [Dispatchers.Default].
  */
 @OptIn(ExperimentalStdlibApi::class)
 class Jp2kDecoder(
     private val config: Config = Config(),
+    private val coroutineDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : AutoCloseable {
 
     private val mutex = Mutex()
@@ -73,7 +76,7 @@ class Jp2kDecoder(
 
         val start = System.currentTimeMillis()
         try {
-            val sandbox = withContext(Dispatchers.Default) {
+            val sandbox = withContext(coroutineDispatcher) {
                 sandboxFuture.get()
             }
             val isolate = Jp2kSandbox.createIsolate(
@@ -110,7 +113,7 @@ class Jp2kDecoder(
     }
 
     private suspend fun loadWasm(isolate: JavaScriptIsolate, assetManager: AssetManager) {
-        withContext(Dispatchers.Default) {
+        withContext(coroutineDispatcher) {
             val wasmArrayString = assetManager.open(ASSET_PATH_WASM)
                 .readBytes()
                 .joinToString(",")
@@ -176,7 +179,7 @@ class Jp2kDecoder(
         return try {
             val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
 
-            val bitmap = withContext(Dispatchers.Default) {
+            val bitmap = withContext(coroutineDispatcher) {
                 val dataHexString = j2kData.toHexString()
                 val script = "globalThis.decodeJ2K('$dataHexString', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id});"
 
@@ -255,7 +258,7 @@ class Jp2kDecoder(
         }
 
         val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
-        return withContext(Dispatchers.Default) {
+        return withContext(coroutineDispatcher) {
             val resultFuture = isolate.evaluateJavaScriptAsync("globalThis.getMemoryUsage()")
             val jsonResult = resultFuture.await() ?: throw IllegalStateException("Result Future is null")
             val root = JSONObject(jsonResult)
