@@ -33,6 +33,100 @@ implementation("dev.keiji.jp2k:jp2k-decoder-android:0.2.0")
 implementation 'dev.keiji.jp2k:jp2k-decoder-android:0.2.0'
 ```
 
+## Usage
+
+### Jp2kDecoder (Kotlin Coroutines)
+
+`Jp2kDecoder` is designed for use with Kotlin Coroutines. It implements `AutoCloseable`, so it can be used with the `use` block for automatic resource management.
+
+```kotlin
+val context: Context = ... // Application Context
+val jp2kBytes: ByteArray = ... // JPEG2000 image data
+
+val decoder = Jp2kDecoder(Config())
+decoder.init(context)
+
+val bitmap = decoder.decodeImage(jp2kBytes)
+
+decoder.close()
+```
+
+Or using `use`:
+
+```kotlin
+Jp2kDecoder(Config()).use { decoder ->
+    decoder.init(context)
+    val bitmap = decoder.decodeImage(jp2kBytes)
+    // Use bitmap
+}
+```
+
+### Jp2kDecoderAsync (Java / Callbacks)
+
+`Jp2kDecoderAsync` provides a callback-based API, making it suitable for Java or non-coroutine environments.
+
+```java
+Context context = ...; // Application Context
+byte[] jp2kBytes = ...; // JPEG2000 image data
+
+Jp2kDecoderAsync decoder = new Jp2kDecoderAsync(new Config(), Executors.newSingleThreadExecutor());
+
+decoder.init(context, new Callback<Unit>() {
+    @Override
+    public void onSuccess(Unit result) {
+        decoder.decodeImage(jp2kBytes, new Callback<Bitmap>() {
+            @Override
+            public void onSuccess(Bitmap bitmap) {
+                // Use bitmap
+                decoder.close();
+            }
+
+            @Override
+            public void onError(Exception e) {
+                // Handle decode error
+                decoder.close();
+            }
+        });
+    }
+
+    @Override
+    public void onError(Exception e) {
+        // Handle init error
+    }
+});
+```
+
+## Configuration
+
+You can customize the decoder behavior by passing a `Config` object to the constructor.
+
+| Parameter | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `maxPixels` | `Int` | 16,000,000 | The maximum number of pixels allowed in the decoded image. |
+| `maxHeapSizeBytes` | `Long` | 512 MB | The maximum size of the heap in bytes allowed for the JavaScript sandbox. |
+| `maxEvaluationReturnSizeBytes` | `Int` | 256 MB | The maximum size of the return value in bytes from JavaScript evaluation. |
+| `logLevel` | `Int?` | `null` | The logging level (e.g., `Log.DEBUG`). If `null`, logging is disabled. |
+
+## Color Formats
+
+The library supports the following color formats for the output `Bitmap`. You can specify the format in `decodeImage`.
+
+*   **`ColorFormat.ARGB8888`** (Default): High quality, 4 bytes per pixel. Supports transparency.
+*   **`ColorFormat.RGB565`**: Lower quality, 2 bytes per pixel. No transparency support.
+
+## State Transitions
+
+The decoder manages its internal state to ensure thread safety and resource management. The states are:
+
+*   **`Uninitialized`**: The initial state.
+*   **`Initializing`**: `init()` has been called and the JavaScript sandbox is starting.
+*   **`Initialized`**: Ready to decode images.
+*   **`Processing`**: Currently executing a task (e.g., decoding, checking memory usage).
+*   **`Releasing`**: `release()` or `close()` has been called.
+*   **`Released`**: Resources have been freed. The decoder cannot be used anymore.
+
+Calls to `decodeImage` are allowed only when the state is `Initialized` (or `Processing` for Async, which queues requests).
+
 ## How to build
 
 ### 1. Initialize Submodules
