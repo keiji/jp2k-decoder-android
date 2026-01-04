@@ -239,8 +239,9 @@ class Jp2kDecoderAsync(
                     if (root.has("errorCode")) {
                         val errorCode = root.getInt("errorCode")
                         val error = Jp2kError.fromInt(errorCode)
-                        log(Log.ERROR, "Error: $error")
-                        throw Jp2kException(error)
+                        val errorMessage = root.optString("errorMessage", null)
+                        log(Log.ERROR, "Error: $error, Message: $errorMessage")
+                        throw Jp2kException(error, errorMessage)
                     } else if (root.has("error")) {
                         val errorMsg = root.getString("error")
                         log(Log.ERROR, "Error: $errorMsg")
@@ -422,6 +423,6 @@ class Jp2kDecoderAsync(
         // Script to import WASI polyfill
         // Fix: Use top-level constant from Constants.kt directly. Accessing via Class name 'Constants' is incorrect for top-level properties.
         private const val SCRIPT_IMPORT_OBJECT_LOCAL = SCRIPT_IMPORT_OBJECT
-        private const val SCRIPT_DEFINE_DECODE_J2K = dev.keiji.jp2k.SCRIPT_DEFINE_DECODE_J2K
+        private val SCRIPT_DEFINE_DECODE_J2K = dev.keiji.jp2k.SCRIPT_DEFINE_DECODE_J2K
     }
 }
