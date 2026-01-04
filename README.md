@@ -121,7 +121,7 @@ The decoder manages its internal state to ensure thread safety and resource mana
 *   **`Uninitialized`**: The initial state.
 *   **`Initializing`**: `init()` has been called and the JavaScript sandbox is starting.
 *   **`Initialized`**: Ready to decode images.
-*   **`Processing`**: Currently decoding an image.
+*   **`Processing`**: Currently executing a task (e.g., decoding, checking memory usage).
 *   **`Releasing`**: `release()` or `close()` has been called.
 *   **`Released`**: Resources have been freed. The decoder cannot be used anymore.
 
