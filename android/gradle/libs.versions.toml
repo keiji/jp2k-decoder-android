@@ -11,7 +11,7 @@ kotlin = "2.3.0"
 composeBom = "2025.12.01"
 coroutines = "1.10.2"
 dokka = "2.1.0"
-nmcp = "1.4.2"
+nmcp = "1.4.3"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
