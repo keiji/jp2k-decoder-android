@@ -137,12 +137,12 @@ class Jp2kDecoderAsync(
         val wasmBase64String = Base64.getEncoder().encodeToString(wasmBytes)
 
         val script = """
-        $SCRIPT_BYTES_BASE64_CONVERTER_LOCAL
+        $SCRIPT_BYTES_BASE64_CONVERTER
 
         var wasmInstance;
         const wasmBuffer = globalThis.base64ToBytes('$wasmBase64String');
 
-        $SCRIPT_IMPORT_OBJECT_LOCAL
+        $SCRIPT_IMPORT_OBJECT
 
         WebAssembly.instantiate(wasmBuffer, importObject).then(res => {
             wasmInstance = res.instance;
@@ -418,11 +418,5 @@ class Jp2kDecoderAsync(
         private const val TAG = "Jp2kDecoderAsync"
         private const val MIN_INPUT_SIZE = 12 // Signature box length
         private const val ASSET_PATH_WASM = "openjpeg_core.wasm"
-
-        private const val SCRIPT_BYTES_BASE64_CONVERTER_LOCAL = SCRIPT_BYTES_BASE64_CONVERTER
-        // Script to import WASI polyfill
-        // Fix: Use top-level constant from Constants.kt directly. Accessing via Class name 'Constants' is incorrect for top-level properties.
-        private const val SCRIPT_IMPORT_OBJECT_LOCAL = SCRIPT_IMPORT_OBJECT
-        private val SCRIPT_DEFINE_DECODE_J2K = dev.keiji.jp2k.SCRIPT_DEFINE_DECODE_J2K
     }
 }
