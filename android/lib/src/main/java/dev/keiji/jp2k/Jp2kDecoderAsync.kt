@@ -208,7 +208,7 @@ class Jp2kDecoderAsync(
 
                     val resultFuture = isolate.evaluateJavaScriptAsync(script)
                     val jsonResult =
-                        resultFuture?.get() ?: throw IllegalStateException("Result Future is null")
+                        resultFuture.get() ?: throw IllegalStateException("Result Future is null")
 
                     val root = JSONObject(jsonResult)
                     if (root.has("errorCode")) {
@@ -301,7 +301,7 @@ class Jp2kDecoderAsync(
 
                     // Block and wait for result on background thread
                     val jsonResult =
-                        resultFuture?.get() ?: throw IllegalStateException("Result Future is null")
+                        resultFuture.get() ?: throw IllegalStateException("Result Future is null")
 
                     val root = JSONObject(jsonResult)
                     if (root.has("errorCode")) {
@@ -427,7 +427,7 @@ class Jp2kDecoderAsync(
                     val resultFuture = isolate.evaluateJavaScriptAsync("globalThis.getMemoryUsage()")
 
                     val jsonResult =
-                        resultFuture?.get() ?: throw IllegalStateException("Result Future is null")
+                        resultFuture.get() ?: throw IllegalStateException("Result Future is null")
                     val root = JSONObject(jsonResult)
 
                     val usage = MemoryUsage(
