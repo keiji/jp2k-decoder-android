@@ -132,6 +132,7 @@ class Jp2kDecoder(
                 wasmInstance = res.instance;
 
                 $SCRIPT_DEFINE_DECODE_J2K_LOCAL
+                $SCRIPT_DEFINE_GET_SIZE_LOCAL
 
                 return "1";
             });
@@ -146,6 +147,57 @@ class Jp2kDecoder(
             } catch (e: ExecutionException) {
                 throw e.cause ?: e
             }
+        }
+    }
+
+    /**
+     * Retrieves the size of the JPEG 2000 image without fully decoding it.
+     *
+     * @param j2kData The raw byte array of the JPEG 2000 image.
+     * @return The [Size] of the image.
+     */
+    suspend fun getSize(j2kData: ByteArray): Size = mutex.withLock {
+        if (_state == State.Released || _state == State.Releasing) {
+            throw CancellationException("Decoder was released.")
+        }
+        if (_state != State.Initialized) {
+            throw IllegalStateException("Cannot getSize while in state: $_state")
+        }
+        _state = State.Processing
+
+        return try {
+            val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
+
+            val result = withContext(coroutineDispatcher) {
+                val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
+                val script = "globalThis.getSize('$dataBase64String');"
+
+                val resultFuture = isolate.evaluateJavaScriptAsync(script)
+                val jsonResult = resultFuture.await()
+                    ?: throw IllegalStateException("Result Future is null")
+
+                val root = JSONObject(jsonResult)
+                if (root.has("errorCode")) {
+                    val errorCode = root.getInt("errorCode")
+                    val error = Jp2kError.fromInt(errorCode)
+                    val errorMessage = root.optString("errorMessage", null)
+                    log(Log.ERROR, "Error: $error, Message: $errorMessage")
+                    throw Jp2kException(error, errorMessage)
+                }
+
+                val width = root.getInt("width")
+                val height = root.getInt("height")
+                Size(width, height)
+            }
+
+            restoreStateAfterDecode()
+            result
+        } catch (e: Exception) {
+            restoreStateAfterDecode()
+            if (_state == State.Released || _state == State.Releasing) {
+                throw CancellationException("Decoder was released.")
+            }
+            throw e
         }
     }
 
@@ -350,5 +402,6 @@ class Jp2kDecoder(
         private const val SCRIPT_BYTES_BASE64_CONVERTER_LOCAL = SCRIPT_BYTES_BASE64_CONVERTER
         private const val SCRIPT_IMPORT_OBJECT_LOCAL = SCRIPT_IMPORT_OBJECT
         private val SCRIPT_DEFINE_DECODE_J2K_LOCAL = SCRIPT_DEFINE_DECODE_J2K
+        private val SCRIPT_DEFINE_GET_SIZE_LOCAL = SCRIPT_DEFINE_GET_SIZE
     }
 }

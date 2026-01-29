@@ -127,7 +127,7 @@ stateDiagram-v2
     Initializing --> Uninitialized : init() failed (Exception)
     Initializing --> Releasing : release() called during init
 
-    Initialized --> Processing : decodeImage() / getMemoryUsage() called
+    Initialized --> Processing : decodeImage() / getMemoryUsage() / getSize() called
     Processing --> Initialized : processing finished (Success/Error)
 
     Processing --> Releasing : release() called
@@ -142,18 +142,19 @@ stateDiagram-v2
 
 *   **init(context)**: Suspending関数。Isolateの初期化を行います。`Mutex`によりシリアライズされており、並行呼び出しは安全に制御されます。デフォルトでは `Dispatchers.Default` (またはコンストラクタで指定されたDispatcher) 上で実行されます。
 *   **decodeImage(bytes)**: Suspending関数。デコード処理を行います。`Dispatchers.Default` (またはコンストラクタで指定されたDispatcher) 上で実行されます。
+*   **getSize(bytes)**: Suspending関数。デコードを行わずに画像のサイズ（幅・高さ）を取得します。
 *   **release()**: 即座にIsolateをクローズし、状態を `Released` に変更します。
 
 #### Jp2kDecoderAsync (Callback)
 
 各状態におけるメソッド呼び出し時の挙動は以下の通りです。`synchronized` ブロックにより排他制御されます。
 
-| State \ Method | init() | decodeImage() | getMemoryUsage() | release() |
-| :--- | :--- | :--- | :--- | :--- |
-| **Uninitialized** | **初期化開始** | Error | Error | 終了処理 (State=Released) |
-| **Initializing** | Error | Error | Error | 終了処理 (State=Released) |
-| **Initialized** | **成功 (何もしない)** | **デコード開始** | **取得開始** | 終了処理 (State=Released) |
-| **Processing** | Error | **デコード開始 (キューイング)** | **取得開始 (キューイング)** | 終了処理 (State=Released) |
+| State \ Method | init() | decodeImage() | getSize() | getMemoryUsage() | release() |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Uninitialized** | **初期化開始** | Error | Error | Error | 終了処理 (State=Released) |
+| **Initializing** | Error | Error | Error | Error | 終了処理 (State=Released) |
+| **Initialized** | **成功 (何もしない)** | **デコード開始** | **取得開始** | **取得開始** | 終了処理 (State=Released) |
+| **Processing** | Error | **デコード開始 (キューイング)** | **取得開始 (キューイング)** | **取得開始 (キューイング)** | 終了処理 (State=Released) |
 | **Released** | Error | Error | Error | **成功 (何もしない)** |
 
 * **Error**: `IllegalStateException` (またはそれに準ずるエラー) をコールバックに返却します。
@@ -173,6 +174,7 @@ OpenJPEGライブラリをWASMから扱いやすくするためのラッパー�
 *   **BMP変換**: OpenJPEGによってデコードされた `opj_image_t` 構造体（各コンポーネントごとのデータ）を、指定された `color_format` に応じた BMPファイルフォーマットのバイト列に変換します。
     *   `ARGB8888`: 32bpp (BGRA) 標準BMP。
     *   `RGB565`: 16bpp (Bitfields) BMP。
+*   **サイズ取得**: `getSize` 関数を公開し、ヘッダー情報のみを解析して幅と高さを返します。
 *   **メモリ管理**: デコード結果のBMPデータを格納するバッファの確保(`malloc`)を行います（JavaScript側で `free` されることを期待します）。
 
 ### 入力値のチェック・バリデーション
