@@ -194,10 +194,8 @@ class Jp2kDecoderAsync(
                         return@execute
                     }
                     if (_state != State.Initialized && _state != State.Processing) {
-                        if (_state != State.Initialized) {
-                            callback.onError(IllegalStateException("Decoder state invalid before execution: $_state"))
-                            return@execute
-                        }
+                        callback.onError(IllegalStateException("Decoder state invalid before execution: $_state"))
+                        return@execute
                     }
                     _state = State.Processing
                 }
@@ -276,19 +274,8 @@ class Jp2kDecoderAsync(
                     }
                     // It's possible init failed or something else happened while waiting in queue
                     if (_state != State.Initialized && _state != State.Processing) {
-                         // Note: If previous task finished, state should be Initialized.
-                         // If previous task failed, state might be Initialized (if restored) or something else.
-                         // But if it is Uninitialized now, we should probably fail.
-                         // However, since we allowed 'Processing' in the admission check,
-                         // and we are holding executionLock, we are the only one running.
-                         // So state should ideally be Initialized here (unless this is the first task).
-                         // Wait, if this is the first task, it should be Initialized.
-                         // If this is the second task, the first task finished and set it to Initialized.
-                         // So effectively, we expect Initialized here.
-                         if (_state != State.Initialized) {
-                              callback.onError(IllegalStateException("Decoder state invalid before execution: $_state"))
-                              return@execute
-                         }
+                        callback.onError(IllegalStateException("Decoder state invalid before execution: $_state"))
+                        return@execute
                     }
                     _state = State.Processing
                 }
@@ -429,11 +416,8 @@ class Jp2kDecoderAsync(
                         return@execute
                     }
                     if (_state != State.Initialized && _state != State.Processing) {
-                        // Queue handling logic similar to decodeImage
-                        if (_state != State.Initialized) {
-                            callback.onError(IllegalStateException("Decoder state invalid before execution: $_state"))
-                            return@execute
-                        }
+                        callback.onError(IllegalStateException("Decoder state invalid before execution: $_state"))
+                        return@execute
                     }
                     _state = State.Processing
                 }
