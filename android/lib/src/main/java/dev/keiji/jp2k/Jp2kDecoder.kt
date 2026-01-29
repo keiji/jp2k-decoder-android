@@ -165,7 +165,7 @@ class Jp2kDecoder(
         }
         _state = State.Processing
 
-        return try {
+        try {
             val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
 
             val result = withContext(coroutineDispatcher) {

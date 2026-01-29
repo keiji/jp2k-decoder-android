@@ -101,7 +101,7 @@ class MainActivity : ComponentActivity() {
 
                         if (size != null) {
                             Text(
-                                text = "${size?.width}:${size?.height}",
+                                text = "${size.width}:${size.height}",
                                 modifier = Modifier
                                     .align(Alignment.TopEnd)
                                     .background(Color.White.copy(alpha = 0.7f))
