@@ -180,7 +180,7 @@ class Jp2kDecoder(
                 if (root.has("errorCode")) {
                     val errorCode = root.getInt("errorCode")
                     val error = Jp2kError.fromInt(errorCode)
-                    val errorMessage = root.optString("errorMessage", null)
+                    val errorMessage = if (root.has("errorMessage")) root.getString("errorMessage") else null
                     log(Log.ERROR, "Error: $error, Message: $errorMessage")
                     throw Jp2kException(error, errorMessage)
                 }
@@ -248,7 +248,7 @@ class Jp2kDecoder(
                 if (root.has("errorCode")) {
                     val errorCode = root.getInt("errorCode")
                     val error = Jp2kError.fromInt(errorCode)
-                    val errorMessage = root.optString("errorMessage", null)
+                    val errorMessage = if (root.has("errorMessage")) root.getString("errorMessage") else null
                     log(Log.ERROR, "Error: $error, Message: $errorMessage")
                     throw Jp2kException(error, errorMessage)
                 } else if (root.has("error")) {
