@@ -25,6 +25,7 @@ import androidx.compose.foundation.background
 import androidx.compose.ui.unit.dp
 import dev.keiji.jp2k.Jp2kDecoder
 import dev.keiji.jp2k.MemoryUsage
+import dev.keiji.jp2k.Size
 import dev.keiji.j2k_wasm_sample.ui.theme.J2kwasmsampleTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -42,6 +43,7 @@ class MainActivity : ComponentActivity() {
                     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
                     var memoryUsageBefore by remember { mutableStateOf<MemoryUsage?>(null) }
                     var memoryUsageAfter by remember { mutableStateOf<MemoryUsage?>(null) }
+                    var size by remember { mutableStateOf<Size?>(null) }
                     var error by remember { mutableStateOf<String?>(null) }
 
                     LaunchedEffect(Unit) {
@@ -53,14 +55,21 @@ class MainActivity : ComponentActivity() {
                                 Jp2kDecoder().use { decoder ->
                                     decoder.init(applicationContext)
                                     val usageBefore = decoder.getMemoryUsage()
+                                    val imageSize = decoder.getSize(bytes)
                                     val bmp = decoder.decodeImage(bytes)
                                     val usageAfter = decoder.getMemoryUsage()
-                                    Triple(bmp, usageBefore, usageAfter)
+                                    object {
+                                        val bmp = bmp
+                                        val usageBefore = usageBefore
+                                        val usageAfter = usageAfter
+                                        val size = imageSize
+                                    }
                                 }
                             }
-                            bitmap = result.first
-                            memoryUsageBefore = result.second
-                            memoryUsageAfter = result.third
+                            bitmap = result.bmp
+                            memoryUsageBefore = result.usageBefore
+                            memoryUsageAfter = result.usageAfter
+                            size = result.size
                         } catch (e: Exception) {
                             error = e.message ?: "Unknown error"
                         }
@@ -85,6 +94,16 @@ class MainActivity : ComponentActivity() {
                                 text = "WASM Heap: ${memoryUsageBefore?.wasmHeapSizeBytes} -> ${memoryUsageAfter?.wasmHeapSizeBytes}",
                                 modifier = Modifier
                                     .align(Alignment.TopStart)
+                                    .background(Color.White.copy(alpha = 0.7f))
+                                    .padding(8.dp)
+                            )
+                        }
+
+                        if (size != null) {
+                            Text(
+                                text = "${size?.width}:${size?.height}",
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
                                     .background(Color.White.copy(alpha = 0.7f))
                                     .padding(8.dp)
                             )
