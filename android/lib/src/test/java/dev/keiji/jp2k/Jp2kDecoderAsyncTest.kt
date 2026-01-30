@@ -225,4 +225,89 @@ class Jp2kDecoderAsyncTest {
             assertEquals("Ratio must be 0.0 - 1.0", it.message)
         })
     }
+
+    @Test
+    fun testInit_Error() {
+        val exception = RuntimeException("Sandbox creation failed")
+
+        val failedFuture = object : ListenableFuture<JavaScriptSandbox> {
+            override fun cancel(mayInterruptIfRunning: Boolean): Boolean = false
+            override fun isCancelled(): Boolean = false
+            override fun isDone(): Boolean = true
+            override fun get(): JavaScriptSandbox { throw java.util.concurrent.ExecutionException(exception) }
+            override fun get(timeout: Long, unit: TimeUnit?): JavaScriptSandbox { throw java.util.concurrent.ExecutionException(exception) }
+            override fun addListener(listener: Runnable, executor: Executor) {
+                listener.run()
+            }
+        }
+
+        mockJp2kSandbox.`when`<ListenableFuture<JavaScriptSandbox>> {
+            Jp2kSandbox.get(any<Context>())
+        }.thenReturn(failedFuture)
+
+        val directExecutor = Executor { it.run() }
+        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
+        val callback = org.mockito.kotlin.mock<Callback<Unit>>()
+
+        decoder.init(context, callback)
+
+        verify(callback).onError(any())
+    }
+
+    @Test
+    fun testDecodeImage_DecodeError() {
+        val jsonError = """{"errorCode": -4, "errorMessage": "Decode failed"}"""
+
+        doAnswer { invocation ->
+            val script = invocation.arguments[0] as String
+            if (script.contains("decodeJ2KWithCacheRatio(")) {
+                TestListenableFuture(jsonError)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
+
+        val directExecutor = Executor { it.run() }
+        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
+        val data = ByteArray(10)
+
+        decoder.init(context, org.mockito.kotlin.mock<Callback<Unit>>())
+        decoder.precache(data, org.mockito.kotlin.mock<Callback<Unit>>())
+
+        val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
+        decoder.decodeImage(0.0f, 0.0f, 0.5f, 0.5f, callback)
+
+        verify(callback).onError(org.mockito.kotlin.check {
+            assert(it is Jp2kException)
+            assertEquals("Decode failed", it.message)
+        })
+    }
+
+    @Test
+    fun testDecodeImage_RegionOutOfBounds() {
+        val jsonError = """{"errorCode": -6, "errorMessage": "Out of bounds"}"""
+
+        doAnswer { invocation ->
+            val script = invocation.arguments[0] as String
+            if (script.contains("decodeJ2KWithCacheRatio(")) {
+                TestListenableFuture(jsonError)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
+
+        val directExecutor = Executor { it.run() }
+        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
+        val data = ByteArray(10)
+
+        decoder.init(context, org.mockito.kotlin.mock<Callback<Unit>>())
+        decoder.precache(data, org.mockito.kotlin.mock<Callback<Unit>>())
+
+        val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
+        decoder.decodeImage(0.0f, 0.0f, 0.5f, 0.5f, callback)
+
+        verify(callback).onError(org.mockito.kotlin.check {
+            assert(it is RegionOutOfBoundsException)
+        })
+    }
 }

@@ -1,6 +1,7 @@
 #include <openjpeg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 // Stubs for functions used in wrapper.c but not needed for testing convert_to_bmp
 
@@ -10,6 +11,7 @@ uint32_t stub_height = 0;
 
 int stub_should_decompress_create_succeed = 1;
 int stub_should_setup_succeed = 1;
+int stub_should_decode_succeed = 0;
 
 opj_codec_t* opj_create_decompress(OPJ_CODEC_FORMAT format) {
     if (stub_should_decompress_create_succeed) {
@@ -34,6 +36,8 @@ OPJ_BOOL opj_read_header(opj_stream_t *p_stream, opj_codec_t *p_codec, opj_image
         (*p_image)->y0 = 0;
         (*p_image)->x1 = stub_width;
         (*p_image)->y1 = stub_height;
+        (*p_image)->numcomps = 4;
+        (*p_image)->comps = (opj_image_comp_t*)calloc(4, sizeof(opj_image_comp_t));
         return OPJ_TRUE;
     }
     return OPJ_FALSE;
@@ -52,6 +56,22 @@ void opj_image_destroy(opj_image_t *image) {
         free(image);
     }
 }
-OPJ_BOOL opj_decode(opj_codec_t *p_decompressor, opj_stream_t *p_stream, opj_image_t *p_image) { return OPJ_FALSE; }
+OPJ_BOOL opj_decode(opj_codec_t *p_decompressor, opj_stream_t *p_stream, opj_image_t *p_image) {
+    if (stub_should_decode_succeed) {
+        // Allocate data for comps
+        uint32_t w = p_image->x1 - p_image->x0;
+        uint32_t h = p_image->y1 - p_image->y0;
+        for (uint32_t i = 0; i < p_image->numcomps; i++) {
+             p_image->comps[i].data = (OPJ_INT32*)malloc(w * h * sizeof(OPJ_INT32));
+             // Fill with dummy data (e.g. solid white/opaque)
+             // 255 for all channels
+             for (uint32_t j = 0; j < w * h; j++) {
+                 p_image->comps[i].data[j] = 255;
+             }
+        }
+        return OPJ_TRUE;
+    }
+    return OPJ_FALSE;
+}
 void opj_stream_destroy(opj_stream_t* p_stream) { if(p_stream) free(p_stream); }
 void opj_destroy_codec(opj_codec_t * p_codec) { if(p_codec) free(p_codec); }

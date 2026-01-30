@@ -210,4 +210,84 @@ class Jp2kDecoderTest {
             assertEquals("Ratio must be 0.0 - 1.0", e.message)
         }
     }
+
+    @Test
+    fun testInit_Error() = runTest {
+        val exception = RuntimeException("Sandbox creation failed")
+
+        val failedFuture = object : ListenableFuture<JavaScriptSandbox> {
+            override fun cancel(mayInterruptIfRunning: Boolean): Boolean = false
+            override fun isCancelled(): Boolean = false
+            override fun isDone(): Boolean = true
+            override fun get(): JavaScriptSandbox { throw java.util.concurrent.ExecutionException(exception) }
+            override fun get(timeout: Long, unit: TimeUnit?): JavaScriptSandbox { throw java.util.concurrent.ExecutionException(exception) }
+            override fun addListener(listener: Runnable, executor: Executor) {
+                listener.run()
+            }
+        }
+
+        mockJp2kSandbox.`when`<ListenableFuture<JavaScriptSandbox>> {
+            Jp2kSandbox.get(any<Context>())
+        }.thenReturn(failedFuture)
+
+        val decoder = Jp2kDecoder(coroutineDispatcher = testDispatcher)
+        try {
+            decoder.init(context)
+            fail("Should throw RuntimeException")
+        } catch (e: RuntimeException) {
+            // Success
+        }
+    }
+
+    @Test
+    fun testDecodeImage_DecodeError() = runTest {
+        val jsonError = """{"errorCode": -4, "errorMessage": "Decode failed"}"""
+
+        doAnswer { invocation ->
+            val script = invocation.arguments[0] as String
+            if (script.contains("decodeJ2KWithCacheRatio(")) {
+                TestListenableFuture(jsonError)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
+
+        val decoder = Jp2kDecoder(coroutineDispatcher = testDispatcher)
+        decoder.init(context)
+        val data = ByteArray(10)
+        decoder.precache(data)
+
+        try {
+            decoder.decodeImage(0.0f, 0.0f, 0.5f, 0.5f)
+            fail("Should throw Jp2kException")
+        } catch (e: Jp2kException) {
+            assertEquals("Decode failed", e.message)
+        }
+    }
+
+    @Test
+    fun testDecodeImage_RegionOutOfBounds() = runTest {
+        val jsonError = """{"errorCode": -6, "errorMessage": "Out of bounds"}"""
+
+        doAnswer { invocation ->
+            val script = invocation.arguments[0] as String
+            if (script.contains("decodeJ2KWithCacheRatio(")) {
+                TestListenableFuture(jsonError)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
+
+        val decoder = Jp2kDecoder(coroutineDispatcher = testDispatcher)
+        decoder.init(context)
+        val data = ByteArray(10)
+        decoder.precache(data)
+
+        try {
+            decoder.decodeImage(0.0f, 0.0f, 0.5f, 0.5f)
+            fail("Should throw RegionOutOfBoundsException")
+        } catch (e: RegionOutOfBoundsException) {
+            // Success
+        }
+    }
 }
