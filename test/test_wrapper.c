@@ -474,6 +474,47 @@ void test_getsize_failures() {
     printf("getSize Failures Passed.\n");
 }
 
+void test_ratio_decode() {
+    printf("Testing Ratio Decode...\n");
+    uint8_t dummy_data[20] = {0};
+
+    // Setup success stubs
+    stub_should_header_succeed = 1;
+    stub_width = 100;
+    stub_height = 200;
+
+    // Test 1: Ratio 0.0, 0.0, 0.5, 0.5 -> 0, 0, 50, 100
+    // We expect decode_internal to call opj_set_decode_area(..., 0, 0, 50, 100)
+    // But we can't verify that directly in this unit test structure unless we mock opj_set_decode_area and record args.
+    // However, we can verify that it does NOT return OUT_OF_BOUNDS for valid ratio.
+
+    // 0.0, 0.0, 0.5, 0.5
+    uint8_t* result = decodeToBmpWithRatio(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 0.0, 0.0, 0.5, 0.5);
+    // It should fail at opj_decode stage (ERR_DECODE), not REGION_OUT_OF_BOUNDS
+    assert(result == NULL);
+    assert(last_error == ERR_DECODE);
+
+    // Test 2: Invalid Ratio (resulting in out of bounds?)
+    // 0.0, 0.0, 1.1, 1.1 -> 0, 0, 100, 200 (clamped)
+    // My implementation clamps to width/height.
+    // So 1.1 becomes 1.0 (width).
+    // So it should still be valid.
+    result = decodeToBmpWithRatio(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 0.0, 0.0, 1.1, 1.1);
+    assert(result == NULL);
+    assert(last_error == ERR_DECODE);
+
+    // Test 3: "Empty" ratio? 0.5, 0.5, 0.5, 0.5 -> x0=50, x1=50 -> is_partial=0?
+    // x0=50, y0=100, x1=50, y1=100.
+    // is_partial check: (ux1 != 0 || uy1 != 0) -> true.
+    // bounds check: ux0 >= ux1 -> 50 >= 50 -> fail.
+    result = decodeToBmpWithRatio(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 0.5, 0.5, 0.5, 0.5);
+    assert(result == NULL);
+    assert(last_error == ERR_REGION_OUT_OF_BOUNDS);
+
+    printf("Ratio Decode Passed.\n");
+    stub_should_header_succeed = 0;
+}
+
 int main() {
     test_argb8888();
     test_rgb565();
@@ -485,5 +526,6 @@ int main() {
     test_decode_failures();
     test_bounds_check();
     test_getsize_failures();
+    test_ratio_decode();
     return 0;
 }

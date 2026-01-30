@@ -2,6 +2,8 @@ package dev.keiji.jp2k
 
 import android.content.Context
 import android.content.res.AssetManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
 import com.google.common.util.concurrent.ListenableFuture
@@ -48,6 +50,7 @@ class Jp2kDecoderAsyncTest {
     lateinit var isolate: JavaScriptIsolate
 
     private lateinit var mockJp2kSandbox: MockedStatic<Jp2kSandbox>
+    private lateinit var mockBitmapFactory: MockedStatic<BitmapFactory>
 
     class TestListenableFuture<T>(private val result: T) : ListenableFuture<T> {
         override fun cancel(mayInterruptIfRunning: Boolean): Boolean = false
@@ -79,11 +82,17 @@ class Jp2kDecoderAsyncTest {
 
         // Mock sandbox feature support
         whenever(sandbox.isFeatureSupported(any<String>())).thenReturn(true)
+
+        mockBitmapFactory = mockStatic(BitmapFactory::class.java)
+        mockBitmapFactory.`when`<Bitmap> {
+            BitmapFactory.decodeByteArray(any(), any(), any(), any())
+        }.thenReturn(Mockito.mock(Bitmap::class.java))
     }
 
     @After
     fun tearDown() {
         mockJp2kSandbox.close()
+        mockBitmapFactory.close()
     }
 
     @Test
@@ -174,5 +183,46 @@ class Jp2kDecoderAsyncTest {
         decoder.getSize(callbackSize)
 
         verify(callbackSize).onError(any())
+    }
+
+    @Test
+    fun testDecodeImage_Ratio_Success() {
+        val jsonBmp = """{"bmp": "AQID", "timePreProcess": 0, "timeWasm": 0, "timePostProcess": 0}"""
+
+        doAnswer { invocation ->
+            val script = invocation.arguments[0] as String
+            if (script.contains("decodeJ2KWithCacheRatio(")) {
+                TestListenableFuture(jsonBmp)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
+
+        val directExecutor = Executor { it.run() }
+        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
+        val data = ByteArray(10)
+
+        decoder.init(context, org.mockito.kotlin.mock<Callback<Unit>>())
+        decoder.precache(data, org.mockito.kotlin.mock<Callback<Unit>>())
+
+        val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
+        decoder.decodeImage(0.0f, 0.0f, 0.5f, 0.5f, callback)
+
+        verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2KWithCacheRatio("))
+        verify(callback).onSuccess(any())
+    }
+
+    @Test
+    fun testDecodeImage_Ratio_InvalidInput() {
+        val directExecutor = Executor { it.run() }
+        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
+        val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
+
+        decoder.decodeImage(0.0f, 0.0f, 1.1f, 0.5f, callback)
+
+        verify(callback).onError(any())
+        verify(callback).onError(org.mockito.kotlin.check {
+            assertEquals("Ratio must be 0.0 - 1.0", it.message)
+        })
     }
 }
