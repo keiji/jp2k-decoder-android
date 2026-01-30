@@ -63,6 +63,16 @@ OPJ_BOOL opj_decode(opj_codec_t *p_decompressor, opj_stream_t *p_stream, opj_ima
         uint32_t h = p_image->y1 - p_image->y0;
         for (uint32_t i = 0; i < p_image->numcomps; i++) {
              p_image->comps[i].data = (OPJ_INT32*)malloc(w * h * sizeof(OPJ_INT32));
+             if (!p_image->comps[i].data) {
+                 // Clean up on allocation failure
+                 for (uint32_t k = 0; k < i; k++) {
+                     if (p_image->comps[k].data) {
+                         free(p_image->comps[k].data);
+                         p_image->comps[k].data = NULL;
+                     }
+                 }
+                 return OPJ_FALSE;
+             }
              // Fill with dummy data (e.g. solid white/opaque)
              // 255 for all channels
              for (uint32_t j = 0; j < w * h; j++) {
