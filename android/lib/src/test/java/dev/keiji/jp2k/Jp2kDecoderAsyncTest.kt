@@ -150,16 +150,16 @@ class Jp2kDecoderAsyncTest {
 
     @Test
     fun testGetSize_NoDataCached() {
-        val jsonError = """{"errorCode": -10, "errorMessage": "No data cached"}"""
+        val jsonError = """{"errorCode": ${Jp2kError.CacheDataMissing.code}, "errorMessage": "No data cached"}"""
 
         doAnswer { invocation ->
             val script = invocation.arguments[0] as String
             if (script.contains("base64ToBytes")) {
-                TestListenableFuture("1")
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
             } else if (script.contains("getSizeWithCache")) {
                 TestListenableFuture(jsonError)
             } else {
-                TestListenableFuture("1")
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
             }
         }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
 
