@@ -177,6 +177,29 @@ Unit tests for the C wrapper logic (e.g., BMP conversion) can be run without Ems
 bash test/run_tests.sh
 ```
 
+### Test Coverage
+
+#### Android Unit Test Coverage
+
+To measure the code coverage for Android unit tests, run the following command:
+
+```bash
+cd android
+./gradlew lib:jacocoTestReport
+```
+
+The HTML report will be generated at `android/lib/build/reports/jacoco/jacocoTestReport/html/index.html`.
+
+#### C/Native Test Coverage
+
+To measure the code coverage for the C/Native code (wrapper.c), run the following command:
+
+```bash
+./test/run_coverage.sh
+```
+
+The summary will be printed to stdout.
+
 ## Generate Documentation
 
 To generate the API documentation (KDoc), run the following command:
