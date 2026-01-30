@@ -10,9 +10,8 @@ plugins {
     alias(libs.plugins.nmcp.aggregation)
     `maven-publish`
     signing
+    jacoco
 }
-
-apply(plugin = "jacoco")
 
 nmcpAggregation {
     centralPortal {
@@ -129,11 +128,11 @@ tasks.register<JacocoReport>("jacocoTestReport") {
         html.required.set(true)
     }
 
-    val fileFilter = listOf("**/R.class", "**/R$*.class", "**/BuildConfig.*", "**/Manifest*.*", "**/*Test*.*", "android/**/*.*")
+    val fileFilter = listOf("**/R.class", "**/R$*.class", "**/BuildConfig.*", "**/Manifest*.*", "**/*Test*.*")
     val debugTree = layout.buildDirectory.dir("tmp/kotlin-classes/debug").get().asFileTree.matching {
         exclude(fileFilter)
     }
-    val mainSrc = layout.projectDirectory.dir("src/main/java")
+    val mainSrc = android.sourceSets.getByName("main").java.srcDirs
 
     classDirectories.setFrom(debugTree)
     sourceDirectories.setFrom(files(mainSrc))

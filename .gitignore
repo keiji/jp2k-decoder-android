@@ -1,1 +1,21 @@
-openjpeg/build
+# Gradle files
+.gradle/
+build/
+*/build/
+
+# Wrapper
+!gradle/wrapper/gradle-wrapper.jar
+
+# Android Studio
+.idea/
+*.iml
+local.properties
+
+# OS
+.DS_Store
+
+# Coverage
+*.gcda
+*.gcno
+coverage.info
+coverage_summary.txt
