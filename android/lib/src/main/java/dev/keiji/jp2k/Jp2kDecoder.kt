@@ -285,7 +285,40 @@ class Jp2kDecoder(
         val measureTimes = config.logLevel != null
         val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
         val script =
-            "globalThis.decodeJ2K('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes);"
+            "globalThis.decodeJ2K('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, 0, 0, 0, 0);"
+
+        return executeDecodeImage(script, colorFormat)
+    }
+
+    /**
+     * Decodes a specific region of a JPEG 2000 image.
+     *
+     * @param j2kData The raw byte array of the JPEG 2000 image.
+     * @param left The left coordinate of the region.
+     * @param top The top coordinate of the region.
+     * @param right The right coordinate of the region.
+     * @param bottom The bottom coordinate of the region.
+     * @param colorFormat The desired output color format. Defaults to [ColorFormat.ARGB8888].
+     * @return The decoded [Bitmap].
+     */
+    suspend fun decodeImage(
+        j2kData: ByteArray,
+        left: Int,
+        top: Int,
+        right: Int,
+        bottom: Int,
+        colorFormat: ColorFormat = ColorFormat.ARGB8888,
+    ): Bitmap {
+        log(Log.INFO, "Input data length: ${j2kData.size}")
+
+        if (j2kData.size < MIN_INPUT_SIZE) {
+            throw IllegalArgumentException("Input data is too short")
+        }
+
+        val measureTimes = config.logLevel != null
+        val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
+        val script =
+            "globalThis.decodeJ2K('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
 
         return executeDecodeImage(script, colorFormat)
     }
@@ -301,7 +334,31 @@ class Jp2kDecoder(
     ): Bitmap {
         val measureTimes = config.logLevel != null
         val script =
-            "globalThis.decodeJ2KWithCache(${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes);"
+            "globalThis.decodeJ2KWithCache(${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, 0, 0, 0, 0);"
+
+        return executeDecodeImage(script, colorFormat)
+    }
+
+    /**
+     * Decodes a specific region of a JPEG 2000 image using cached data.
+     *
+     * @param left The left coordinate of the region.
+     * @param top The top coordinate of the region.
+     * @param right The right coordinate of the region.
+     * @param bottom The bottom coordinate of the region.
+     * @param colorFormat The desired output color format. Defaults to [ColorFormat.ARGB8888].
+     * @return The decoded [Bitmap].
+     */
+    suspend fun decodeImage(
+        left: Int,
+        top: Int,
+        right: Int,
+        bottom: Int,
+        colorFormat: ColorFormat = ColorFormat.ARGB8888,
+    ): Bitmap {
+        val measureTimes = config.logLevel != null
+        val script =
+            "globalThis.decodeJ2KWithCache(${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
 
         return executeDecodeImage(script, colorFormat)
     }
@@ -340,6 +397,11 @@ class Jp2kDecoder(
                     val errorMessage =
                         if (root.has("errorMessage")) root.getString("errorMessage") else null
                     log(Log.ERROR, "Error: $error, Message: $errorMessage")
+
+                    if (error == Jp2kError.RegionOutOfBounds) {
+                        throw RegionOutOfBoundsException(errorMessage)
+                    }
+
                     throw Jp2kException(error, errorMessage)
                 } else if (root.has("error")) {
                     val errorMsg = root.getString("error")

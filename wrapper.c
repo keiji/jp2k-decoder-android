@@ -11,6 +11,7 @@
 #define ERR_PIXEL_DATA_SIZE -3
 #define ERR_DECODE -4
 #define ERR_DECODER_SETUP -5
+#define ERR_REGION_OUT_OF_BOUNDS -6
 
 #define MIN_INPUT_SIZE 12
 
@@ -73,7 +74,7 @@ static opj_stream_t* create_mem_stream(opj_buffer_info_t* buffer_info, uint32_t 
     return l_stream;
 }
 
-static opj_image_t* decode_internal(uint8_t* data, uint32_t data_len, OPJ_CODEC_FORMAT format, uint32_t max_pixels) {
+static opj_image_t* decode_internal(uint8_t* data, uint32_t data_len, OPJ_CODEC_FORMAT format, uint32_t max_pixels, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1) {
     last_error = ERR_NONE;
 
     opj_buffer_info_t buffer_info = {data, data_len, 0};
@@ -92,11 +93,48 @@ static opj_image_t* decode_internal(uint8_t* data, uint32_t data_len, OPJ_CODEC_
     } else {
         uint32_t width = l_image->x1 - l_image->x0;
         uint32_t height = l_image->y1 - l_image->y0;
+
+        // Check bounds if partial decoding is requested (x1 > 0 or y1 > 0)
+        // If x1 and y1 are 0, we assume full decode (no crop)
+        int is_partial = (x1 != 0 || y1 != 0);
+        int bounds_ok = 1;
+
+        if (is_partial) {
+             if (x0 < l_image->x0 || y0 < l_image->y0 || x1 > l_image->x1 || y1 > l_image->y1 || x0 >= x1 || y0 >= y1) {
+                 bounds_ok = 0;
+             } else {
+                 if (!opj_set_decode_area(l_codec, l_image, x0, y0, x1, y1)) {
+                     // Should not happen if bounds are ok, but safety check
+                     bounds_ok = 0;
+                 }
+             }
+        }
         
-        if (max_pixels > 0 && ((uint64_t)width * height) > max_pixels) {
-            last_error = ERR_PIXEL_DATA_SIZE;
+        if (!bounds_ok) {
+            last_error = ERR_REGION_OUT_OF_BOUNDS;
             opj_image_destroy(l_image);
             l_image = NULL;
+        } else if (max_pixels > 0 && ((uint64_t)width * height) > max_pixels) {
+            // Note: If partial decode, width/height in l_image are still the original image dimensions
+            // unless opj_read_header + opj_set_decode_area updates them?
+            // OpenJPEG docs: opj_set_decode_area restricts the decoded area.
+            // The decoded image structure (l_image) will have x0, y0, x1, y1 updated to the decode area
+            // *after* opj_decode is called? Or immediately?
+            // Actually, opj_set_decode_area only sets parameters in the codec.
+            // But we want to check pixel limit against the *output* size.
+            // If partial, the output size is (x1-x0) * (y1-y0).
+            uint32_t output_width = is_partial ? (x1 - x0) : width;
+            uint32_t output_height = is_partial ? (y1 - y0) : height;
+
+            if (((uint64_t)output_width * output_height) > max_pixels) {
+                last_error = ERR_PIXEL_DATA_SIZE;
+                opj_image_destroy(l_image);
+                l_image = NULL;
+            } else if (!opj_decode(l_codec, l_stream, l_image)) {
+                last_error = ERR_DECODE;
+                opj_image_destroy(l_image);
+                l_image = NULL;
+            }
         } else if (!opj_decode(l_codec, l_stream, l_image)) {
             last_error = ERR_DECODE;
             opj_image_destroy(l_image);
@@ -109,7 +147,7 @@ static opj_image_t* decode_internal(uint8_t* data, uint32_t data_len, OPJ_CODEC_
     return l_image;
 }
 
-static opj_image_t* decode_opj(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint32_t max_heap_size, int color_format) {
+static opj_image_t* decode_opj(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint32_t max_heap_size, int color_format, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1) {
     uint32_t divider = (color_format == COLOR_FORMAT_RGB565) ? 2 : 4;
     uint32_t max_input_size = max_heap_size / divider;
 
@@ -119,7 +157,7 @@ static opj_image_t* decode_opj(uint8_t* data, uint32_t data_len, uint32_t max_pi
     }
 
     OPJ_CODEC_FORMAT format = get_codec_format(data, data_len);
-    return decode_internal(data, data_len, format, max_pixels);
+    return decode_internal(data, data_len, format, max_pixels, x0, y0, x1, y1);
 }
 
 static int32_t* get_alpha_component(opj_image_t* image) {
@@ -307,8 +345,8 @@ static uint8_t* convert_image_to_bmp(opj_image_t* image, int color_format) {
 }
 
 EMSCRIPTEN_KEEPALIVE
-uint8_t* decodeToBmp(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint32_t max_heap_size, int color_format) {
-    opj_image_t* image = decode_opj(data, data_len, max_pixels, max_heap_size, color_format);
+uint8_t* decodeToBmp(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint32_t max_heap_size, int color_format, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1) {
+    opj_image_t* image = decode_opj(data, data_len, max_pixels, max_heap_size, color_format, x0, y0, x1, y1);
     if (!image) return NULL;
 
     uint8_t* bmp_buffer = convert_image_to_bmp(image, color_format);

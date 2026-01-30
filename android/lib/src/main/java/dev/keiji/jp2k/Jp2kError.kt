@@ -21,6 +21,12 @@ enum class Jp2kError(val code: Int) {
     /** Generic decoding error. */
     Decode(-4),
 
+    /** Decoder setup error. */
+    DecoderSetup(-5),
+
+    /** Region out of bounds error. */
+    RegionOutOfBounds(-6),
+
     /** Cache data missing error. */
     CacheDataMissing(-10),
 
