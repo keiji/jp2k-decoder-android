@@ -201,6 +201,7 @@ class Jp2kDecoderAsync(
                         callback.onError(IllegalStateException("Decoder state invalid before execution: $_state"))
                         return@execute
                     }
+                    _state = State.Processing
                 }
 
                 try {
@@ -224,8 +225,16 @@ class Jp2kDecoderAsync(
                         throw IllegalStateException("Failed to set data: $result")
                     }
 
-                    callback.onSuccess(Unit)
+                    restoreStateAfterDecode()
+                    synchronized(lock) {
+                        if (_state == State.Released || _state == State.Releasing) {
+                            callback.onError(CancellationException("Decoder was released."))
+                        } else {
+                            callback.onSuccess(Unit)
+                        }
+                    }
                 } catch (e: Exception) {
+                    restoreStateAfterDecode()
                     synchronized(lock) {
                         if (_state == State.Released || _state == State.Releasing) {
                             callback.onError(CancellationException("Decoder was released."))

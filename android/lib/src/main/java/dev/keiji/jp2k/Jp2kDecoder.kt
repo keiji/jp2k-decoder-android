@@ -167,6 +167,7 @@ class Jp2kDecoder(
         if (_state != State.Initialized) {
             throw IllegalStateException("Cannot precache while in state: $_state")
         }
+        _state = State.Processing
 
         try {
             val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
@@ -193,6 +194,8 @@ class Jp2kDecoder(
         } catch (e: Exception) {
             log(Log.ERROR, "precache() failed. Error: ${e.message}")
             throw e
+        } finally {
+            restoreStateAfterDecode()
         }
     }
 
