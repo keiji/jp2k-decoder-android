@@ -227,6 +227,9 @@ class Jp2kDecoder(
                 val root = JSONObject(jsonResult)
                 if (root.has("errorCode")) {
                     val errorCode = root.getInt("errorCode")
+                    if (errorCode == -10) {
+                        throw IllegalStateException("No data cached")
+                    }
                     val error = Jp2kError.fromInt(errorCode)
                     val errorMessage = if (root.has("errorMessage")) root.getString("errorMessage") else null
                     log(Log.ERROR, "Error: $error, Message: $errorMessage")
@@ -276,6 +279,9 @@ class Jp2kDecoder(
                 val root = JSONObject(jsonResult)
                 if (root.has("errorCode")) {
                     val errorCode = root.getInt("errorCode")
+                    if (errorCode == -10) {
+                        throw IllegalStateException("No data cached")
+                    }
                     val error = Jp2kError.fromInt(errorCode)
                     val errorMessage = if (root.has("errorMessage")) root.getString("errorMessage") else null
                     log(Log.ERROR, "Error: $error, Message: $errorMessage")

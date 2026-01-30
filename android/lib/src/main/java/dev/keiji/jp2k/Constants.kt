@@ -219,7 +219,7 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
 
             globalThis.decodeJ2KWithCache = function(maxPixels, maxHeapSize, colorFormat, measureTimes) {
                 if (!globalThis.j2kData) {
-                    return JSON.stringify({ errorCode: -1, errorMessage: "No data cached" });
+                    return JSON.stringify({ errorCode: -10, errorMessage: "No data cached" });
                 }
                 return globalThis.internalDecodeJ2K(globalThis.j2kData, maxPixels, maxHeapSize, colorFormat, measureTimes);
             };
@@ -287,7 +287,7 @@ internal val SCRIPT_DEFINE_GET_SIZE = """
 
             globalThis.getSizeWithCache = function() {
                 if (!globalThis.j2kData) {
-                    return JSON.stringify({ errorCode: -1, errorMessage: "No data cached" });
+                    return JSON.stringify({ errorCode: -10, errorMessage: "No data cached" });
                 }
                 return globalThis.internalGetSize(globalThis.j2kData);
             };
