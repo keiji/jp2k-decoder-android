@@ -33,6 +33,7 @@ import kotlinx.coroutines.withContext
 
 private data class DecodeResult(
     val bmp: Bitmap?,
+    val bmpCropped: Bitmap?,
     val usageBefore: MemoryUsage?,
     val usageAfter: MemoryUsage?,
     val size: Size?
@@ -49,6 +50,7 @@ class MainActivity : ComponentActivity() {
             J2kwasmsampleTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
+                    var bitmapCropped by remember { mutableStateOf<Bitmap?>(null) }
                     var memoryUsageBefore by remember { mutableStateOf<MemoryUsage?>(null) }
                     var memoryUsageAfter by remember { mutableStateOf<MemoryUsage?>(null) }
                     var size by remember { mutableStateOf<Size?>(null) }
@@ -66,9 +68,19 @@ class MainActivity : ComponentActivity() {
                                     val usageBefore = decoder.getMemoryUsage()
                                     val imageSize = decoder.getSize()
                                     val bmp = decoder.decodeImage()
+
+                                    val width = imageSize.width
+                                    val height = imageSize.height
+                                    val cropLeft = (width * 0.125).toInt()
+                                    val cropTop = (height * 0.125).toInt()
+                                    val cropRight = (width * 0.875).toInt()
+                                    val cropBottom = (height * 0.875).toInt()
+                                    val bmpCropped = decoder.decodeImage(cropLeft, cropTop, cropRight, cropBottom)
+
                                     val usageAfter = decoder.getMemoryUsage()
                                     DecodeResult(
                                         bmp = bmp,
+                                        bmpCropped = bmpCropped,
                                         usageBefore = usageBefore,
                                         usageAfter = usageAfter,
                                         size = imageSize
@@ -76,6 +88,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             bitmap = result.bmp
+                            bitmapCropped = result.bmpCropped
                             memoryUsageBefore = result.usageBefore
                             memoryUsageAfter = result.usageAfter
                             size = result.size
@@ -90,13 +103,30 @@ class MainActivity : ComponentActivity() {
                             .fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (bitmap != null) {
-                            Image(
-                                bitmap = bitmap!!.asImageBitmap(),
-                                contentDescription = "Decoded Image",
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        } else if (error == null) {
+                        Column(
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            if (bitmap != null) {
+                                Image(
+                                    bitmap = bitmap!!.asImageBitmap(),
+                                    contentDescription = "Decoded Image",
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxSize()
+                                )
+                            }
+                            if (bitmapCropped != null) {
+                                Image(
+                                    bitmap = bitmapCropped!!.asImageBitmap(),
+                                    contentDescription = "Decoded Image (Cropped)",
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxSize()
+                                )
+                            }
+                        }
+
+                        if (bitmap == null && error == null) {
                             CircularProgressIndicator()
                         }
 

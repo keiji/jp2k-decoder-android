@@ -96,6 +96,51 @@ decoder.init(context, new Callback<Unit>() {
 });
 ```
 
+### Precaching
+
+If you plan to perform multiple operations on the same image (e.g., getting size first, then decoding, or decoding different regions), it is efficient to transfer the image data to the WASM environment once.
+
+```kotlin
+val jp2kBytes: ByteArray = ...
+
+decoder.precache(jp2kBytes)
+
+// Subsequent calls do not need to pass the byte array
+val size = decoder.getSize()
+val bitmap = decoder.decodeImage()
+```
+
+### Getting Image Size
+
+You can retrieve the dimensions of the image without fully decoding it.
+
+```kotlin
+// Using byte array
+val size = decoder.getSize(jp2kBytes)
+println("Width: ${size.width}, Height: ${size.height}")
+
+// Or using precached data
+decoder.precache(jp2kBytes)
+val size = decoder.getSize()
+```
+
+### Partial Decoding (Region of Interest)
+
+You can decode a specific region of the image by specifying the coordinates (left, top, right, bottom).
+
+```kotlin
+// Decode a region
+val bitmap = decoder.decodeImage(jp2kBytes, 100, 100, 300, 300)
+
+// Or using precached data
+decoder.precache(jp2kBytes)
+val bitmap = decoder.decodeImage(100, 100, 300, 300)
+
+// Using Rect
+val rect = Rect(100, 100, 300, 300)
+val bitmap = decoder.decodeImage(rect)
+```
+
 ## Configuration
 
 You can customize the decoder behavior by passing a `Config` object to the constructor.
