@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.AssetManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Rect
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.javascriptengine.JavaScriptIsolate
@@ -351,8 +352,79 @@ class Jp2kDecoderAsync(
     fun decodeImage(colorFormat: ColorFormat = ColorFormat.ARGB8888, callback: Callback<Bitmap>) {
         val measureTimes = config.logLevel != null
         val script =
-            "globalThis.decodeJ2KWithCache(${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes);"
+            "globalThis.decodeJ2KWithCache(${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, 0, 0, 0, 0);"
         executeDecodeImage(script, colorFormat, callback)
+    }
+
+    /**
+     * Decodes a specific region of a JPEG 2000 image asynchronously using cached data.
+     *
+     * @param left The left coordinate of the region.
+     * @param top The top coordinate of the region.
+     * @param right The right coordinate of the region.
+     * @param bottom The bottom coordinate of the region.
+     * @param colorFormat The desired output color format.
+     * @param callback The callback to receive the decoded [Bitmap] or error.
+     */
+    fun decodeImage(
+        left: Int,
+        top: Int,
+        right: Int,
+        bottom: Int,
+        colorFormat: ColorFormat = ColorFormat.ARGB8888,
+        callback: Callback<Bitmap>
+    ) {
+        val measureTimes = config.logLevel != null
+        val script =
+            "globalThis.decodeJ2KWithCache(${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
+        executeDecodeImage(script, colorFormat, callback)
+    }
+
+    /**
+     * Decodes a specific region of a JPEG 2000 image asynchronously using cached data with default color format (ARGB 8888).
+     *
+     * @param left The left coordinate of the region.
+     * @param top The top coordinate of the region.
+     * @param right The right coordinate of the region.
+     * @param bottom The bottom coordinate of the region.
+     * @param callback The callback to receive the decoded [Bitmap] or error.
+     */
+    fun decodeImage(
+        left: Int,
+        top: Int,
+        right: Int,
+        bottom: Int,
+        callback: Callback<Bitmap>
+    ) {
+        decodeImage(left, top, right, bottom, ColorFormat.ARGB8888, callback)
+    }
+
+    /**
+     * Decodes a specific region of a JPEG 2000 image asynchronously using cached data.
+     *
+     * @param region The region to decode.
+     * @param colorFormat The desired output color format.
+     * @param callback The callback to receive the decoded [Bitmap] or error.
+     */
+    fun decodeImage(
+        region: Rect,
+        colorFormat: ColorFormat = ColorFormat.ARGB8888,
+        callback: Callback<Bitmap>
+    ) {
+        decodeImage(region.left, region.top, region.right, region.bottom, colorFormat, callback)
+    }
+
+    /**
+     * Decodes a specific region of a JPEG 2000 image asynchronously using cached data with default color format (ARGB 8888).
+     *
+     * @param region The region to decode.
+     * @param callback The callback to receive the decoded [Bitmap] or error.
+     */
+    fun decodeImage(
+        region: Rect,
+        callback: Callback<Bitmap>
+    ) {
+        decodeImage(region, ColorFormat.ARGB8888, callback)
     }
 
     /**
@@ -377,9 +449,97 @@ class Jp2kDecoderAsync(
         val measureTimes = config.logLevel != null
         val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
         val script =
-            "globalThis.decodeJ2K('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes);"
+            "globalThis.decodeJ2K('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, 0, 0, 0, 0);"
 
         executeDecodeImage(script, colorFormat, callback)
+    }
+
+    /**
+     * Decodes a specific region of a JPEG 2000 image asynchronously.
+     *
+     * @param j2kData The raw byte array of the JPEG 2000 image.
+     * @param left The left coordinate of the region.
+     * @param top The top coordinate of the region.
+     * @param right The right coordinate of the region.
+     * @param bottom The bottom coordinate of the region.
+     * @param colorFormat The desired output color format.
+     * @param callback The callback to receive the decoded [Bitmap] or error.
+     */
+    fun decodeImage(
+        j2kData: ByteArray,
+        left: Int,
+        top: Int,
+        right: Int,
+        bottom: Int,
+        colorFormat: ColorFormat = ColorFormat.ARGB8888,
+        callback: Callback<Bitmap>
+    ) {
+        log(Log.INFO, "Input data length: ${j2kData.size}")
+
+        if (j2kData.size < MIN_INPUT_SIZE) {
+            callback.onError(IllegalArgumentException("Input data is too short"))
+            return
+        }
+
+        val measureTimes = config.logLevel != null
+        val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
+        val script =
+            "globalThis.decodeJ2K('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
+
+        executeDecodeImage(script, colorFormat, callback)
+    }
+
+    /**
+     * Decodes a specific region of a JPEG 2000 image asynchronously with default color format (ARGB 8888).
+     *
+     * @param j2kData The raw byte array of the JPEG 2000 image.
+     * @param left The left coordinate of the region.
+     * @param top The top coordinate of the region.
+     * @param right The right coordinate of the region.
+     * @param bottom The bottom coordinate of the region.
+     * @param callback The callback to receive the decoded [Bitmap] or error.
+     */
+    fun decodeImage(
+        j2kData: ByteArray,
+        left: Int,
+        top: Int,
+        right: Int,
+        bottom: Int,
+        callback: Callback<Bitmap>
+    ) {
+        decodeImage(j2kData, left, top, right, bottom, ColorFormat.ARGB8888, callback)
+    }
+
+    /**
+     * Decodes a specific region of a JPEG 2000 image asynchronously.
+     *
+     * @param j2kData The raw byte array of the JPEG 2000 image.
+     * @param region The region to decode.
+     * @param colorFormat The desired output color format.
+     * @param callback The callback to receive the decoded [Bitmap] or error.
+     */
+    fun decodeImage(
+        j2kData: ByteArray,
+        region: Rect,
+        colorFormat: ColorFormat = ColorFormat.ARGB8888,
+        callback: Callback<Bitmap>
+    ) {
+        decodeImage(j2kData, region.left, region.top, region.right, region.bottom, colorFormat, callback)
+    }
+
+    /**
+     * Decodes a specific region of a JPEG 2000 image asynchronously with default color format (ARGB 8888).
+     *
+     * @param j2kData The raw byte array of the JPEG 2000 image.
+     * @param region The region to decode.
+     * @param callback The callback to receive the decoded [Bitmap] or error.
+     */
+    fun decodeImage(
+        j2kData: ByteArray,
+        region: Rect,
+        callback: Callback<Bitmap>
+    ) {
+        decodeImage(j2kData, region, ColorFormat.ARGB8888, callback)
     }
 
     private fun executeDecodeImage(
@@ -436,6 +596,11 @@ class Jp2kDecoderAsync(
                         val errorMessage =
                             if (root.has("errorMessage")) root.getString("errorMessage") else null
                         log(Log.ERROR, "Error: $error, Message: $errorMessage")
+
+                        if (error == Jp2kError.RegionOutOfBounds) {
+                            throw RegionOutOfBoundsException(errorMessage)
+                        }
+
                         throw Jp2kException(error, errorMessage)
                     } else if (root.has("error")) {
                         val errorMsg = root.getString("error")

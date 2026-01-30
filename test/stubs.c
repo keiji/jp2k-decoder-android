@@ -38,6 +38,9 @@ OPJ_BOOL opj_read_header(opj_stream_t *p_stream, opj_codec_t *p_codec, opj_image
     }
     return OPJ_FALSE;
 }
+OPJ_BOOL opj_set_decode_area(opj_codec_t *p_codec, opj_image_t* p_image, OPJ_INT32 p_start_x, OPJ_INT32 p_start_y, OPJ_INT32 p_end_x, OPJ_INT32 p_end_y) {
+    return OPJ_TRUE;
+}
 void opj_image_destroy(opj_image_t *image) {
     if (image) {
         if (image->comps) {

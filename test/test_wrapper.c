@@ -305,21 +305,21 @@ void test_input_validation() {
     uint8_t* result;
 
     // Case 1: Input size too small (< MIN_INPUT_SIZE)
-    result = decodeToBmp(dummy_data, 11, 0, 1000, COLOR_FORMAT_ARGB8888);
+    result = decodeToBmp(dummy_data, 11, 0, 1000, COLOR_FORMAT_ARGB8888, 0, 0, 0, 0);
     assert(result == NULL);
     assert(last_error == ERR_INPUT_DATA_SIZE);
 
     // Case 2: ARGB8888 size check (data_len > max_heap / 4)
     // max_heap = 100 -> max_input = 25
     // input = 26 -> Error
-    result = decodeToBmp(dummy_data, 26, 0, 100, COLOR_FORMAT_ARGB8888);
+    result = decodeToBmp(dummy_data, 26, 0, 100, COLOR_FORMAT_ARGB8888, 0, 0, 0, 0);
     assert(result == NULL);
     assert(last_error == ERR_INPUT_DATA_SIZE);
 
     // Case 3: ARGB8888 size check success boundary
     // max_heap = 100 -> max_input = 25
     // input = 25 -> OK (proceeds to decode, fails there)
-    result = decodeToBmp(dummy_data, 25, 0, 100, COLOR_FORMAT_ARGB8888);
+    result = decodeToBmp(dummy_data, 25, 0, 100, COLOR_FORMAT_ARGB8888, 0, 0, 0, 0);
     assert(result == NULL);
     // Since stubs opj_read_header returns false, we expect ERR_HEADER
     // But verify it PASSED the size check (NOT ERR_INPUT_DATA_SIZE)
@@ -328,14 +328,14 @@ void test_input_validation() {
     // Case 4: RGB565 size check (data_len > max_heap / 2)
     // max_heap = 100 -> max_input = 50
     // input = 51 -> Error
-    result = decodeToBmp(dummy_data, 51, 0, 100, COLOR_FORMAT_RGB565);
+    result = decodeToBmp(dummy_data, 51, 0, 100, COLOR_FORMAT_RGB565, 0, 0, 0, 0);
     assert(result == NULL);
     assert(last_error == ERR_INPUT_DATA_SIZE);
 
     // Case 5: RGB565 size check success boundary
     // max_heap = 100 -> max_input = 50
     // input = 50 -> OK (proceeds to decode)
-    result = decodeToBmp(dummy_data, 50, 0, 100, COLOR_FORMAT_RGB565);
+    result = decodeToBmp(dummy_data, 50, 0, 100, COLOR_FORMAT_RGB565, 0, 0, 0, 0);
     assert(result == NULL);
     assert(last_error == ERR_HEADER);
 
@@ -381,20 +381,20 @@ void test_decode_failures() {
 
     // 1. Null Data
     printf("Debug: 1. Null Data\n");
-    uint8_t* result = decodeToBmp(NULL, 100, 0, 1000, COLOR_FORMAT_ARGB8888);
+    uint8_t* result = decodeToBmp(NULL, 100, 0, 1000, COLOR_FORMAT_ARGB8888, 0, 0, 0, 0);
     assert(result == NULL);
     assert(last_error == ERR_INPUT_DATA_SIZE);
 
     // 2. Zero Length
     printf("Debug: 2. Zero Length\n");
-    result = decodeToBmp(dummy_data, 0, 0, 1000, COLOR_FORMAT_ARGB8888);
+    result = decodeToBmp(dummy_data, 0, 0, 1000, COLOR_FORMAT_ARGB8888, 0, 0, 0, 0);
     assert(result == NULL);
     assert(last_error == ERR_INPUT_DATA_SIZE);
 
     // 3. Create Decoder Failure
     printf("Debug: 3. Create Decoder Failure\n");
     stub_should_decompress_create_succeed = 0;
-    result = decodeToBmp(dummy_data, 100, 0, 1000, COLOR_FORMAT_ARGB8888);
+    result = decodeToBmp(dummy_data, 100, 0, 1000, COLOR_FORMAT_ARGB8888, 0, 0, 0, 0);
     assert(result == NULL);
     assert(last_error == ERR_DECODER_SETUP);
     stub_should_decompress_create_succeed = 1; // Reset
@@ -402,12 +402,59 @@ void test_decode_failures() {
     // 4. Setup Decoder Failure
     printf("Debug: 4. Setup Decoder Failure\n");
     stub_should_setup_succeed = 0;
-    result = decodeToBmp(dummy_data, 100, 0, 1000, COLOR_FORMAT_ARGB8888);
+    result = decodeToBmp(dummy_data, 100, 0, 1000, COLOR_FORMAT_ARGB8888, 0, 0, 0, 0);
     assert(result == NULL);
     assert(last_error == ERR_DECODER_SETUP);
     stub_should_setup_succeed = 1; // Reset
 
     printf("Decode Failures Passed.\n");
+}
+
+void test_bounds_check() {
+    printf("Testing Bounds Check...\n");
+    uint8_t dummy_data[20] = {0};
+
+    // Setup success stubs
+    stub_should_header_succeed = 1;
+    stub_width = 100;
+    stub_height = 100;
+
+    // 1. Valid Full Decode (explicit 0s)
+    uint8_t* result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 0, 0, 0, 0);
+    assert(result == NULL);
+    // decode stub returns FALSE, so ERR_DECODE is expected, NOT ERR_REGION_OUT_OF_BOUNDS
+    assert(last_error == ERR_DECODE);
+
+    // 2. Valid Partial Decode
+    result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 10, 10, 20, 20);
+    assert(result == NULL);
+    assert(last_error == ERR_DECODE);
+
+    // 3. Invalid: x1 > width
+    result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 0, 0, 101, 20);
+    assert(result == NULL);
+    assert(last_error == ERR_REGION_OUT_OF_BOUNDS);
+
+    // 4. Invalid: y1 > height
+    result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 0, 0, 100, 101);
+    assert(result == NULL);
+    assert(last_error == ERR_REGION_OUT_OF_BOUNDS);
+
+    // 5. Invalid: x0 < 0 (uint32, so large number check? No, passed as uint32, always >= 0)
+    // Checking bounds relative to x1.
+    // Invalid: x0 >= x1
+    result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 20, 0, 20, 20);
+    assert(result == NULL);
+    assert(last_error == ERR_REGION_OUT_OF_BOUNDS);
+
+    // 6. Invalid: x0 >= x1 (bigger)
+    result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 21, 0, 20, 20);
+    assert(result == NULL);
+    assert(last_error == ERR_REGION_OUT_OF_BOUNDS);
+
+    printf("Bounds Check Passed.\n");
+
+    stub_should_header_succeed = 0;
 }
 
 void test_getsize_failures() {
@@ -436,6 +483,7 @@ int main() {
     test_input_validation();
     test_getSize();
     test_decode_failures();
+    test_bounds_check();
     test_getsize_failures();
     return 0;
 }
