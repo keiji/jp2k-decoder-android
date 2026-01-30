@@ -122,6 +122,7 @@ class Jp2kDecoder(
 
             val script = """
             $SCRIPT_BYTES_BASE64_CONVERTER_LOCAL
+            $SCRIPT_DEFINE_SET_DATA_LOCAL
 
             var wasmInstance;
             const wasmBuffer = globalThis.base64ToBytes('$wasmBase64String');
@@ -151,6 +152,53 @@ class Jp2kDecoder(
     }
 
     /**
+     * Initializes the decoder with initial image data.
+     *
+     * This method initializes the JavaScript sandbox, loads the WebAssembly module,
+     * and caches the provided image data in the sandbox for subsequent operations.
+     *
+     * @param context The Android Context.
+     * @param j2kData The raw byte array of the JPEG 2000 image.
+     * @throws Exception If initialization fails.
+     */
+    suspend fun init(context: Context, j2kData: ByteArray) {
+        init(context)
+
+        mutex.withLock {
+            if (_state != State.Initialized) {
+                // Should be Initialized by init(context), unless release() was called concurrently.
+                throw IllegalStateException("Jp2kDecoder is not initialized (state: $_state)")
+            }
+
+            try {
+                val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
+                withContext(coroutineDispatcher) {
+                    val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
+                    val script = "globalThis.setData('$dataBase64String');"
+
+                    val resultFuture = isolate.evaluateJavaScriptAsync(script)
+                    val result = resultFuture.await()
+
+                    if (result != "1") {
+                        val root = JSONObject(result)
+                        if (root.has("errorCode")) {
+                            val errorCode = root.getInt("errorCode")
+                            val error = Jp2kError.fromInt(errorCode)
+                            val errorMessage = if (root.has("errorMessage")) root.getString("errorMessage") else null
+                            log(Log.ERROR, "Error: $error, Message: $errorMessage")
+                            throw Jp2kException(error, errorMessage)
+                        }
+                        throw IllegalStateException("Failed to set data: $result")
+                    }
+                }
+            } catch (e: Exception) {
+                log(Log.ERROR, "init(data) failed. Error: ${e.message}")
+                throw e
+            }
+        }
+    }
+
+    /**
      * Retrieves the size of the JPEG 2000 image without fully decoding it.
      *
      * @param j2kData The raw byte array of the JPEG 2000 image.
@@ -171,6 +219,55 @@ class Jp2kDecoder(
             val result = withContext(coroutineDispatcher) {
                 val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
                 val script = "globalThis.getSize('$dataBase64String');"
+
+                val resultFuture = isolate.evaluateJavaScriptAsync(script)
+                val jsonResult = resultFuture.await()
+                    ?: throw IllegalStateException("Result Future is null")
+
+                val root = JSONObject(jsonResult)
+                if (root.has("errorCode")) {
+                    val errorCode = root.getInt("errorCode")
+                    val error = Jp2kError.fromInt(errorCode)
+                    val errorMessage = if (root.has("errorMessage")) root.getString("errorMessage") else null
+                    log(Log.ERROR, "Error: $error, Message: $errorMessage")
+                    throw Jp2kException(error, errorMessage)
+                }
+
+                val width = root.getInt("width")
+                val height = root.getInt("height")
+                Size(width, height)
+            }
+
+            restoreStateAfterDecode()
+            result
+        } catch (e: Exception) {
+            restoreStateAfterDecode()
+            if (_state == State.Released || _state == State.Releasing) {
+                throw CancellationException("Decoder was released.")
+            }
+            throw e
+        }
+    }
+
+    /**
+     * Retrieves the size of the JPEG 2000 image using cached data.
+     *
+     * @return The [Size] of the image.
+     */
+    suspend fun getSize(): Size = mutex.withLock {
+        if (_state == State.Released || _state == State.Releasing) {
+            throw CancellationException("Decoder was released.")
+        }
+        if (_state != State.Initialized) {
+            throw IllegalStateException("Cannot getSize while in state: $_state")
+        }
+        _state = State.Processing
+
+        try {
+            val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
+
+            val result = withContext(coroutineDispatcher) {
+                val script = "globalThis.getSizeWithCache();"
 
                 val resultFuture = isolate.evaluateJavaScriptAsync(script)
                 val jsonResult = resultFuture.await()
@@ -239,6 +336,97 @@ class Jp2kDecoder(
                 val measureTimes = config.logLevel != null
                 val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
                 val script = "globalThis.decodeJ2K('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes);"
+
+                val resultFuture = isolate.evaluateJavaScriptAsync(script)
+                val jsonResult = resultFuture.await()
+                    ?: throw IllegalStateException("Result Future is null")
+
+                val root = JSONObject(jsonResult)
+                if (root.has("errorCode")) {
+                    val errorCode = root.getInt("errorCode")
+                    val error = Jp2kError.fromInt(errorCode)
+                    val errorMessage = if (root.has("errorMessage")) root.getString("errorMessage") else null
+                    log(Log.ERROR, "Error: $error, Message: $errorMessage")
+                    throw Jp2kException(error, errorMessage)
+                } else if (root.has("error")) {
+                    val errorMsg = root.getString("error")
+                    log(Log.ERROR, "Error: $errorMsg")
+                    throw Jp2kException(Jp2kError.Unknown, errorMsg)
+                }
+
+                if (measureTimes) {
+                    val timePreProcess = root.optDouble("timePreProcess", 0.0)
+                    val timeWasm = root.optDouble("timeWasm", 0.0)
+                    val timePostProcess = root.optDouble("timePostProcess", 0.0)
+                    log(
+                        Log.INFO,
+                        "Pre-process: $timePreProcess ms, WASM: $timeWasm ms, Post-process: $timePostProcess ms"
+                    )
+                }
+
+                val bmpBase64 = root.getString("bmp")
+                val bmpBytes = Base64.getDecoder().decode(bmpBase64)
+
+                log(Log.INFO, "Output data length: ${bmpBytes.size}")
+
+                val options = BitmapFactory.Options().apply {
+                    inPreferredConfig = when (colorFormat) {
+                        ColorFormat.RGB565 -> Bitmap.Config.RGB_565
+                        ColorFormat.ARGB8888 -> Bitmap.Config.ARGB_8888
+                    }
+                }
+
+                val bmp = BitmapFactory.decodeByteArray(bmpBytes, 0, bmpBytes.size, options)
+                    ?: throw IllegalStateException("Bitmap decoding failed (returned null).")
+                bmp
+            }
+
+            val time = System.currentTimeMillis() - start
+            log(Log.INFO, "decodeImage() finished in $time msec")
+
+            restoreStateAfterDecode()
+
+            if (_state == State.Released || _state == State.Releasing) {
+                throw CancellationException("Decoder was released.")
+            }
+            bitmap
+
+        } catch (e: Exception) {
+            val time = System.currentTimeMillis() - start
+            log(Log.ERROR, "decodeImage() failed in $time msec. Error: ${e.message}")
+            restoreStateAfterDecode()
+            if (_state == State.Released || _state == State.Releasing) {
+                throw CancellationException("Decoder was released.")
+            }
+            throw e
+        }
+    }
+
+    /**
+     * Decodes a JPEG 2000 image using cached data.
+     *
+     * @param colorFormat The desired output color format. Defaults to [ColorFormat.ARGB8888].
+     * @return The decoded [Bitmap].
+     */
+    suspend fun decodeImage(
+        colorFormat: ColorFormat = ColorFormat.ARGB8888,
+    ): Bitmap = mutex.withLock {
+        if (_state == State.Released || _state == State.Releasing) {
+            throw CancellationException("Decoder was released.")
+        }
+        if (_state != State.Initialized) {
+            throw IllegalStateException("Cannot decodeImage while in state: $_state")
+        }
+        _state = State.Processing
+
+        val start = System.currentTimeMillis()
+
+        return try {
+            val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
+
+            val bitmap = withContext(coroutineDispatcher) {
+                val measureTimes = config.logLevel != null
+                val script = "globalThis.decodeJ2KWithCache(${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes);"
 
                 val resultFuture = isolate.evaluateJavaScriptAsync(script)
                 val jsonResult = resultFuture.await()
@@ -400,6 +588,7 @@ class Jp2kDecoder(
         private const val ASSET_PATH_WASM = "openjpeg_core.wasm"
 
         private const val SCRIPT_BYTES_BASE64_CONVERTER_LOCAL = SCRIPT_BYTES_BASE64_CONVERTER
+        private val SCRIPT_DEFINE_SET_DATA_LOCAL = SCRIPT_DEFINE_SET_DATA
         private const val SCRIPT_IMPORT_OBJECT_LOCAL = SCRIPT_IMPORT_OBJECT
         private val SCRIPT_DEFINE_DECODE_J2K_LOCAL = SCRIPT_DEFINE_DECODE_J2K
         private val SCRIPT_DEFINE_GET_SIZE_LOCAL = SCRIPT_DEFINE_GET_SIZE

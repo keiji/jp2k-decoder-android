@@ -128,8 +128,20 @@ internal const val SCRIPT_BYTES_BASE64_CONVERTER = """
             };
 """
 
+internal val SCRIPT_DEFINE_SET_DATA = """
+            globalThis.j2kData = null;
+            globalThis.setData = function(dataBase64String) {
+                try {
+                    globalThis.j2kData = globalThis.base64ToBytes(dataBase64String);
+                    return "1";
+                } catch (e) {
+                    return JSON.stringify({ errorCode: ${Jp2kError.Unknown.code}, errorMessage: e.toString() });
+                }
+            };
+"""
+
 internal val SCRIPT_DEFINE_DECODE_J2K = """
-            globalThis.decodeJ2K = function(dataBase64String, maxPixels, maxHeapSize, colorFormat, measureTimes) {
+            globalThis.internalDecodeJ2K = function(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes) {
                 const now = function() {
                     return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
                 };
@@ -141,8 +153,6 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
                     }
 
                     const exports = wasmInstance.exports;
-
-                    const encodedBuffer = globalThis.base64ToBytes(dataBase64String);
 
                     const dataLength = encodedBuffer.length;
                     if (dataLength === 0) return JSON.stringify({ errorCode: -1 });
@@ -198,6 +208,22 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
                 }
             };
 
+            globalThis.decodeJ2K = function(dataBase64String, maxPixels, maxHeapSize, colorFormat, measureTimes) {
+                try {
+                    const encodedBuffer = globalThis.base64ToBytes(dataBase64String);
+                    return globalThis.internalDecodeJ2K(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes);
+                } catch (e) {
+                    return JSON.stringify({ errorCode: ${Jp2kError.Unknown.code}, errorMessage: e.toString() });
+                }
+            };
+
+            globalThis.decodeJ2KWithCache = function(maxPixels, maxHeapSize, colorFormat, measureTimes) {
+                if (!globalThis.j2kData) {
+                    return JSON.stringify({ errorCode: -1, errorMessage: "No data cached" });
+                }
+                return globalThis.internalDecodeJ2K(globalThis.j2kData, maxPixels, maxHeapSize, colorFormat, measureTimes);
+            };
+
             globalThis.getMemoryUsage = function() {
                 let wasmHeap = 0;
                 try {
@@ -213,10 +239,9 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
         """
 
 internal val SCRIPT_DEFINE_GET_SIZE = """
-            globalThis.getSize = function(dataBase64String) {
+            globalThis.internalGetSize = function(encodedBuffer) {
                 try {
                     const exports = wasmInstance.exports;
-                    const encodedBuffer = globalThis.base64ToBytes(dataBase64String);
                     const dataLength = encodedBuffer.length;
 
                     if (dataLength === 0) return JSON.stringify({ errorCode: -1 });
@@ -249,5 +274,21 @@ internal val SCRIPT_DEFINE_GET_SIZE = """
                 } catch (e) {
                     return JSON.stringify({ errorCode: ${Jp2kError.Unknown.code}, errorMessage: e.toString() });
                 }
+            };
+
+            globalThis.getSize = function(dataBase64String) {
+                try {
+                    const encodedBuffer = globalThis.base64ToBytes(dataBase64String);
+                    return globalThis.internalGetSize(encodedBuffer);
+                } catch (e) {
+                    return JSON.stringify({ errorCode: ${Jp2kError.Unknown.code}, errorMessage: e.toString() });
+                }
+            };
+
+            globalThis.getSizeWithCache = function() {
+                if (!globalThis.j2kData) {
+                    return JSON.stringify({ errorCode: -1, errorMessage: "No data cached" });
+                }
+                return globalThis.internalGetSize(globalThis.j2kData);
             };
         """
