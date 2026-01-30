@@ -445,10 +445,7 @@ class Jp2kDecoderAsync(
         colorFormat: ColorFormat = ColorFormat.ARGB8888,
         callback: Callback<Bitmap>
     ) {
-        if (left < 0.0f || left > 1.0f || top < 0.0f || top > 1.0f ||
-            right < 0.0f || right > 1.0f || bottom < 0.0f || bottom > 1.0f
-        ) {
-            callback.onError(IllegalArgumentException("Ratio must be 0.0 - 1.0"))
+        if (!validateRatio(left, top, right, bottom, callback)) {
             return
         }
 
@@ -618,10 +615,7 @@ class Jp2kDecoderAsync(
             callback.onError(IllegalArgumentException("Input data is too short"))
             return
         }
-        if (left < 0.0f || left > 1.0f || top < 0.0f || top > 1.0f ||
-            right < 0.0f || right > 1.0f || bottom < 0.0f || bottom > 1.0f
-        ) {
-            callback.onError(IllegalArgumentException("Ratio must be 0.0 - 1.0"))
+        if (!validateRatio(left, top, right, bottom, callback)) {
             return
         }
 
@@ -652,6 +646,22 @@ class Jp2kDecoderAsync(
         callback: Callback<Bitmap>
     ) {
         decodeImage(j2kData, left, top, right, bottom, ColorFormat.ARGB8888, callback)
+    }
+
+    private fun validateRatio(
+        left: Float,
+        top: Float,
+        right: Float,
+        bottom: Float,
+        callback: Callback<Bitmap>
+    ): Boolean {
+        if (left < 0.0f || left > 1.0f || top < 0.0f || top > 1.0f ||
+            right < 0.0f || right > 1.0f || bottom < 0.0f || bottom > 1.0f
+        ) {
+            callback.onError(IllegalArgumentException("Ratio must be 0.0 - 1.0"))
+            return false
+        }
+        return true
     }
 
     private fun executeDecodeImage(

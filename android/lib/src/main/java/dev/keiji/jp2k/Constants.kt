@@ -143,7 +143,7 @@ internal val SCRIPT_DEFINE_SET_DATA = """
 """
 
 internal val SCRIPT_DEFINE_DECODE_J2K = """
-            globalThis.internalDecodeJ2K = function(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1) {
+            globalThis.commonDecodeJ2K = function(wasmFunctionName, encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1) {
                 const now = function() {
                     return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
                 };
@@ -168,8 +168,8 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
                          timeAfterPreProcess = now();
                     }
 
-                    // Call decodeToBmp
-                    const bmpPtr = exports.decodeToBmp(inputPtr, encodedBuffer.length, maxPixels, maxHeapSize, colorFormat, x0, y0, x1, y1);
+                    // Call the specified WASM function
+                    const bmpPtr = exports[wasmFunctionName](inputPtr, encodedBuffer.length, maxPixels, maxHeapSize, colorFormat, x0, y0, x1, y1);
 
                     if (measureTimes) {
                          timeAfterDecode = now();
@@ -208,6 +208,10 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
                 } catch (e) {
                     return JSON.stringify({ errorCode: ${Jp2kError.Unknown.code}, errorMessage: e.toString() });
                 }
+            };
+
+            globalThis.internalDecodeJ2K = function(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1) {
+                return globalThis.commonDecodeJ2K('decodeToBmp', encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1);
             };
 
             globalThis.decodeJ2K = function(dataBase64String, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1) {
@@ -227,70 +231,7 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
             };
 
             globalThis.internalDecodeJ2KRatio = function(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1) {
-                const now = function() {
-                    return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-                };
-
-                let timeStart, timeAfterPreProcess, timeAfterDecode, timeAfterPostProcess;
-                try {
-                    if (measureTimes) {
-                         timeStart = now();
-                    }
-
-                    const exports = wasmInstance.exports;
-
-                    const dataLength = encodedBuffer.length;
-                    if (dataLength === 0) return JSON.stringify({ errorCode: -1 });
-
-                    const inputPtr = exports.malloc(dataLength);
-                    const heap = new Uint8Array(exports.memory.buffer);
-
-                    heap.set(encodedBuffer, inputPtr);
-
-                    if (measureTimes) {
-                         timeAfterPreProcess = now();
-                    }
-
-                    // Call decodeToBmpWithRatio
-                    const bmpPtr = exports.decodeToBmpWithRatio(inputPtr, encodedBuffer.length, maxPixels, maxHeapSize, colorFormat, x0, y0, x1, y1);
-
-                    if (measureTimes) {
-                         timeAfterDecode = now();
-                    }
-
-                    if (bmpPtr === 0) {
-                        const errorCode = exports.getLastError();
-                        exports.free(inputPtr);
-                        return JSON.stringify({ errorCode: errorCode });
-                    }
-
-                    const view = new DataView(exports.memory.buffer);
-                    const bmpSize = view.getUint32(bmpPtr + 2, true);
-
-                    const bmpBuffer = new Uint8Array(exports.memory.buffer, bmpPtr, bmpSize);
-                    const base64String = globalThis.bytesToBase64(bmpBuffer);
-
-                    exports.free(bmpPtr);
-                    exports.free(inputPtr);
-
-                    if (measureTimes) {
-                         timeAfterPostProcess = now();
-                    }
-
-                    const result = {
-                        bmp: base64String
-                    };
-
-                    if (measureTimes) {
-                        result.timePreProcess = timeAfterPreProcess - timeStart;
-                        result.timeWasm = timeAfterDecode - timeAfterPreProcess;
-                        result.timePostProcess = timeAfterPostProcess - timeAfterDecode;
-                    }
-
-                    return JSON.stringify(result);
-                } catch (e) {
-                    return JSON.stringify({ errorCode: ${Jp2kError.Unknown.code}, errorMessage: e.toString() });
-                }
+                return globalThis.commonDecodeJ2K('decodeToBmpWithRatio', encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1);
             };
 
             globalThis.decodeJ2KRatio = function(dataBase64String, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1) {

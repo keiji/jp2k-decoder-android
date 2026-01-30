@@ -364,11 +364,7 @@ class Jp2kDecoder(
         if (j2kData.size < MIN_INPUT_SIZE) {
             throw IllegalArgumentException("Input data is too short")
         }
-        if (left < 0.0f || left > 1.0f || top < 0.0f || top > 1.0f ||
-            right < 0.0f || right > 1.0f || bottom < 0.0f || bottom > 1.0f
-        ) {
-            throw IllegalArgumentException("Ratio must be 0.0 - 1.0")
-        }
+        validateRatio(left, top, right, bottom)
 
         val measureTimes = config.logLevel != null
         val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
@@ -449,17 +445,21 @@ class Jp2kDecoder(
         bottom: Float,
         colorFormat: ColorFormat = ColorFormat.ARGB8888,
     ): Bitmap {
-        if (left < 0.0f || left > 1.0f || top < 0.0f || top > 1.0f ||
-            right < 0.0f || right > 1.0f || bottom < 0.0f || bottom > 1.0f
-        ) {
-            throw IllegalArgumentException("Ratio must be 0.0 - 1.0")
-        }
+        validateRatio(left, top, right, bottom)
 
         val measureTimes = config.logLevel != null
         val script =
             "globalThis.decodeJ2KWithCacheRatio(${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
 
         return executeDecodeImage(script, colorFormat)
+    }
+
+    private fun validateRatio(left: Float, top: Float, right: Float, bottom: Float) {
+        if (left < 0.0f || left > 1.0f || top < 0.0f || top > 1.0f ||
+            right < 0.0f || right > 1.0f || bottom < 0.0f || bottom > 1.0f
+        ) {
+            throw IllegalArgumentException("Ratio must be 0.0 - 1.0")
+        }
     }
 
     private suspend fun executeDecodeImage(
