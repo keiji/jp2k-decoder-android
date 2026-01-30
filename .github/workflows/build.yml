@@ -37,6 +37,7 @@ jobs:
         continue-on-error: true
 
       - name: Report Android Lint Results
+        if: github.event_name == 'pull_request'
         uses: dvdandroid/action-android-lint@v1.3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -46,6 +47,19 @@ jobs:
       - name: Build Android App & Lib
         working-directory: android
         run: ./gradlew assembleDebug
+
+      - name: Run Unit Tests & Coverage
+        working-directory: android
+        run: ./gradlew :lib:testDebugUnitTest :lib:jacocoTestReport
+
+      - name: Report Android Coverage
+        if: github.event_name == 'pull_request'
+        uses: Madrapps/jacoco-report@v1.7.1
+        with:
+          paths: android/lib/build/reports/jacoco/jacocoTestReport/jacocoTestReport.xml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          min-coverage-overall: 0
+          title: "Android Code Coverage"
 
       - name: Generate Documentation
         working-directory: android
@@ -62,14 +76,38 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           submodules: recursive
 
-      - name: Run C Wrapper Tests
-        run: bash test/run_tests.sh
+      - name: Install lcov
+        run: sudo apt-get update && sudo apt-get install -y lcov
+
+      - name: Run C Wrapper Tests with Coverage
+        run: bash test/run_coverage.sh
+
+      - name: Report C Coverage
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            try {
+              if (fs.existsSync('coverage_summary.txt')) {
+                const summary = fs.readFileSync('coverage_summary.txt', 'utf8');
+                github.rest.issues.createComment({
+                  issue_number: context.issue.number,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  body: '## C Wrapper Coverage\n```\n' + summary + '\n```'
+                });
+              }
+            } catch (error) {
+              console.log('Error posting comment: ' + error);
+            }
 
       - name: Setup Emscripten
         uses: mymindstorm/setup-emsdk@v14

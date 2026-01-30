@@ -10,6 +10,7 @@ plugins {
     alias(libs.plugins.nmcp.aggregation)
     `maven-publish`
     signing
+    jacoco
 }
 
 nmcpAggregation {
@@ -38,6 +39,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+        debug {
+            enableUnitTestCoverage = true
+            enableAndroidTestCoverage = true
         }
     }
     compileOptions {
@@ -113,4 +118,23 @@ publishing {
 signing {
     useGpgCmd()
     sign(publishing.publications)
+}
+
+tasks.register<JacocoReport>("jacocoTestReport") {
+    dependsOn("testDebugUnitTest")
+
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+    }
+
+    val fileFilter = listOf("**/R.class", "**/R$*.class", "**/BuildConfig.*", "**/Manifest*.*", "**/*Test*.*")
+    val debugTree = layout.buildDirectory.dir("tmp/kotlin-classes/debug").get().asFileTree.matching {
+        exclude(fileFilter)
+    }
+    val mainSrc = android.sourceSets.getByName("main").java.srcDirs
+
+    classDirectories.setFrom(debugTree)
+    sourceDirectories.setFrom(files(mainSrc))
+    executionData.setFrom(layout.buildDirectory.file("jacoco/testDebugUnitTest.exec"))
 }
