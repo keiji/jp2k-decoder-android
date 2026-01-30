@@ -23,6 +23,7 @@ object Jp2kSandbox {
      * @param context The Android Context (will use Application Context internally).
      * @return A [ListenableFuture] that resolves to the [JavaScriptSandbox].
      */
+    @JvmStatic
     fun get(context: Context): ListenableFuture<JavaScriptSandbox> {
         synchronized(lock) {
             if (sandboxFuture == null) {
@@ -41,6 +42,7 @@ object Jp2kSandbox {
      * @param maxEvaluationReturnSizeBytes The maximum return size for evaluation (if supported).
      * @return A new [JavaScriptIsolate] instance.
      */
+    @JvmStatic
     fun createIsolate(
         sandbox: JavaScriptSandbox,
         maxHeapSizeBytes: Long,
@@ -64,6 +66,7 @@ object Jp2kSandbox {
      * @param executor The executor on which the callback will be invoked.
      * @param tag The tag to use for logging.
      */
+    @JvmStatic
     fun setupConsoleCallback(
         isolate: JavaScriptIsolate,
         sandbox: JavaScriptSandbox,
