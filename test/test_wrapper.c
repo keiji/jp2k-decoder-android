@@ -347,6 +347,72 @@ extern uint32_t stub_width;
 extern uint32_t stub_height;
 extern int stub_should_decompress_create_succeed;
 extern int stub_should_setup_succeed;
+extern int stub_should_decode_succeed;
+
+void test_jp2_signature() {
+    printf("Testing JP2 Signature...\n");
+    // JP2 Signature: 00 00 00 0C ...
+    uint8_t dummy_data[20] = {0x00, 0x00, 0x00, 0x0C, 0x00};
+
+    // We expect it to reach decode_internal and fail at opj_read_header (since we didn't set stub_should_header_succeed)
+    // But we want to ensure it calls opj_create_decompress(OPJ_CODEC_JP2)
+    // We can't verify the argument to opj_create_decompress easily without mocking it with arg check.
+    // However, we know get_codec_format is called.
+    // This test is mainly to execute the line in get_codec_format.
+
+    uint8_t* result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 0, 0, 0, 0);
+    assert(result == NULL);
+    assert(last_error == ERR_HEADER);
+    printf("JP2 Signature Passed.\n");
+}
+
+void test_pixel_limit() {
+    printf("Testing Pixel Limit...\n");
+    uint8_t dummy_data[20] = {0};
+
+    // Setup success stubs for header
+    stub_should_header_succeed = 1;
+    stub_width = 20;
+    stub_height = 20;
+    // Pixels = 400.
+
+    // Limit = 100.
+    uint8_t* result = decodeToBmp(dummy_data, 20, 100, 1000, COLOR_FORMAT_ARGB8888, 0, 0, 0, 0);
+    assert(result == NULL);
+    assert(last_error == ERR_PIXEL_DATA_SIZE);
+
+    printf("Pixel Limit Passed.\n");
+    stub_should_header_succeed = 0;
+}
+
+void test_full_decode_success() {
+    printf("Testing Full Decode Success...\n");
+    uint8_t dummy_data[20] = {0};
+
+    stub_should_header_succeed = 1;
+    stub_should_decode_succeed = 1;
+    stub_width = 10;
+    stub_height = 10;
+
+    // ARGB8888
+    uint8_t* result = decodeToBmp(dummy_data, 20, 0, 10000, COLOR_FORMAT_ARGB8888, 0, 0, 0, 0);
+    assert(result != NULL);
+
+    // Check BMP header briefly
+    assert(result[0] == 0x42);
+    assert(result[1] == 0x4D);
+
+    free(result);
+
+    // RGB565
+    result = decodeToBmp(dummy_data, 20, 0, 10000, COLOR_FORMAT_RGB565, 0, 0, 0, 0);
+    assert(result != NULL);
+    free(result);
+
+    printf("Full Decode Success Passed.\n");
+    stub_should_header_succeed = 0;
+    stub_should_decode_succeed = 0;
+}
 
 void test_getSize() {
     printf("Testing getSize...\n");
@@ -527,5 +593,8 @@ int main() {
     test_bounds_check();
     test_getsize_failures();
     test_ratio_decode();
+    test_jp2_signature();
+    test_pixel_limit();
+    test_full_decode_success();
     return 0;
 }
