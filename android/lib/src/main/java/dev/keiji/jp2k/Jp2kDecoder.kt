@@ -152,49 +152,47 @@ class Jp2kDecoder(
     }
 
     /**
-     * Initializes the decoder with initial image data.
+     * Precaches the image data in the JavaScript sandbox for subsequent operations.
      *
-     * This method initializes the JavaScript sandbox, loads the WebAssembly module,
-     * and caches the provided image data in the sandbox for subsequent operations.
+     * This method must be called after [init]. It caches the provided image data
+     * in the sandbox, allowing [getSize] and [decodeImage] to be called without arguments.
      *
-     * @param context The Android Context.
      * @param j2kData The raw byte array of the JPEG 2000 image.
-     * @throws Exception If initialization fails.
+     * @throws Exception If precaching fails.
      */
-    suspend fun init(context: Context, j2kData: ByteArray) {
-        init(context)
+    suspend fun precache(j2kData: ByteArray) = mutex.withLock {
+        if (_state == State.Released || _state == State.Releasing) {
+            throw CancellationException("Decoder was released.")
+        }
+        if (_state != State.Initialized) {
+            throw IllegalStateException("Cannot precache while in state: $_state")
+        }
 
-        mutex.withLock {
-            if (_state != State.Initialized) {
-                // Should be Initialized by init(context), unless release() was called concurrently.
-                throw IllegalStateException("Jp2kDecoder is not initialized (state: $_state)")
-            }
+        try {
+            val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
+            withContext(coroutineDispatcher) {
+                val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
+                val script = "globalThis.setData('$dataBase64String');"
 
-            try {
-                val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
-                withContext(coroutineDispatcher) {
-                    val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
-                    val script = "globalThis.setData('$dataBase64String');"
+                val resultFuture = isolate.evaluateJavaScriptAsync(script)
+                val result = resultFuture.await()
 
-                    val resultFuture = isolate.evaluateJavaScriptAsync(script)
-                    val result = resultFuture.await()
-
-                    if (result != INTERNAL_RESULT_SUCCESS) {
-                        val root = JSONObject(result)
-                        if (root.has("errorCode")) {
-                            val errorCode = root.getInt("errorCode")
-                            val error = Jp2kError.fromInt(errorCode)
-                            val errorMessage = if (root.has("errorMessage")) root.getString("errorMessage") else null
-                            log(Log.ERROR, "Error: $error, Message: $errorMessage")
-                            throw Jp2kException(error, errorMessage)
-                        }
-                        throw IllegalStateException("Failed to set data: $result")
+                if (result != INTERNAL_RESULT_SUCCESS) {
+                    val root = JSONObject(result)
+                    if (root.has("errorCode")) {
+                        val errorCode = root.getInt("errorCode")
+                        val error = Jp2kError.fromInt(errorCode)
+                        val errorMessage =
+                            if (root.has("errorMessage")) root.getString("errorMessage") else null
+                        log(Log.ERROR, "Error: $error, Message: $errorMessage")
+                        throw Jp2kException(error, errorMessage)
                     }
+                    throw IllegalStateException("Failed to set data: $result")
                 }
-            } catch (e: Exception) {
-                log(Log.ERROR, "init(data) failed. Error: ${e.message}")
-                throw e
             }
+        } catch (e: Exception) {
+            log(Log.ERROR, "precache() failed. Error: ${e.message}")
+            throw e
         }
     }
 

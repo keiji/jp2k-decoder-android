@@ -91,7 +91,7 @@ class Jp2kDecoderTest {
     }
 
     @Test
-    fun testInitWithData_Success() = runTest {
+    fun testPrecache_Success() = runTest {
         // Mock evaluateJavaScriptAsync for WASM load (returns "1") and setData (returns "1")
         doAnswer { invocation ->
             // Use simple string matching logic to return appropriate result
@@ -101,8 +101,9 @@ class Jp2kDecoderTest {
         }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
 
         val decoder = Jp2kDecoder(coroutineDispatcher = testDispatcher)
+        decoder.init(context)
         val data = ByteArray(10)
-        decoder.init(context, data)
+        decoder.precache(data)
 
         // Verify setData was called
         verify(isolate, Mockito.atLeastOnce()).evaluateJavaScriptAsync(contains("setData"))
@@ -127,7 +128,8 @@ class Jp2kDecoderTest {
 
         val decoder = Jp2kDecoder(coroutineDispatcher = testDispatcher)
         val data = ByteArray(10)
-        decoder.init(context, data)
+        decoder.init(context)
+        decoder.precache(data)
         val size = decoder.getSize()
 
         assertEquals(100, size.width)
@@ -152,6 +154,8 @@ class Jp2kDecoderTest {
         val decoder = Jp2kDecoder(coroutineDispatcher = testDispatcher)
         // Init WITHOUT data
         decoder.init(context)
+
+        // Do not call precache
 
         try {
             decoder.getSize()

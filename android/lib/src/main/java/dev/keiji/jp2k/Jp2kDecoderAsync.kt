@@ -170,102 +170,69 @@ class Jp2kDecoderAsync(
     }
 
     /**
-     * Initializes the decoder asynchronously with initial image data.
+     * Precaches the image data in the JavaScript sandbox for subsequent operations.
      *
-     * This method initializes the JavaScript sandbox, loads the WebAssembly module,
-     * and caches the provided image data in the sandbox for subsequent operations.
+     * This method must be called after [init]. It caches the provided image data
+     * in the sandbox, allowing [getSize] and [decodeImage] to be called without arguments.
      *
-     * @param context The Android Context.
      * @param j2kData The raw byte array of the JPEG 2000 image.
-     * @param callback The callback to receive the initialization result.
+     * @param callback The callback to receive the precache result.
      */
-    fun init(context: Context, j2kData: ByteArray, callback: Callback<Unit>) {
+    fun precache(j2kData: ByteArray, callback: Callback<Unit>) {
         synchronized(lock) {
-            if (_state == State.Initialized) {
-                // Already initialized, just set data?
-                // We will proceed to set data if already initialized.
-            } else if (_state == State.Released || _state == State.Releasing) {
+            if (_state == State.Released || _state == State.Releasing) {
                 callback.onError(CancellationException("Decoder was released."))
                 return
-            } else if (_state != State.Uninitialized) {
-                callback.onError(IllegalStateException("Cannot initialize while in state: $_state"))
-                return
             }
-            if (_state == State.Uninitialized) {
-                _state = State.Initializing
+            if (_state != State.Initialized && _state != State.Processing) {
+                callback.onError(IllegalStateException("Cannot precache while in state: $_state"))
+                return
             }
         }
 
-        val assetManager = context.assets
-        val mainExecutor = ContextCompat.getMainExecutor(context)
-        val sandboxFuture = Jp2kSandbox.get(context)
-
-        val start = System.currentTimeMillis()
         backgroundExecutor.execute {
             synchronized(executionLock) {
-                try {
-                    var isolate = jsIsolate
-                    if (isolate == null) {
-                        // Wait for sandbox connection on the background thread
-                        val sandbox = sandboxFuture.get()
-                        isolate = Jp2kSandbox.createIsolate(
-                            sandbox = sandbox,
-                            maxHeapSizeBytes = config.maxHeapSizeBytes,
-                            maxEvaluationReturnSizeBytes = config.maxEvaluationReturnSizeBytes,
-                        ).also { iso ->
-                            Jp2kSandbox.setupConsoleCallback(iso, sandbox, mainExecutor, TAG)
-                        }
-
-                        synchronized(lock) {
-                            if (_state == State.Released || _state == State.Releasing) {
-                                isolate.close()
-                                throw CancellationException("Jp2kDecoderAsync was released during initialization.")
-                            }
-                            jsIsolate = isolate
-                        }
-
-                        // Load WASM
-                        loadWasm(isolate, assetManager)
-
-                        synchronized(lock) {
-                            if (_state == State.Released || _state == State.Releasing) {
-                                throw CancellationException("Jp2kDecoderAsync was released during initialization.")
-                            }
-                            _state = State.Initialized
-                        }
+                synchronized(lock) {
+                    if (_state == State.Released || _state == State.Releasing) {
+                        callback.onError(CancellationException("Decoder was released."))
+                        return@execute
                     }
+                    if (_state != State.Initialized && _state != State.Processing) {
+                        callback.onError(IllegalStateException("Decoder state invalid before execution: $_state"))
+                        return@execute
+                    }
+                }
 
-                    // Set Data
+                try {
+                    val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
+
                     val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
                     val script = "globalThis.setData('$dataBase64String');"
 
-                    val resultFuture = isolate!!.evaluateJavaScriptAsync(script)
+                    val resultFuture = isolate.evaluateJavaScriptAsync(script)
                     val result = resultFuture.get()
 
                     if (result != INTERNAL_RESULT_SUCCESS) {
-                         val root = JSONObject(result)
-                         if (root.has("errorCode")) {
+                        val root = JSONObject(result)
+                        if (root.has("errorCode")) {
                             val errorCode = root.getInt("errorCode")
                             val error = Jp2kError.fromInt(errorCode)
                             val errorMessage = if (root.has("errorMessage")) root.getString("errorMessage") else null
                             log(Log.ERROR, "Error: $error, Message: $errorMessage")
                             throw Jp2kException(error, errorMessage)
-                         }
-                         throw IllegalStateException("Failed to set data: $result")
+                        }
+                        throw IllegalStateException("Failed to set data: $result")
                     }
 
-                    val time = System.currentTimeMillis() - start
-                    log(Log.INFO, "init(data) finished in $time msec")
                     callback.onSuccess(Unit)
                 } catch (e: Exception) {
                     synchronized(lock) {
-                        if (_state == State.Initializing) {
-                            _state = State.Uninitialized
+                        if (_state == State.Released || _state == State.Releasing) {
+                            callback.onError(CancellationException("Decoder was released."))
+                        } else {
+                            callback.onError(e)
                         }
                     }
-                    val time = System.currentTimeMillis() - start
-                    log(Log.ERROR, "init(data) failed in $time msec. Error: ${e.message}")
-                    callback.onError(e)
                 }
             }
         }

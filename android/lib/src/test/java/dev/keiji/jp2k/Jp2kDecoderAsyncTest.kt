@@ -87,7 +87,7 @@ class Jp2kDecoderAsyncTest {
     }
 
     @Test
-    fun testInitWithData_Success() {
+    fun testPrecache_Success() {
         // Mock evaluateJavaScriptAsync for WASM load (returns "1") and setData (returns "1")
         doAnswer { invocation ->
             // Use simple string matching logic to return appropriate result
@@ -99,11 +99,15 @@ class Jp2kDecoderAsyncTest {
         val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
         val data = ByteArray(10)
 
-        val callback = org.mockito.kotlin.mock<Callback<Unit>>()
-        decoder.init(context, data, callback)
+        val callbackInit = org.mockito.kotlin.mock<Callback<Unit>>()
+        decoder.init(context, callbackInit)
+        verify(callbackInit).onSuccess(any())
+
+        val callbackPrecache = org.mockito.kotlin.mock<Callback<Unit>>()
+        decoder.precache(data, callbackPrecache)
 
         verify(isolate, Mockito.atLeastOnce()).evaluateJavaScriptAsync(contains("setData"))
-        verify(callback).onSuccess(any())
+        verify(callbackPrecache).onSuccess(any())
     }
 
     @Test
@@ -128,8 +132,12 @@ class Jp2kDecoderAsyncTest {
         val data = ByteArray(10)
 
         val callbackInit = org.mockito.kotlin.mock<Callback<Unit>>()
-        decoder.init(context, data, callbackInit)
+        decoder.init(context, callbackInit)
         verify(callbackInit).onSuccess(any())
+
+        val callbackPrecache = org.mockito.kotlin.mock<Callback<Unit>>()
+        decoder.precache(data, callbackPrecache)
+        verify(callbackPrecache).onSuccess(any())
 
         val callbackSize = org.mockito.kotlin.mock<Callback<Size>>()
         decoder.getSize(callbackSize)
