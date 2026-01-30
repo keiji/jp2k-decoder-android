@@ -342,6 +342,37 @@ void test_input_validation() {
     printf("Input Validation Passed.\n");
 }
 
+extern int stub_should_header_succeed;
+extern uint32_t stub_width;
+extern uint32_t stub_height;
+
+void test_getSize() {
+    printf("Testing getSize...\n");
+    uint8_t dummy_data[20] = {0}; // > MIN_INPUT_SIZE (12)
+
+    // Case 1: Header failure
+    stub_should_header_succeed = 0;
+    uint32_t* result = getSize(dummy_data, 20);
+    assert(result == NULL);
+    assert(last_error == ERR_HEADER);
+
+    // Case 2: Success
+    stub_should_header_succeed = 1;
+    stub_width = 1920;
+    stub_height = 1080;
+
+    result = getSize(dummy_data, 20);
+    assert(result != NULL);
+    assert(result[0] == 1920);
+    assert(result[1] == 1080);
+
+    free(result);
+    printf("getSize Passed.\n");
+
+    // Reset stubs
+    stub_should_header_succeed = 0;
+}
+
 int main() {
     test_argb8888();
     test_rgb565();
@@ -349,5 +380,6 @@ int main() {
     test_grayscale_alpha();
     test_multichannel();
     test_input_validation();
+    test_getSize();
     return 0;
 }

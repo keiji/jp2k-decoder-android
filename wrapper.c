@@ -40,20 +40,40 @@ static OPJ_SIZE_T opj_read_from_buffer(void* p_buffer, OPJ_SIZE_T p_nb_bytes, vo
     return l_nb_read;
 }
 
-static opj_image_t* decode_internal(uint8_t* data, uint32_t data_len, OPJ_CODEC_FORMAT format, uint32_t max_pixels) {
-    last_error = ERR_NONE;
-    
-    opj_buffer_info_t buffer_info = {data, data_len, 0};
-    
+static OPJ_CODEC_FORMAT get_codec_format(uint8_t* data, uint32_t data_len) {
+    if (data_len >= 4 &&
+        data[0] == 0x00 &&
+        data[1] == 0x00 &&
+        data[2] == 0x00 &&
+        data[3] == 0x0C) {
+        return OPJ_CODEC_JP2;
+    }
+    return OPJ_CODEC_J2K;
+}
+
+static opj_codec_t* create_decoder(OPJ_CODEC_FORMAT format) {
     opj_codec_t* l_codec = opj_create_decompress(format);
     opj_dparameters_t l_params;
     opj_set_default_decoder_parameters(&l_params);
     opj_setup_decoder(l_codec, &l_params);
+    return l_codec;
+}
 
+static opj_stream_t* create_mem_stream(opj_buffer_info_t* buffer_info, uint32_t data_len) {
     opj_stream_t* l_stream = opj_stream_default_create(OPJ_TRUE);
     opj_stream_set_read_function(l_stream, opj_read_from_buffer);
-    opj_stream_set_user_data(l_stream, &buffer_info, NULL);
+    opj_stream_set_user_data(l_stream, buffer_info, NULL);
     opj_stream_set_user_data_length(l_stream, data_len);
+    return l_stream;
+}
+
+static opj_image_t* decode_internal(uint8_t* data, uint32_t data_len, OPJ_CODEC_FORMAT format, uint32_t max_pixels) {
+    last_error = ERR_NONE;
+
+    opj_buffer_info_t buffer_info = {data, data_len, 0};
+
+    opj_codec_t* l_codec = create_decoder(format);
+    opj_stream_t* l_stream = create_mem_stream(&buffer_info, data_len);
 
     opj_image_t* l_image = NULL;
     if (!opj_read_header(l_stream, l_codec, &l_image)) {
@@ -87,14 +107,8 @@ static opj_image_t* decode_opj(uint8_t* data, uint32_t data_len, uint32_t max_pi
         return NULL;
     }
 
-    if (data_len >= 4 &&
-        data[0] == 0x00 &&
-        data[1] == 0x00 &&
-        data[2] == 0x00 &&
-        data[3] == 0x0C) {
-        return decode_internal(data, data_len, OPJ_CODEC_JP2, max_pixels);
-    }
-    return decode_internal(data, data_len, OPJ_CODEC_J2K, max_pixels);
+    OPJ_CODEC_FORMAT format = get_codec_format(data, data_len);
+    return decode_internal(data, data_len, format, max_pixels);
 }
 
 static int32_t* get_alpha_component(opj_image_t* image) {
@@ -290,4 +304,44 @@ uint8_t* decodeToBmp(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint
 
     opj_image_destroy(image);
     return bmp_buffer;
+}
+
+EMSCRIPTEN_KEEPALIVE
+uint32_t* getSize(uint8_t* data, uint32_t data_len) {
+    last_error = ERR_NONE;
+    if (data_len < MIN_INPUT_SIZE) {
+        last_error = ERR_INPUT_DATA_SIZE;
+        return NULL;
+    }
+
+    opj_buffer_info_t buffer_info = {data, data_len, 0};
+
+    OPJ_CODEC_FORMAT format = get_codec_format(data, data_len);
+
+    opj_codec_t* l_codec = create_decoder(format);
+    opj_stream_t* l_stream = create_mem_stream(&buffer_info, data_len);
+
+    opj_image_t* l_image = NULL;
+    uint32_t* result = NULL;
+
+    if (!opj_read_header(l_stream, l_codec, &l_image)) {
+        last_error = ERR_HEADER;
+    } else {
+        uint32_t width = l_image->x1 - l_image->x0;
+        uint32_t height = l_image->y1 - l_image->y0;
+
+        result = (uint32_t*)malloc(2 * sizeof(uint32_t));
+        if (result) {
+            result[0] = width;
+            result[1] = height;
+        } else {
+            last_error = ERR_DECODE;
+        }
+        opj_image_destroy(l_image);
+    }
+
+    opj_stream_destroy(l_stream);
+    opj_destroy_codec(l_codec);
+
+    return result;
 }

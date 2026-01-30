@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
@@ -25,9 +26,17 @@ import androidx.compose.foundation.background
 import androidx.compose.ui.unit.dp
 import dev.keiji.jp2k.Jp2kDecoder
 import dev.keiji.jp2k.MemoryUsage
+import dev.keiji.jp2k.Size
 import dev.keiji.j2k_wasm_sample.ui.theme.J2kwasmsampleTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+private data class DecodeResult(
+    val bmp: Bitmap?,
+    val usageBefore: MemoryUsage?,
+    val usageAfter: MemoryUsage?,
+    val size: Size?
+)
 
 class MainActivity : ComponentActivity() {
 
@@ -42,6 +51,7 @@ class MainActivity : ComponentActivity() {
                     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
                     var memoryUsageBefore by remember { mutableStateOf<MemoryUsage?>(null) }
                     var memoryUsageAfter by remember { mutableStateOf<MemoryUsage?>(null) }
+                    var size by remember { mutableStateOf<Size?>(null) }
                     var error by remember { mutableStateOf<String?>(null) }
 
                     LaunchedEffect(Unit) {
@@ -53,14 +63,21 @@ class MainActivity : ComponentActivity() {
                                 Jp2kDecoder().use { decoder ->
                                     decoder.init(applicationContext)
                                     val usageBefore = decoder.getMemoryUsage()
+                                    val imageSize = decoder.getSize(bytes)
                                     val bmp = decoder.decodeImage(bytes)
                                     val usageAfter = decoder.getMemoryUsage()
-                                    Triple(bmp, usageBefore, usageAfter)
+                                    DecodeResult(
+                                        bmp = bmp,
+                                        usageBefore = usageBefore,
+                                        usageAfter = usageAfter,
+                                        size = imageSize
+                                    )
                                 }
                             }
-                            bitmap = result.first
-                            memoryUsageBefore = result.second
-                            memoryUsageAfter = result.third
+                            bitmap = result.bmp
+                            memoryUsageBefore = result.usageBefore
+                            memoryUsageAfter = result.usageAfter
+                            size = result.size
                         } catch (e: Exception) {
                             error = e.message ?: "Unknown error"
                         }
@@ -78,22 +95,35 @@ class MainActivity : ComponentActivity() {
                                 contentDescription = "Decoded Image",
                                 modifier = Modifier.fillMaxSize()
                             )
-                        }
-
-                        if (memoryUsageBefore != null && memoryUsageAfter != null) {
-                            Text(
-                                text = "WASM Heap: ${memoryUsageBefore?.wasmHeapSizeBytes} -> ${memoryUsageAfter?.wasmHeapSizeBytes}",
-                                modifier = Modifier
-                                    .align(Alignment.TopStart)
-                                    .background(Color.White.copy(alpha = 0.7f))
-                                    .padding(8.dp)
-                            )
-                        }
-
-                        if (error != null) {
-                            Text("Error: $error")
-                        } else if (bitmap == null) {
+                        } else if (error == null) {
                             CircularProgressIndicator()
+                        }
+
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(8.dp)
+                        ) {
+                            if (memoryUsageBefore != null && memoryUsageAfter != null) {
+                                Text(
+                                    text = "WASM Heap: ${memoryUsageBefore?.wasmHeapSizeBytes} -> ${memoryUsageAfter?.wasmHeapSizeBytes}",
+                                    modifier = Modifier.background(Color.White.copy(alpha = 0.7f))
+                                )
+                            }
+
+                            size?.let { s ->
+                                Text(
+                                    text = "${s.width}:${s.height}",
+                                    modifier = Modifier.background(Color.White.copy(alpha = 0.7f))
+                                )
+                            }
+
+                            if (error != null) {
+                                Text(
+                                    text = "Error: $error",
+                                    modifier = Modifier.background(Color.White.copy(alpha = 0.7f))
+                                )
+                            }
                         }
                     }
                 }

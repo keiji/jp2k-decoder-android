@@ -148,6 +148,7 @@ class Jp2kDecoderAsync(
             wasmInstance = res.instance;
 
             $SCRIPT_DEFINE_DECODE_J2K
+            $SCRIPT_DEFINE_GET_SIZE
 
             return "1";
         });
@@ -164,6 +165,84 @@ class Jp2kDecoderAsync(
             }
         } catch (e: ExecutionException) {
             throw e.cause ?: e
+        }
+    }
+
+    /**
+     * Retrieves the size of the JPEG 2000 image asynchronously without fully decoding it.
+     *
+     * @param j2kData The raw byte array of the JPEG 2000 image.
+     * @param callback The callback to receive the [Size] or error.
+     */
+    fun getSize(j2kData: ByteArray, callback: Callback<Size>) {
+        synchronized(lock) {
+            if (_state == State.Released || _state == State.Releasing) {
+                callback.onError(CancellationException("Decoder was released."))
+                return
+            }
+            if (_state != State.Initialized && _state != State.Processing) {
+                callback.onError(IllegalStateException("Cannot getSize while in state: $_state"))
+                return
+            }
+        }
+
+        backgroundExecutor.execute {
+            synchronized(executionLock) {
+                synchronized(lock) {
+                    if (_state == State.Released || _state == State.Releasing) {
+                        callback.onError(CancellationException("Decoder was released."))
+                        return@execute
+                    }
+                    if (_state != State.Initialized && _state != State.Processing) {
+                        callback.onError(IllegalStateException("Decoder state invalid before execution: $_state"))
+                        return@execute
+                    }
+                    _state = State.Processing
+                }
+
+                try {
+                    val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
+
+                    val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
+                    val script = "globalThis.getSize('$dataBase64String');"
+
+                    val resultFuture = isolate.evaluateJavaScriptAsync(script)
+                    val jsonResult =
+                        resultFuture.get() ?: throw IllegalStateException("Result Future is null")
+
+                    val root = JSONObject(jsonResult)
+                    if (root.has("errorCode")) {
+                        val errorCode = root.getInt("errorCode")
+                        val error = Jp2kError.fromInt(errorCode)
+                        val errorMessage = if (root.has("errorMessage")) root.getString("errorMessage") else null
+                        log(Log.ERROR, "Error: $error, Message: $errorMessage")
+                        throw Jp2kException(error, errorMessage)
+                    }
+
+                    val width = root.getInt("width")
+                    val height = root.getInt("height")
+                    val size = Size(width, height)
+
+                    restoreStateAfterDecode()
+                    synchronized(lock) {
+                        if (_state == State.Released || _state == State.Releasing) {
+                            callback.onError(CancellationException("Decoder was released."))
+                        } else {
+                            callback.onSuccess(size)
+                        }
+                    }
+
+                } catch (e: Exception) {
+                    restoreStateAfterDecode()
+                    synchronized(lock) {
+                        if (_state == State.Released || _state == State.Releasing) {
+                            callback.onError(CancellationException("Decoder was released."))
+                        } else {
+                            callback.onError(e)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -195,19 +274,8 @@ class Jp2kDecoderAsync(
                     }
                     // It's possible init failed or something else happened while waiting in queue
                     if (_state != State.Initialized && _state != State.Processing) {
-                         // Note: If previous task finished, state should be Initialized.
-                         // If previous task failed, state might be Initialized (if restored) or something else.
-                         // But if it is Uninitialized now, we should probably fail.
-                         // However, since we allowed 'Processing' in the admission check,
-                         // and we are holding executionLock, we are the only one running.
-                         // So state should ideally be Initialized here (unless this is the first task).
-                         // Wait, if this is the first task, it should be Initialized.
-                         // If this is the second task, the first task finished and set it to Initialized.
-                         // So effectively, we expect Initialized here.
-                         if (_state != State.Initialized) {
-                              callback.onError(IllegalStateException("Decoder state invalid before execution: $_state"))
-                              return@execute
-                         }
+                        callback.onError(IllegalStateException("Decoder state invalid before execution: $_state"))
+                        return@execute
                     }
                     _state = State.Processing
                 }
@@ -233,13 +301,13 @@ class Jp2kDecoderAsync(
 
                     // Block and wait for result on background thread
                     val jsonResult =
-                        resultFuture?.get() ?: throw IllegalStateException("Result Future is null")
+                        resultFuture.get() ?: throw IllegalStateException("Result Future is null")
 
                     val root = JSONObject(jsonResult)
                     if (root.has("errorCode")) {
                         val errorCode = root.getInt("errorCode")
                         val error = Jp2kError.fromInt(errorCode)
-                        val errorMessage = root.optString("errorMessage", null)
+                        val errorMessage = if (root.has("errorMessage")) root.getString("errorMessage") else null
                         log(Log.ERROR, "Error: $error, Message: $errorMessage")
                         throw Jp2kException(error, errorMessage)
                     } else if (root.has("error")) {
@@ -348,11 +416,8 @@ class Jp2kDecoderAsync(
                         return@execute
                     }
                     if (_state != State.Initialized && _state != State.Processing) {
-                        // Queue handling logic similar to decodeImage
-                        if (_state != State.Initialized) {
-                            callback.onError(IllegalStateException("Decoder state invalid before execution: $_state"))
-                            return@execute
-                        }
+                        callback.onError(IllegalStateException("Decoder state invalid before execution: $_state"))
+                        return@execute
                     }
                     _state = State.Processing
                 }
@@ -362,7 +427,7 @@ class Jp2kDecoderAsync(
                     val resultFuture = isolate.evaluateJavaScriptAsync("globalThis.getMemoryUsage()")
 
                     val jsonResult =
-                        resultFuture?.get() ?: throw IllegalStateException("Result Future is null")
+                        resultFuture.get() ?: throw IllegalStateException("Result Future is null")
                     val root = JSONObject(jsonResult)
 
                     val usage = MemoryUsage(

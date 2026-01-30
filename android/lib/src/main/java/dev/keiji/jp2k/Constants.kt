@@ -211,3 +211,43 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
                 });
             };
         """
+
+internal val SCRIPT_DEFINE_GET_SIZE = """
+            globalThis.getSize = function(dataBase64String) {
+                try {
+                    const exports = wasmInstance.exports;
+                    const encodedBuffer = globalThis.base64ToBytes(dataBase64String);
+                    const dataLength = encodedBuffer.length;
+
+                    if (dataLength === 0) return JSON.stringify({ errorCode: -1 });
+
+                    const inputPtr = exports.malloc(dataLength);
+                    const heap = new Uint8Array(exports.memory.buffer);
+
+                    heap.set(encodedBuffer, inputPtr);
+
+                    // Call getSize
+                    const resultPtr = exports.getSize(inputPtr, dataLength);
+
+                    if (resultPtr === 0) {
+                        const errorCode = exports.getLastError();
+                        exports.free(inputPtr);
+                        return JSON.stringify({ errorCode: errorCode });
+                    }
+
+                    const view = new DataView(exports.memory.buffer);
+                    const width = view.getUint32(resultPtr, true);
+                    const height = view.getUint32(resultPtr + 4, true);
+
+                    exports.free(resultPtr);
+                    exports.free(inputPtr);
+
+                    return JSON.stringify({
+                        width: width,
+                        height: height
+                    });
+                } catch (e) {
+                    return JSON.stringify({ errorCode: ${Jp2kError.Unknown.code}, errorMessage: e.toString() });
+                }
+            };
+        """
