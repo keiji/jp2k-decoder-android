@@ -30,6 +30,13 @@ import dev.keiji.j2k_wasm_sample.ui.theme.J2kwasmsampleTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+private data class DecodeResult(
+    val bmp: Bitmap?,
+    val usageBefore: MemoryUsage?,
+    val usageAfter: MemoryUsage?,
+    val size: Size?
+)
+
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -58,12 +65,12 @@ class MainActivity : ComponentActivity() {
                                     val imageSize = decoder.getSize(bytes)
                                     val bmp = decoder.decodeImage(bytes)
                                     val usageAfter = decoder.getMemoryUsage()
-                                    object {
-                                        val bmp = bmp
-                                        val usageBefore = usageBefore
-                                        val usageAfter = usageAfter
-                                        val size = imageSize
-                                    }
+                                    DecodeResult(
+                                        bmp = bmp,
+                                        usageBefore = usageBefore,
+                                        usageAfter = usageAfter,
+                                        size = imageSize
+                                    )
                                 }
                             }
                             bitmap = result.bmp
