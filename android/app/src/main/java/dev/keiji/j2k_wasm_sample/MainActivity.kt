@@ -62,9 +62,10 @@ class MainActivity : ComponentActivity() {
                                 }
                                 Jp2kDecoder().use { decoder ->
                                     decoder.init(applicationContext)
+                                    decoder.precache(bytes)
                                     val usageBefore = decoder.getMemoryUsage()
-                                    val imageSize = decoder.getSize(bytes)
-                                    val bmp = decoder.decodeImage(bytes)
+                                    val imageSize = decoder.getSize()
+                                    val bmp = decoder.decodeImage()
                                     val usageAfter = decoder.getMemoryUsage()
                                     DecodeResult(
                                         bmp = bmp,
