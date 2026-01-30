@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
@@ -94,32 +95,35 @@ class MainActivity : ComponentActivity() {
                                 contentDescription = "Decoded Image",
                                 modifier = Modifier.fillMaxSize()
                             )
-                        }
-
-                        if (memoryUsageBefore != null && memoryUsageAfter != null) {
-                            Text(
-                                text = "WASM Heap: ${memoryUsageBefore?.wasmHeapSizeBytes} -> ${memoryUsageAfter?.wasmHeapSizeBytes}",
-                                modifier = Modifier
-                                    .align(Alignment.TopStart)
-                                    .background(Color.White.copy(alpha = 0.7f))
-                                    .padding(8.dp)
-                            )
-                        }
-
-                        size?.let { s ->
-                            Text(
-                                text = "${s.width}:${s.height}",
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .background(Color.White.copy(alpha = 0.7f))
-                                    .padding(8.dp)
-                            )
-                        }
-
-                        if (error != null) {
-                            Text("Error: $error")
-                        } else if (bitmap == null) {
+                        } else if (error == null) {
                             CircularProgressIndicator()
+                        }
+
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(8.dp)
+                        ) {
+                            if (memoryUsageBefore != null && memoryUsageAfter != null) {
+                                Text(
+                                    text = "WASM Heap: ${memoryUsageBefore?.wasmHeapSizeBytes} -> ${memoryUsageAfter?.wasmHeapSizeBytes}",
+                                    modifier = Modifier.background(Color.White.copy(alpha = 0.7f))
+                                )
+                            }
+
+                            size?.let { s ->
+                                Text(
+                                    text = "${s.width}:${s.height}",
+                                    modifier = Modifier.background(Color.White.copy(alpha = 0.7f))
+                                )
+                            }
+
+                            if (error != null) {
+                                Text(
+                                    text = "Error: $error",
+                                    modifier = Modifier.background(Color.White.copy(alpha = 0.7f))
+                                )
+                            }
                         }
                     }
                 }
