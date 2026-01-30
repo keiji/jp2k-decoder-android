@@ -106,18 +106,18 @@ class MainActivity : ComponentActivity() {
                         Column(
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            if (bitmap != null) {
+                            bitmap?.let { bmp ->
                                 Image(
-                                    bitmap = bitmap!!.asImageBitmap(),
+                                    bitmap = bmp.asImageBitmap(),
                                     contentDescription = "Decoded Image",
                                     modifier = Modifier
                                         .weight(1f)
                                         .fillMaxSize()
                                 )
                             }
-                            if (bitmapCropped != null) {
+                            bitmapCropped?.let { bmp ->
                                 Image(
-                                    bitmap = bitmapCropped!!.asImageBitmap(),
+                                    bitmap = bmp.asImageBitmap(),
                                     contentDescription = "Decoded Image (Cropped)",
                                     modifier = Modifier
                                         .weight(1f)

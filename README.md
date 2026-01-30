@@ -136,8 +136,9 @@ val bitmap = decoder.decodeImage(jp2kBytes, 100, 100, 300, 300)
 decoder.precache(jp2kBytes)
 val bitmap = decoder.decodeImage(100, 100, 300, 300)
 
-// Using Rect
+// Using Rect (Requires precached data)
 val rect = Rect(100, 100, 300, 300)
+decoder.precache(jp2kBytes)
 val bitmap = decoder.decodeImage(rect)
 ```
 
