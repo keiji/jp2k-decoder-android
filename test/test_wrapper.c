@@ -345,6 +345,8 @@ void test_input_validation() {
 extern int stub_should_header_succeed;
 extern uint32_t stub_width;
 extern uint32_t stub_height;
+extern int stub_should_decompress_create_succeed;
+extern int stub_should_setup_succeed;
 
 void test_getSize() {
     printf("Testing getSize...\n");
@@ -373,6 +375,58 @@ void test_getSize() {
     stub_should_header_succeed = 0;
 }
 
+void test_decode_failures() {
+    printf("Testing Decode Failures...\n");
+    uint8_t dummy_data[100] = {0};
+
+    // 1. Null Data
+    printf("Debug: 1. Null Data\n");
+    uint8_t* result = decodeToBmp(NULL, 100, 0, 1000, COLOR_FORMAT_ARGB8888);
+    assert(result == NULL);
+    assert(last_error == ERR_INPUT_DATA_SIZE);
+
+    // 2. Zero Length
+    printf("Debug: 2. Zero Length\n");
+    result = decodeToBmp(dummy_data, 0, 0, 1000, COLOR_FORMAT_ARGB8888);
+    assert(result == NULL);
+    assert(last_error == ERR_INPUT_DATA_SIZE);
+
+    // 3. Create Decoder Failure
+    printf("Debug: 3. Create Decoder Failure\n");
+    stub_should_decompress_create_succeed = 0;
+    result = decodeToBmp(dummy_data, 100, 0, 1000, COLOR_FORMAT_ARGB8888);
+    assert(result == NULL);
+    assert(last_error == ERR_DECODER_SETUP);
+    stub_should_decompress_create_succeed = 1; // Reset
+
+    // 4. Setup Decoder Failure
+    printf("Debug: 4. Setup Decoder Failure\n");
+    stub_should_setup_succeed = 0;
+    result = decodeToBmp(dummy_data, 100, 0, 1000, COLOR_FORMAT_ARGB8888);
+    assert(result == NULL);
+    assert(last_error == ERR_DECODER_SETUP);
+    stub_should_setup_succeed = 1; // Reset
+
+    printf("Decode Failures Passed.\n");
+}
+
+void test_getsize_failures() {
+    printf("Testing getSize Failures...\n");
+    uint8_t dummy_data[100] = {0};
+
+    // 1. Null Data
+    uint32_t* result = getSize(NULL, 100);
+    assert(result == NULL);
+    assert(last_error == ERR_INPUT_DATA_SIZE);
+
+    // 2. Zero Length
+    result = getSize(dummy_data, 0);
+    assert(result == NULL);
+    assert(last_error == ERR_INPUT_DATA_SIZE);
+
+    printf("getSize Failures Passed.\n");
+}
+
 int main() {
     test_argb8888();
     test_rgb565();
@@ -381,5 +435,7 @@ int main() {
     test_multichannel();
     test_input_validation();
     test_getSize();
+    test_decode_failures();
+    test_getsize_failures();
     return 0;
 }

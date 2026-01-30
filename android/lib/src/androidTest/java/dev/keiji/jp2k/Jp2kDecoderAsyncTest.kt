@@ -279,4 +279,39 @@ class Jp2kDecoderAsyncTest {
         // But 'decoder' is not accessible outside.
         // The fact that it compiled proves it implements AutoCloseable.
     }
+
+    @Test
+    fun testDecodeSmallData() {
+        val latch = CountDownLatch(1)
+        val errorRef = AtomicReference<Throwable?>()
+
+        decoder.init(context, object : Callback<Unit> {
+            override fun onSuccess(result: Unit) {
+                val bytes = ByteArray(1) // Too small
+                decoder.decodeImage(bytes, object : Callback<Bitmap> {
+                    override fun onSuccess(result: Bitmap) {
+                        fail("Should fail")
+                        latch.countDown()
+                    }
+                    override fun onError(error: Exception) {
+                        errorRef.set(error)
+                        latch.countDown()
+                    }
+                })
+            }
+            override fun onError(error: Exception) {
+                fail("Init failed")
+                latch.countDown()
+            }
+        })
+
+        assertTrue("Timed out", latch.await(10, TimeUnit.SECONDS))
+        assertTrue("Expected IllegalArgumentException", errorRef.get() is IllegalArgumentException)
+    }
+
+    @Test
+    fun testReleaseDouble() {
+        decoder.release()
+        decoder.release() // Should not crash
+    }
 }
