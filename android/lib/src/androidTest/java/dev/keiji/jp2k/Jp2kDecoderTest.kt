@@ -104,4 +104,28 @@ class Jp2kDecoderTest {
         assertNotNull(usage)
         assert(usage.wasmHeapSizeBytes > 0)
     }
+
+    @Test
+    fun testDecodeSmallData() = runTest {
+        decoder.init(context)
+        val bytes = ByteArray(1) // Too small (< 12)
+        try {
+            decoder.decodeImage(bytes)
+            fail("Should throw exception")
+        } catch (e: Exception) {
+            assertTrue("Expected IllegalArgumentException, got $e", e is IllegalArgumentException)
+        }
+    }
+
+    @Test
+    fun testReleaseDouble() {
+        decoder.release()
+        decoder.release() // Should not crash
+    }
+
+    @Test
+    fun testInitDouble() = runTest {
+        decoder.init(context)
+        decoder.init(context) // Should be no-op or ignored
+    }
 }

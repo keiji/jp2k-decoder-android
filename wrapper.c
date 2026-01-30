@@ -10,6 +10,7 @@
 #define ERR_INPUT_DATA_SIZE -2
 #define ERR_PIXEL_DATA_SIZE -3
 #define ERR_DECODE -4
+#define ERR_DECODER_SETUP -5
 
 #define MIN_INPUT_SIZE 12
 
@@ -53,9 +54,14 @@ static OPJ_CODEC_FORMAT get_codec_format(uint8_t* data, uint32_t data_len) {
 
 static opj_codec_t* create_decoder(OPJ_CODEC_FORMAT format) {
     opj_codec_t* l_codec = opj_create_decompress(format);
+    if (!l_codec) return NULL;
+
     opj_dparameters_t l_params;
     opj_set_default_decoder_parameters(&l_params);
-    opj_setup_decoder(l_codec, &l_params);
+    if (!opj_setup_decoder(l_codec, &l_params)) {
+        opj_destroy_codec(l_codec);
+        return NULL;
+    }
     return l_codec;
 }
 
@@ -73,6 +79,11 @@ static opj_image_t* decode_internal(uint8_t* data, uint32_t data_len, OPJ_CODEC_
     opj_buffer_info_t buffer_info = {data, data_len, 0};
 
     opj_codec_t* l_codec = create_decoder(format);
+    if (!l_codec) {
+        last_error = ERR_DECODER_SETUP;
+        return NULL;
+    }
+
     opj_stream_t* l_stream = create_mem_stream(&buffer_info, data_len);
 
     opj_image_t* l_image = NULL;
@@ -102,7 +113,7 @@ static opj_image_t* decode_opj(uint8_t* data, uint32_t data_len, uint32_t max_pi
     uint32_t divider = (color_format == COLOR_FORMAT_RGB565) ? 2 : 4;
     uint32_t max_input_size = max_heap_size / divider;
 
-    if (data_len < MIN_INPUT_SIZE || data_len > max_input_size) {
+    if (!data || data_len < MIN_INPUT_SIZE || data_len > max_input_size) {
         last_error = ERR_INPUT_DATA_SIZE;
         return NULL;
     }
@@ -309,7 +320,7 @@ uint8_t* decodeToBmp(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint
 EMSCRIPTEN_KEEPALIVE
 uint32_t* getSize(uint8_t* data, uint32_t data_len) {
     last_error = ERR_NONE;
-    if (data_len < MIN_INPUT_SIZE) {
+    if (!data || data_len < MIN_INPUT_SIZE) {
         last_error = ERR_INPUT_DATA_SIZE;
         return NULL;
     }
@@ -319,6 +330,11 @@ uint32_t* getSize(uint8_t* data, uint32_t data_len) {
     OPJ_CODEC_FORMAT format = get_codec_format(data, data_len);
 
     opj_codec_t* l_codec = create_decoder(format);
+    if (!l_codec) {
+        last_error = ERR_DECODER_SETUP;
+        return NULL;
+    }
+
     opj_stream_t* l_stream = create_mem_stream(&buffer_info, data_len);
 
     opj_image_t* l_image = NULL;

@@ -136,5 +136,5 @@ tasks.register<JacocoReport>("jacocoTestReport") {
 
     classDirectories.setFrom(debugTree)
     sourceDirectories.setFrom(files(mainSrc))
-    executionData.setFrom(layout.buildDirectory.file("jacoco/testDebugUnitTest.exec"))
+    executionData.setFrom(layout.buildDirectory.file("outputs/unit_test_code_coverage/debugUnitTest/testDebugUnitTest.exec"))
 }
