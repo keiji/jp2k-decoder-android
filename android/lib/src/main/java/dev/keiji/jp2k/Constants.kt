@@ -226,6 +226,89 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
                 return globalThis.internalDecodeJ2K(globalThis.j2kData, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1);
             };
 
+            globalThis.internalDecodeJ2KRatio = function(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1) {
+                const now = function() {
+                    return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                };
+
+                let timeStart, timeAfterPreProcess, timeAfterDecode, timeAfterPostProcess;
+                try {
+                    if (measureTimes) {
+                         timeStart = now();
+                    }
+
+                    const exports = wasmInstance.exports;
+
+                    const dataLength = encodedBuffer.length;
+                    if (dataLength === 0) return JSON.stringify({ errorCode: -1 });
+
+                    const inputPtr = exports.malloc(dataLength);
+                    const heap = new Uint8Array(exports.memory.buffer);
+
+                    heap.set(encodedBuffer, inputPtr);
+
+                    if (measureTimes) {
+                         timeAfterPreProcess = now();
+                    }
+
+                    // Call decodeToBmpWithRatio
+                    const bmpPtr = exports.decodeToBmpWithRatio(inputPtr, encodedBuffer.length, maxPixels, maxHeapSize, colorFormat, x0, y0, x1, y1);
+
+                    if (measureTimes) {
+                         timeAfterDecode = now();
+                    }
+
+                    if (bmpPtr === 0) {
+                        const errorCode = exports.getLastError();
+                        exports.free(inputPtr);
+                        return JSON.stringify({ errorCode: errorCode });
+                    }
+
+                    const view = new DataView(exports.memory.buffer);
+                    const bmpSize = view.getUint32(bmpPtr + 2, true);
+
+                    const bmpBuffer = new Uint8Array(exports.memory.buffer, bmpPtr, bmpSize);
+                    const base64String = globalThis.bytesToBase64(bmpBuffer);
+
+                    exports.free(bmpPtr);
+                    exports.free(inputPtr);
+
+                    if (measureTimes) {
+                         timeAfterPostProcess = now();
+                    }
+
+                    const result = {
+                        bmp: base64String
+                    };
+
+                    if (measureTimes) {
+                        result.timePreProcess = timeAfterPreProcess - timeStart;
+                        result.timeWasm = timeAfterDecode - timeAfterPreProcess;
+                        result.timePostProcess = timeAfterPostProcess - timeAfterDecode;
+                    }
+
+                    return JSON.stringify(result);
+                } catch (e) {
+                    return JSON.stringify({ errorCode: ${Jp2kError.Unknown.code}, errorMessage: e.toString() });
+                }
+            };
+
+            globalThis.decodeJ2KRatio = function(dataBase64String, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1) {
+                try {
+                    const encodedBuffer = globalThis.base64ToBytes(dataBase64String);
+                    return globalThis.internalDecodeJ2KRatio(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1);
+                } catch (e) {
+                    return JSON.stringify({ errorCode: ${Jp2kError.Unknown.code}, errorMessage: e.toString() });
+                }
+            };
+
+            globalThis.decodeJ2KWithCacheRatio = function(maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1) {
+                if (!globalThis.j2kData) {
+                    return JSON.stringify({ errorCode: ${Jp2kError.CacheDataMissing.code}, errorMessage: "No data cached" });
+                }
+                return globalThis.internalDecodeJ2KRatio(globalThis.j2kData, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1);
+            };
+
             globalThis.getMemoryUsage = function() {
                 let wasmHeap = 0;
                 try {

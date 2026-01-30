@@ -74,7 +74,7 @@ static opj_stream_t* create_mem_stream(opj_buffer_info_t* buffer_info, uint32_t 
     return l_stream;
 }
 
-static opj_image_t* decode_internal(uint8_t* data, uint32_t data_len, OPJ_CODEC_FORMAT format, uint32_t max_pixels, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1) {
+static opj_image_t* decode_internal(uint8_t* data, uint32_t data_len, OPJ_CODEC_FORMAT format, uint32_t max_pixels, double x0, double y0, double x1, double y1, int use_ratio) {
     last_error = ERR_NONE;
 
     opj_buffer_info_t buffer_info = {data, data_len, 0};
@@ -94,16 +94,42 @@ static opj_image_t* decode_internal(uint8_t* data, uint32_t data_len, OPJ_CODEC_
         uint32_t width = l_image->x1 - l_image->x0;
         uint32_t height = l_image->y1 - l_image->y0;
 
+        uint32_t ux0, uy0, ux1, uy1;
+        if (use_ratio) {
+            ux0 = (uint32_t)(width * x0);
+            uy0 = (uint32_t)(height * y0);
+            ux1 = (uint32_t)(width * x1);
+            uy1 = (uint32_t)(height * y1);
+            if (ux1 > width) ux1 = width;
+            if (uy1 > height) uy1 = height;
+        } else {
+            ux0 = (uint32_t)x0;
+            uy0 = (uint32_t)y0;
+            ux1 = (uint32_t)x1;
+            uy1 = (uint32_t)y1;
+        }
+
         // Check bounds if partial decoding is requested (x1 > 0 or y1 > 0)
         // If x1 and y1 are 0, we assume full decode (no crop)
-        int is_partial = (x1 != 0 || y1 != 0);
+        // Note: For ratio, x1/y1 will be > 0 if valid ratio passed.
+        // We need to handle 0,0,0,0 ratio as full decode too?
+        // Usually ratio 0.0 to 1.0 means 0 to width.
+        // If user passes 0,0,0,0 as ratio, it means empty region?
+        // But the previous API used 0,0,0,0 as 'full decode'.
+        // If use_ratio is true, we expect valid ratios.
+        // However, if we want full decode via ratio, we'd pass 0.0, 0.0, 1.0, 1.0.
+        // Let's stick to: if use_ratio is false, 0,0,0,0 means full.
+        // If use_ratio is true, 0,0,0,0 -> ux0=0, uy0=0, ux1=0, uy1=0 -> is_partial=0 -> full decode.
+        // So it works out.
+
+        int is_partial = (ux1 != 0 || uy1 != 0);
         int bounds_ok = 1;
 
         if (is_partial) {
-             if (x0 < l_image->x0 || y0 < l_image->y0 || x1 > l_image->x1 || y1 > l_image->y1 || x0 >= x1 || y0 >= y1) {
+             if (ux0 < l_image->x0 || uy0 < l_image->y0 || ux1 > l_image->x1 || uy1 > l_image->y1 || ux0 >= ux1 || uy0 >= uy1) {
                  bounds_ok = 0;
              } else {
-                 if (!opj_set_decode_area(l_codec, l_image, x0, y0, x1, y1)) {
+                 if (!opj_set_decode_area(l_codec, l_image, ux0, uy0, ux1, uy1)) {
                      // Should not happen if bounds are ok, but safety check
                      bounds_ok = 0;
                  }
@@ -115,16 +141,8 @@ static opj_image_t* decode_internal(uint8_t* data, uint32_t data_len, OPJ_CODEC_
             opj_image_destroy(l_image);
             l_image = NULL;
         } else if (max_pixels > 0 && ((uint64_t)width * height) > max_pixels) {
-            // Note: If partial decode, width/height in l_image are still the original image dimensions
-            // unless opj_read_header + opj_set_decode_area updates them?
-            // OpenJPEG docs: opj_set_decode_area restricts the decoded area.
-            // The decoded image structure (l_image) will have x0, y0, x1, y1 updated to the decode area
-            // *after* opj_decode is called? Or immediately?
-            // Actually, opj_set_decode_area only sets parameters in the codec.
-            // But we want to check pixel limit against the *output* size.
-            // If partial, the output size is (x1-x0) * (y1-y0).
-            uint32_t output_width = is_partial ? (x1 - x0) : width;
-            uint32_t output_height = is_partial ? (y1 - y0) : height;
+            uint32_t output_width = is_partial ? (ux1 - ux0) : width;
+            uint32_t output_height = is_partial ? (uy1 - uy0) : height;
 
             if (((uint64_t)output_width * output_height) > max_pixels) {
                 last_error = ERR_PIXEL_DATA_SIZE;
@@ -147,7 +165,7 @@ static opj_image_t* decode_internal(uint8_t* data, uint32_t data_len, OPJ_CODEC_
     return l_image;
 }
 
-static opj_image_t* decode_opj(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint32_t max_heap_size, int color_format, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1) {
+static opj_image_t* decode_opj_common(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint32_t max_heap_size, int color_format, double x0, double y0, double x1, double y1, int use_ratio) {
     uint32_t divider = (color_format == COLOR_FORMAT_RGB565) ? 2 : 4;
     uint32_t max_input_size = max_heap_size / divider;
 
@@ -157,7 +175,7 @@ static opj_image_t* decode_opj(uint8_t* data, uint32_t data_len, uint32_t max_pi
     }
 
     OPJ_CODEC_FORMAT format = get_codec_format(data, data_len);
-    return decode_internal(data, data_len, format, max_pixels, x0, y0, x1, y1);
+    return decode_internal(data, data_len, format, max_pixels, x0, y0, x1, y1, use_ratio);
 }
 
 static int32_t* get_alpha_component(opj_image_t* image) {
@@ -346,7 +364,18 @@ static uint8_t* convert_image_to_bmp(opj_image_t* image, int color_format) {
 
 EMSCRIPTEN_KEEPALIVE
 uint8_t* decodeToBmp(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint32_t max_heap_size, int color_format, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1) {
-    opj_image_t* image = decode_opj(data, data_len, max_pixels, max_heap_size, color_format, x0, y0, x1, y1);
+    opj_image_t* image = decode_opj_common(data, data_len, max_pixels, max_heap_size, color_format, (double)x0, (double)y0, (double)x1, (double)y1, 0);
+    if (!image) return NULL;
+
+    uint8_t* bmp_buffer = convert_image_to_bmp(image, color_format);
+
+    opj_image_destroy(image);
+    return bmp_buffer;
+}
+
+EMSCRIPTEN_KEEPALIVE
+uint8_t* decodeToBmpWithRatio(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint32_t max_heap_size, int color_format, double x0, double y0, double x1, double y1) {
+    opj_image_t* image = decode_opj_common(data, data_len, max_pixels, max_heap_size, color_format, x0, y0, x1, y1, 1);
     if (!image) return NULL;
 
     uint8_t* bmp_buffer = convert_image_to_bmp(image, color_format);

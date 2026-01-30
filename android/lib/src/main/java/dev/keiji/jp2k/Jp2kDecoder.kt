@@ -341,6 +341,44 @@ class Jp2kDecoder(
     }
 
     /**
+     * Decodes a specific region of a JPEG 2000 image.
+     *
+     * @param j2kData The raw byte array of the JPEG 2000 image.
+     * @param left The left coordinate ratio (0.0 - 1.0).
+     * @param top The top coordinate ratio (0.0 - 1.0).
+     * @param right The right coordinate ratio (0.0 - 1.0).
+     * @param bottom The bottom coordinate ratio (0.0 - 1.0).
+     * @param colorFormat The desired output color format. Defaults to [ColorFormat.ARGB8888].
+     * @return The decoded [Bitmap].
+     */
+    suspend fun decodeImage(
+        j2kData: ByteArray,
+        left: Float,
+        top: Float,
+        right: Float,
+        bottom: Float,
+        colorFormat: ColorFormat = ColorFormat.ARGB8888,
+    ): Bitmap {
+        log(Log.INFO, "Input data length: ${j2kData.size}")
+
+        if (j2kData.size < MIN_INPUT_SIZE) {
+            throw IllegalArgumentException("Input data is too short")
+        }
+        if (left < 0.0f || left > 1.0f || top < 0.0f || top > 1.0f ||
+            right < 0.0f || right > 1.0f || bottom < 0.0f || bottom > 1.0f
+        ) {
+            throw IllegalArgumentException("Ratio must be 0.0 - 1.0")
+        }
+
+        val measureTimes = config.logLevel != null
+        val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
+        val script =
+            "globalThis.decodeJ2KRatio('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
+
+        return executeDecodeImage(script, colorFormat)
+    }
+
+    /**
      * Decodes a JPEG 2000 image using cached data.
      *
      * @param colorFormat The desired output color format. Defaults to [ColorFormat.ARGB8888].
@@ -392,6 +430,36 @@ class Jp2kDecoder(
         colorFormat: ColorFormat = ColorFormat.ARGB8888,
     ): Bitmap {
         return decodeImage(region.left, region.top, region.right, region.bottom, colorFormat)
+    }
+
+    /**
+     * Decodes a specific region of a JPEG 2000 image using cached data.
+     *
+     * @param left The left coordinate ratio (0.0 - 1.0).
+     * @param top The top coordinate ratio (0.0 - 1.0).
+     * @param right The right coordinate ratio (0.0 - 1.0).
+     * @param bottom The bottom coordinate ratio (0.0 - 1.0).
+     * @param colorFormat The desired output color format. Defaults to [ColorFormat.ARGB8888].
+     * @return The decoded [Bitmap].
+     */
+    suspend fun decodeImage(
+        left: Float,
+        top: Float,
+        right: Float,
+        bottom: Float,
+        colorFormat: ColorFormat = ColorFormat.ARGB8888,
+    ): Bitmap {
+        if (left < 0.0f || left > 1.0f || top < 0.0f || top > 1.0f ||
+            right < 0.0f || right > 1.0f || bottom < 0.0f || bottom > 1.0f
+        ) {
+            throw IllegalArgumentException("Ratio must be 0.0 - 1.0")
+        }
+
+        val measureTimes = config.logLevel != null
+        val script =
+            "globalThis.decodeJ2KWithCacheRatio(${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
+
+        return executeDecodeImage(script, colorFormat)
     }
 
     private suspend fun executeDecodeImage(

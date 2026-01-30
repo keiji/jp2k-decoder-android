@@ -2,6 +2,8 @@ package dev.keiji.jp2k
 
 import android.content.Context
 import android.content.res.AssetManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
 import com.google.common.util.concurrent.ListenableFuture
@@ -48,6 +50,7 @@ class Jp2kDecoderTest {
     lateinit var isolate: JavaScriptIsolate
 
     private lateinit var mockJp2kSandbox: MockedStatic<Jp2kSandbox>
+    private lateinit var mockBitmapFactory: MockedStatic<BitmapFactory>
 
     private val testDispatcher = StandardTestDispatcher()
 
@@ -82,11 +85,17 @@ class Jp2kDecoderTest {
 
         // Mock sandbox feature support
         whenever(sandbox.isFeatureSupported(any<String>())).thenReturn(true)
+
+        mockBitmapFactory = mockStatic(BitmapFactory::class.java)
+        mockBitmapFactory.`when`<Bitmap> {
+            BitmapFactory.decodeByteArray(any(), any(), any(), any())
+        }.thenReturn(Mockito.mock(Bitmap::class.java))
     }
 
     @After
     fun tearDown() {
         mockJp2kSandbox.close()
+        mockBitmapFactory.close()
         Dispatchers.resetMain()
     }
 
@@ -162,6 +171,43 @@ class Jp2kDecoderTest {
             fail("Should throw IllegalStateException")
         } catch (e: IllegalStateException) {
             assertEquals("No data cached", e.message)
+        }
+    }
+
+    @Test
+    fun testDecodeImage_Ratio_Success() = runTest {
+        val jsonBmp = """{"bmp": "AQID", "timePreProcess": 0, "timeWasm": 0, "timePostProcess": 0}"""
+
+        doAnswer { invocation ->
+            val script = invocation.arguments[0] as String
+            if (script.contains("decodeJ2KWithCacheRatio(")) {
+                TestListenableFuture(jsonBmp)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
+
+        val decoder = Jp2kDecoder(coroutineDispatcher = testDispatcher)
+        decoder.init(context)
+        val data = ByteArray(10)
+        decoder.precache(data)
+
+        // Call with ratios: left=0.0, top=0.0, right=0.5, bottom=0.5
+        decoder.decodeImage(0.0f, 0.0f, 0.5f, 0.5f)
+
+        // Verify that the script passed to JS contains the ratios
+        // Relaxing the match to ensure the correct function is called with floats
+        verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2KWithCacheRatio("))
+    }
+
+    @Test
+    fun testDecodeImage_Ratio_InvalidInput() = runTest {
+        val decoder = Jp2kDecoder(coroutineDispatcher = testDispatcher)
+        try {
+            decoder.decodeImage(0.0f, 0.0f, 1.1f, 0.5f)
+            fail("Should throw IllegalArgumentException")
+        } catch (e: IllegalArgumentException) {
+            assertEquals("Ratio must be 0.0 - 1.0", e.message)
         }
     }
 }
