@@ -577,6 +577,14 @@ void test_ratio_decode() {
     assert(result == NULL);
     assert(last_error == ERR_REGION_OUT_OF_BOUNDS);
 
+    // Test 4: Ratio Full Decode (0.0, 0.0, 1.0, 1.0) -> 0, 0, 100, 200
+    // ux0=0, uy0=0, ux1=100, uy1=200.
+    // is_partial = (100!=0 || 200!=0) -> true.
+    // Bounds OK. opj_set_decode_area called.
+    result = decodeToBmpWithRatio(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 0.0, 0.0, 1.0, 1.0);
+    assert(result == NULL);
+    assert(last_error == ERR_DECODE);
+
     printf("Ratio Decode Passed.\n");
     stub_should_header_succeed = 0;
 }

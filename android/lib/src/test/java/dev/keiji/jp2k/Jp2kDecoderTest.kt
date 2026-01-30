@@ -290,4 +290,47 @@ class Jp2kDecoderTest {
             // Success
         }
     }
+
+    @Test
+    fun testGetMemoryUsage_Success() = runTest {
+        val jsonUsage = """{"wasmHeapSizeBytes": 2048}"""
+
+        doAnswer { invocation ->
+            val script = invocation.arguments[0] as String
+            if (script.contains("getMemoryUsage()")) {
+                TestListenableFuture(jsonUsage)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
+
+        val decoder = Jp2kDecoder(coroutineDispatcher = testDispatcher)
+        decoder.init(context)
+
+        val memoryUsage = decoder.getMemoryUsage()
+        assertEquals(2048L, memoryUsage.wasmHeapSizeBytes)
+    }
+
+
+    @Test
+    fun testDecodeImage_ByteArray_Success() = runTest {
+        val jsonBmp = """{"bmp": "AQID", "timePreProcess": 0, "timeWasm": 0, "timePostProcess": 0}"""
+
+        doAnswer { invocation ->
+            val script = invocation.arguments[0] as String
+            if (script.contains("decodeJ2K(")) {
+                TestListenableFuture(jsonBmp)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
+
+        val decoder = Jp2kDecoder(coroutineDispatcher = testDispatcher)
+        decoder.init(context)
+
+        val data = ByteArray(20)
+        decoder.decodeImage(data)
+
+        verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2K("))
+    }
 }
