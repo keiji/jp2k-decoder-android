@@ -97,7 +97,7 @@ class Jp2kDecoderTest {
             // Use simple string matching logic to return appropriate result
             val script = invocation.arguments[0] as String
             // Default return "1" for all async calls in this test (loadWasm, setData)
-            TestListenableFuture("1")
+            TestListenableFuture(INTERNAL_RESULT_SUCCESS)
         }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
 
         val decoder = Jp2kDecoder(coroutineDispatcher = testDispatcher)
@@ -115,13 +115,13 @@ class Jp2kDecoderTest {
         doAnswer { invocation ->
             val script = invocation.arguments[0] as String
             if (script.contains("base64ToBytes")) {
-                TestListenableFuture("1") // WASM load
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS) // WASM load
             } else if (script.contains("setData")) {
-                TestListenableFuture("1") // setData
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS) // setData
             } else if (script.contains("getSizeWithCache")) {
                 TestListenableFuture(jsonSize) // getSizeWithCache
             } else {
-                TestListenableFuture("1") // Default
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS) // Default
             }
         }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
 
@@ -136,16 +136,16 @@ class Jp2kDecoderTest {
 
     @Test
     fun testGetSize_NoDataCached() = runTest {
-        val jsonError = """{"errorCode": -10, "errorMessage": "No data cached"}"""
+        val jsonError = """{"errorCode": ${Jp2kError.CacheDataMissing.code}, "errorMessage": "No data cached"}"""
 
         doAnswer { invocation ->
             val script = invocation.arguments[0] as String
             if (script.contains("base64ToBytes")) {
-                TestListenableFuture("1") // WASM load
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS) // WASM load
             } else if (script.contains("getSizeWithCache")) {
                 TestListenableFuture(jsonError) // getSizeWithCache
             } else {
-                TestListenableFuture("1")
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
             }
         }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
 

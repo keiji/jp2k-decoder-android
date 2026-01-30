@@ -21,6 +21,9 @@ enum class Jp2kError(val code: Int) {
     /** Generic decoding error. */
     Decode(-4),
 
+    /** Cache data missing error. */
+    CacheDataMissing(-10),
+
     /** Unknown error. */
     Unknown(Int.MIN_VALUE);
 

@@ -142,7 +142,7 @@ class Jp2kDecoder(
             val resultFuture = isolate.evaluateJavaScriptAsync(script)
             try {
                 val result = resultFuture.await()
-                if (result != "1") {
+                if (result != INTERNAL_RESULT_SUCCESS) {
                     throw IllegalStateException("WASM instantiation failed.")
                 }
             } catch (e: ExecutionException) {
@@ -179,7 +179,7 @@ class Jp2kDecoder(
                     val resultFuture = isolate.evaluateJavaScriptAsync(script)
                     val result = resultFuture.await()
 
-                    if (result != "1") {
+                    if (result != INTERNAL_RESULT_SUCCESS) {
                         val root = JSONObject(result)
                         if (root.has("errorCode")) {
                             val errorCode = root.getInt("errorCode")
@@ -238,7 +238,7 @@ class Jp2kDecoder(
                 val root = JSONObject(jsonResult)
                 if (root.has("errorCode")) {
                     val errorCode = root.getInt("errorCode")
-                    if (errorCode == -10) {
+                    if (errorCode == Jp2kError.CacheDataMissing.code) {
                         throw IllegalStateException("No data cached")
                     }
                     val error = Jp2kError.fromInt(errorCode)
@@ -332,7 +332,7 @@ class Jp2kDecoder(
                 val root = JSONObject(jsonResult)
                 if (root.has("errorCode")) {
                     val errorCode = root.getInt("errorCode")
-                    if (errorCode == -10) {
+                    if (errorCode == Jp2kError.CacheDataMissing.code) {
                         throw IllegalStateException("No data cached")
                     }
                     val error = Jp2kError.fromInt(errorCode)

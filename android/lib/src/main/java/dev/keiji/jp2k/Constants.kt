@@ -19,6 +19,8 @@ const val DEFAULT_MAX_EVALUATION_RETURN_SIZE_BYTES = 256 * 1024 * 1024
  */
 const val DEFAULT_MAX_PIXELS = 16000000
 
+internal const val INTERNAL_RESULT_SUCCESS = "1"
+
 internal const val SCRIPT_IMPORT_OBJECT = """
 const wasiSnapshotPreview = {
     // 環境変数の数とサイズ
@@ -133,7 +135,7 @@ internal val SCRIPT_DEFINE_SET_DATA = """
             globalThis.setData = function(dataBase64String) {
                 try {
                     globalThis.j2kData = globalThis.base64ToBytes(dataBase64String);
-                    return "1";
+                    return "$INTERNAL_RESULT_SUCCESS";
                 } catch (e) {
                     return JSON.stringify({ errorCode: ${Jp2kError.Unknown.code}, errorMessage: e.toString() });
                 }
@@ -219,7 +221,7 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
 
             globalThis.decodeJ2KWithCache = function(maxPixels, maxHeapSize, colorFormat, measureTimes) {
                 if (!globalThis.j2kData) {
-                    return JSON.stringify({ errorCode: -10, errorMessage: "No data cached" });
+                    return JSON.stringify({ errorCode: ${Jp2kError.CacheDataMissing.code}, errorMessage: "No data cached" });
                 }
                 return globalThis.internalDecodeJ2K(globalThis.j2kData, maxPixels, maxHeapSize, colorFormat, measureTimes);
             };
@@ -287,7 +289,7 @@ internal val SCRIPT_DEFINE_GET_SIZE = """
 
             globalThis.getSizeWithCache = function() {
                 if (!globalThis.j2kData) {
-                    return JSON.stringify({ errorCode: -10, errorMessage: "No data cached" });
+                    return JSON.stringify({ errorCode: ${Jp2kError.CacheDataMissing.code}, errorMessage: "No data cached" });
                 }
                 return globalThis.internalGetSize(globalThis.j2kData);
             };

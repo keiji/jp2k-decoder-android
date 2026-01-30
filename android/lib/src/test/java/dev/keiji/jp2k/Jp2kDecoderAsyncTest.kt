@@ -92,7 +92,7 @@ class Jp2kDecoderAsyncTest {
         doAnswer { invocation ->
             // Use simple string matching logic to return appropriate result
             val script = invocation.arguments[0] as String
-            TestListenableFuture("1")
+            TestListenableFuture(INTERNAL_RESULT_SUCCESS)
         }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
 
         val directExecutor = Executor { it.run() }
@@ -113,13 +113,13 @@ class Jp2kDecoderAsyncTest {
         doAnswer { invocation ->
             val script = invocation.arguments[0] as String
             if (script.contains("base64ToBytes")) {
-                TestListenableFuture("1")
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
             } else if (script.contains("setData")) {
-                TestListenableFuture("1")
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
             } else if (script.contains("getSizeWithCache")) {
                 TestListenableFuture(jsonSize)
             } else {
-                TestListenableFuture("1")
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
             }
         }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
 
