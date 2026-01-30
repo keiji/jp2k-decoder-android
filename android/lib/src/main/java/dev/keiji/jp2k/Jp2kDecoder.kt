@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.AssetManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Rect
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.javascriptengine.JavaScriptIsolate
@@ -324,6 +325,22 @@ class Jp2kDecoder(
     }
 
     /**
+     * Decodes a specific region of a JPEG 2000 image.
+     *
+     * @param j2kData The raw byte array of the JPEG 2000 image.
+     * @param region The region to decode.
+     * @param colorFormat The desired output color format. Defaults to [ColorFormat.ARGB8888].
+     * @return The decoded [Bitmap].
+     */
+    suspend fun decodeImage(
+        j2kData: ByteArray,
+        region: Rect,
+        colorFormat: ColorFormat = ColorFormat.ARGB8888,
+    ): Bitmap {
+        return decodeImage(j2kData, region.left, region.top, region.right, region.bottom, colorFormat)
+    }
+
+    /**
      * Decodes a JPEG 2000 image using cached data.
      *
      * @param colorFormat The desired output color format. Defaults to [ColorFormat.ARGB8888].
@@ -361,6 +378,20 @@ class Jp2kDecoder(
             "globalThis.decodeJ2KWithCache(${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
 
         return executeDecodeImage(script, colorFormat)
+    }
+
+    /**
+     * Decodes a specific region of a JPEG 2000 image using cached data.
+     *
+     * @param region The region to decode.
+     * @param colorFormat The desired output color format. Defaults to [ColorFormat.ARGB8888].
+     * @return The decoded [Bitmap].
+     */
+    suspend fun decodeImage(
+        region: Rect,
+        colorFormat: ColorFormat = ColorFormat.ARGB8888,
+    ): Bitmap {
+        return decodeImage(region.left, region.top, region.right, region.bottom, colorFormat)
     }
 
     private suspend fun executeDecodeImage(
