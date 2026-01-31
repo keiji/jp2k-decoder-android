@@ -3,6 +3,26 @@
 #include <assert.h>
 #include "emscripten.h"
 
+extern int stub_should_set_decode_area_succeed;
+
+// Malloc Interception
+static void* (*real_malloc)(size_t) = malloc;
+static void (*real_free)(void*) = free;
+
+int stub_should_malloc_succeed = 1;
+
+void* my_malloc(size_t size) {
+    if (!stub_should_malloc_succeed) return NULL;
+    return real_malloc(size);
+}
+
+void my_free(void* ptr) {
+    real_free(ptr);
+}
+
+#define malloc my_malloc
+#define free my_free
+
 // Include wrapper.c to access static functions
 // This is a bit hacky but effective for unit testing static functions
 #include "../wrapper.c"
@@ -660,7 +680,177 @@ void test_detailed_boundaries() {
     stub_should_header_succeed = 0;
 }
 
+void test_getLastError() {
+    printf("Testing getLastError...\n");
+    last_error = ERR_NONE;
+    assert(getLastError() == ERR_NONE);
+    last_error = ERR_DECODE;
+    assert(getLastError() == ERR_DECODE);
+    printf("getLastError Passed.\n");
+}
+
+void test_opj_read_from_buffer() {
+    printf("Testing opj_read_from_buffer...\n");
+    uint8_t data[] = {1, 2, 3, 4, 5};
+    opj_buffer_info_t info;
+    info.data = data;
+    info.size = 5;
+    info.offset = 0;
+
+    uint8_t buffer[10];
+
+    // Read 3 bytes
+    OPJ_SIZE_T read = opj_read_from_buffer(buffer, 3, &info);
+    assert(read == 3);
+    assert(info.offset == 3);
+    assert(buffer[0] == 1 && buffer[1] == 2 && buffer[2] == 3);
+
+    // Read remaining 2 bytes (requested 5)
+    read = opj_read_from_buffer(buffer, 5, &info);
+    assert(read == 2);
+    assert(info.offset == 5);
+    assert(buffer[0] == 4 && buffer[1] == 5);
+
+    // Read from EOF
+    read = opj_read_from_buffer(buffer, 1, &info);
+    assert(read == (OPJ_SIZE_T)-1);
+
+    printf("opj_read_from_buffer Passed.\n");
+}
+
+void test_set_decode_area_failure() {
+    printf("Testing set_decode_area Failure...\n");
+    uint8_t dummy_data[20] = {0};
+    stub_should_header_succeed = 1;
+    stub_width = 100;
+    stub_height = 100;
+
+    // Simulate failure in opj_set_decode_area
+    stub_should_set_decode_area_succeed = 0;
+
+    // Partial decode request
+    uint8_t* result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 10, 10, 20, 20);
+    assert(result == NULL);
+    assert(last_error == ERR_REGION_OUT_OF_BOUNDS);
+
+    stub_should_set_decode_area_succeed = 1;
+    stub_should_header_succeed = 0;
+    printf("set_decode_area Failure Passed.\n");
+}
+
+void test_decode_failure_after_checks() {
+    printf("Testing Decode Failure After Checks...\n");
+    uint8_t dummy_data[20] = {0};
+    stub_should_header_succeed = 1;
+    stub_width = 100;
+    stub_height = 100;
+
+    // Case 1: Full decode fits, decode fails.
+    stub_should_decode_succeed = 0;
+    uint8_t* result = decodeToBmp(dummy_data, 20, 10001, 100000, COLOR_FORMAT_ARGB8888, 0, 0, 0, 0);
+    assert(result == NULL);
+    assert(last_error == ERR_DECODE);
+
+    // Case 2: Full decode too big, Partial fits, Decode fails.
+    // Limit = 100. Full = 10000. Partial 10x10 = 100 (fits).
+    result = decodeToBmp(dummy_data, 20, 100, 100000, COLOR_FORMAT_ARGB8888, 0, 0, 10, 10);
+    assert(result == NULL);
+    assert(last_error == ERR_DECODE);
+
+    stub_should_header_succeed = 0;
+    printf("Decode Failure After Checks Passed.\n");
+}
+
+void test_zero_comps() {
+    printf("Testing Zero Components...\n");
+    uint32_t width = 10;
+    uint32_t height = 10;
+    opj_image_t* image = create_mock_image(width, height, 0, 0); // 0 components
+
+    uint8_t* bmp = convert_image_to_bmp(image, COLOR_FORMAT_ARGB8888);
+    assert(bmp == NULL);
+    assert(last_error == ERR_DECODE);
+
+    opj_image_destroy(image);
+    printf("Zero Components Passed.\n");
+}
+
+void test_malloc_failures() {
+    printf("Testing Malloc Failures...\n");
+    uint32_t width = 10;
+    uint32_t height = 10;
+    opj_image_t* image;
+    uint8_t* bmp;
+    uint8_t dummy_data[20] = {0};
+
+    // 1. Fail during ARGB8888 conversion
+    image = create_mock_image(width, height, 3, 0);
+    stub_should_malloc_succeed = 0;
+    bmp = convert_image_to_bmp(image, COLOR_FORMAT_ARGB8888);
+    assert(bmp == NULL);
+    assert(last_error == ERR_DECODE);
+    stub_should_malloc_succeed = 1;
+    opj_image_destroy(image);
+
+    // 2. Fail during RGB565 conversion
+    image = create_mock_image(width, height, 3, 0);
+    stub_should_malloc_succeed = 0;
+    bmp = convert_image_to_bmp(image, COLOR_FORMAT_RGB565);
+    assert(bmp == NULL);
+    assert(last_error == ERR_DECODE);
+    stub_should_malloc_succeed = 1;
+    opj_image_destroy(image);
+
+    // 3. Fail during getSize result allocation
+    stub_should_header_succeed = 1;
+    stub_width = 100;
+    stub_height = 100;
+    stub_should_malloc_succeed = 0; // Will fail the result array malloc
+
+    uint32_t* size = getSize(dummy_data, 20);
+    assert(size == NULL);
+    assert(last_error == ERR_DECODE);
+
+    stub_should_malloc_succeed = 1;
+    stub_should_header_succeed = 0;
+
+    printf("Malloc Failures Passed.\n");
+}
+
+void test_create_decoder_failure_getSize() {
+    printf("Testing Create Decoder Failure in getSize...\n");
+    uint8_t dummy_data[20] = {0};
+    stub_should_decompress_create_succeed = 0;
+
+    uint32_t* size = getSize(dummy_data, 20);
+    assert(size == NULL);
+    assert(last_error == ERR_DECODER_SETUP);
+
+    stub_should_decompress_create_succeed = 1;
+    printf("Create Decoder Failure in getSize Passed.\n");
+}
+
+void test_ratio_decode_success() {
+    printf("Testing Ratio Decode Success...\n");
+    uint8_t dummy_data[20] = {0};
+    stub_should_header_succeed = 1;
+    stub_should_decode_succeed = 1;
+    stub_width = 100;
+    stub_height = 100;
+
+    // Valid ratio
+    uint8_t* result = decodeToBmpWithRatio(dummy_data, 20, 0, 10000, COLOR_FORMAT_ARGB8888, 0.0, 0.0, 0.5, 0.5);
+    assert(result != NULL);
+    free(result);
+
+    stub_should_header_succeed = 0;
+    stub_should_decode_succeed = 0;
+    printf("Ratio Decode Success Passed.\n");
+}
+
 int main() {
+    test_getLastError();
+    test_opj_read_from_buffer();
     test_argb8888();
     test_rgb565();
     test_grayscale();
@@ -676,5 +866,11 @@ int main() {
     test_pixel_limit();
     test_full_decode_success();
     test_detailed_boundaries();
+    test_set_decode_area_failure();
+    test_decode_failure_after_checks();
+    test_zero_comps();
+    test_malloc_failures();
+    test_create_decoder_failure_getSize();
+    test_ratio_decode_success();
     return 0;
 }
