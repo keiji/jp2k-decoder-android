@@ -10,9 +10,10 @@ cleanup() {
 trap cleanup EXIT
 
 # Compile with coverage flags
+# Added -O0 to ensure optimization doesn't interfere with coverage analysis
 gcc -o test_wrapper_cov test/test_wrapper.c test/stubs.c \
     -I. -Iopenjpeg/src/lib/openjp2 -Itest -DOPJ_STATIC \
-    -fprofile-arcs -ftest-coverage -g
+    -fprofile-arcs -ftest-coverage -g -O0
 
 # Run the test executable
 ./test_wrapper_cov
