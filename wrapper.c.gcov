@@ -1,0 +1,434 @@
+        -:    0:Source:wrapper.c
+        -:    0:Graph:test_wrapper_cov-test_wrapper.gcno
+        -:    0:Data:test_wrapper_cov-test_wrapper.gcda
+        -:    0:Runs:1
+        -:    1:#include <openjpeg.h>
+        -:    2:#include <stdlib.h>
+        -:    3:#include <stdint.h>
+        -:    4:#include <string.h>
+        -:    5:#include <emscripten.h>
+        -:    6:
+        -:    7:// Error Codes
+        -:    8:#define ERR_NONE 0
+        -:    9:#define ERR_HEADER -1
+        -:   10:#define ERR_INPUT_DATA_SIZE -2
+        -:   11:#define ERR_PIXEL_DATA_SIZE -3
+        -:   12:#define ERR_DECODE -4
+        -:   13:#define ERR_DECODER_SETUP -5
+        -:   14:#define ERR_REGION_OUT_OF_BOUNDS -6
+        -:   15:
+        -:   16:#define MIN_INPUT_SIZE 12
+        -:   17:
+        -:   18:// Color Formats
+        -:   19:#define COLOR_FORMAT_RGB565 565
+        -:   20:#define COLOR_FORMAT_ARGB8888 8888
+        -:   21:
+        -:   22:int last_error = ERR_NONE;
+        -:   23:
+        -:   24:EMSCRIPTEN_KEEPALIVE
+    #####:   25:int getLastError() {
+    #####:   26:    return last_error;
+        -:   27:}
+        -:   28:
+        -:   29:typedef struct {
+        -:   30:    OPJ_BYTE* data;
+        -:   31:    OPJ_SIZE_T size;
+        -:   32:    OPJ_SIZE_T offset;
+        -:   33:} opj_buffer_info_t;
+        -:   34:
+    #####:   35:static OPJ_SIZE_T opj_read_from_buffer(void* p_buffer, OPJ_SIZE_T p_nb_bytes, void* p_user_data) {
+    #####:   36:    opj_buffer_info_t* p_info = (opj_buffer_info_t*)p_user_data;
+    #####:   37:    OPJ_SIZE_T l_nb_read = p_nb_bytes;
+    #####:   38:    if (p_info->offset >= p_info->size) return (OPJ_SIZE_T)-1;
+    #####:   39:    if (p_info->offset + p_nb_bytes > p_info->size) l_nb_read = p_info->size - p_info->offset;
+    #####:   40:    memcpy(p_buffer, p_info->data + p_info->offset, l_nb_read);
+    #####:   41:    p_info->offset += l_nb_read;
+    #####:   42:    return l_nb_read;
+        -:   43:}
+        -:   44:
+       36:   45:static OPJ_CODEC_FORMAT get_codec_format(uint8_t* data, uint32_t data_len) {
+       36:   46:    if (data_len >= 4 &&
+       36:   47:        data[0] == 0x00 &&
+       36:   48:        data[1] == 0x00 &&
+       36:   49:        data[2] == 0x00 &&
+       36:   50:        data[3] == 0x0C) {
+        1:   51:        return OPJ_CODEC_JP2;
+        -:   52:    }
+       35:   53:    return OPJ_CODEC_J2K;
+        -:   54:}
+        -:   55:
+       36:   56:static opj_codec_t* create_decoder(OPJ_CODEC_FORMAT format) {
+       36:   57:    opj_codec_t* l_codec = opj_create_decompress(format);
+       36:   58:    if (!l_codec) return NULL;
+        -:   59:
+        -:   60:    opj_dparameters_t l_params;
+       35:   61:    opj_set_default_decoder_parameters(&l_params);
+       35:   62:    if (!opj_setup_decoder(l_codec, &l_params)) {
+        1:   63:        opj_destroy_codec(l_codec);
+        1:   64:        return NULL;
+        -:   65:    }
+       34:   66:    return l_codec;
+        -:   67:}
+        -:   68:
+       34:   69:static opj_stream_t* create_mem_stream(opj_buffer_info_t* buffer_info, uint32_t data_len) {
+       34:   70:    opj_stream_t* l_stream = opj_stream_default_create(OPJ_TRUE);
+       34:   71:    opj_stream_set_read_function(l_stream, opj_read_from_buffer);
+       34:   72:    opj_stream_set_user_data(l_stream, buffer_info, NULL);
+       34:   73:    opj_stream_set_user_data_length(l_stream, data_len);
+       34:   74:    return l_stream;
+        -:   75:}
+        -:   76:
+       34:   77:static opj_image_t* decode_internal(uint8_t* data, uint32_t data_len, OPJ_CODEC_FORMAT format, uint32_t max_pixels, double x0, double y0, double x1, double y1, int use_ratio) {
+       34:   78:    last_error = ERR_NONE;
+        -:   79:
+       34:   80:    opj_buffer_info_t buffer_info = {data, data_len, 0};
+        -:   81:
+       34:   82:    opj_codec_t* l_codec = create_decoder(format);
+       34:   83:    if (!l_codec) {
+        2:   84:        last_error = ERR_DECODER_SETUP;
+        2:   85:        return NULL;
+        -:   86:    }
+        -:   87:
+       32:   88:    opj_stream_t* l_stream = create_mem_stream(&buffer_info, data_len);
+        -:   89:
+       32:   90:    opj_image_t* l_image = NULL;
+       32:   91:    if (!opj_read_header(l_stream, l_codec, &l_image)) {
+        3:   92:        last_error = ERR_HEADER;
+        -:   93:    } else {
+       29:   94:        uint32_t width = l_image->x1 - l_image->x0;
+       29:   95:        uint32_t height = l_image->y1 - l_image->y0;
+        -:   96:
+        -:   97:        uint32_t ux0, uy0, ux1, uy1;
+       29:   98:        if (use_ratio) {
+        4:   99:            ux0 = (uint32_t)(width * x0);
+        4:  100:            uy0 = (uint32_t)(height * y0);
+        4:  101:            ux1 = (uint32_t)(width * x1);
+        4:  102:            uy1 = (uint32_t)(height * y1);
+        4:  103:            if (ux1 > width) ux1 = width;
+        4:  104:            if (uy1 > height) uy1 = height;
+        -:  105:        } else {
+       25:  106:            ux0 = (uint32_t)x0;
+       25:  107:            uy0 = (uint32_t)y0;
+       25:  108:            ux1 = (uint32_t)x1;
+       25:  109:            uy1 = (uint32_t)y1;
+        -:  110:        }
+        -:  111:
+        -:  112:        // Check bounds if partial decoding is requested (x1 > 0 or y1 > 0)
+        -:  113:        // If x1 and y1 are 0, we assume full decode (no crop)
+        -:  114:        // Note: For ratio, x1/y1 will be > 0 if valid ratio passed.
+        -:  115:        // We need to handle 0,0,0,0 ratio as full decode too?
+        -:  116:        // Usually ratio 0.0 to 1.0 means 0 to width.
+        -:  117:        // If user passes 0,0,0,0 as ratio, it means empty region?
+        -:  118:        // But the previous API used 0,0,0,0 as 'full decode'.
+        -:  119:        // If use_ratio is true, we expect valid ratios.
+        -:  120:        // However, if we want full decode via ratio, we'd pass 0.0, 0.0, 1.0, 1.0.
+        -:  121:        // Let's stick to: if use_ratio is false, 0,0,0,0 means full.
+        -:  122:        // If use_ratio is true, 0,0,0,0 -> ux0=0, uy0=0, ux1=0, uy1=0 -> is_partial=0 -> full decode.
+        -:  123:        // So it works out.
+        -:  124:
+       29:  125:        int is_partial = (ux1 != 0 || uy1 != 0);
+       29:  126:        int bounds_ok = 1;
+        -:  127:
+       29:  128:        if (is_partial) {
+       25:  129:             if (ux0 < l_image->x0 || uy0 < l_image->y0 || ux1 > l_image->x1 || uy1 > l_image->y1 || ux0 >= ux1 || uy0 >= uy1) {
+       17:  130:                 bounds_ok = 0;
+        -:  131:             } else {
+        8:  132:                 if (!opj_set_decode_area(l_codec, l_image, ux0, uy0, ux1, uy1)) {
+        -:  133:                     // Should not happen if bounds are ok, but safety check
+    #####:  134:                     bounds_ok = 0;
+        -:  135:                 }
+        -:  136:             }
+        -:  137:        }
+        -:  138:
+       29:  139:        if (!bounds_ok) {
+       17:  140:            last_error = ERR_REGION_OUT_OF_BOUNDS;
+       17:  141:            opj_image_destroy(l_image);
+       17:  142:            l_image = NULL;
+       13:  143:        } else if (max_pixels > 0 && ((uint64_t)width * height) > max_pixels) {
+       1*:  144:            uint32_t output_width = is_partial ? (ux1 - ux0) : width;
+       1*:  145:            uint32_t output_height = is_partial ? (uy1 - uy0) : height;
+        -:  146:
+        1:  147:            if (((uint64_t)output_width * output_height) > max_pixels) {
+        1:  148:                last_error = ERR_PIXEL_DATA_SIZE;
+        1:  149:                opj_image_destroy(l_image);
+        1:  150:                l_image = NULL;
+    #####:  151:            } else if (!opj_decode(l_codec, l_stream, l_image)) {
+    #####:  152:                last_error = ERR_DECODE;
+    #####:  153:                opj_image_destroy(l_image);
+    #####:  154:                l_image = NULL;
+        -:  155:            }
+       11:  156:        } else if (!opj_decode(l_codec, l_stream, l_image)) {
+        9:  157:            last_error = ERR_DECODE;
+        9:  158:            opj_image_destroy(l_image);
+        9:  159:            l_image = NULL;
+        -:  160:        }
+        -:  161:    }
+       32:  162:    opj_stream_destroy(l_stream);
+       32:  163:    opj_destroy_codec(l_codec);
+        -:  164:
+       32:  165:    return l_image;
+        -:  166:}
+        -:  167:
+       39:  168:static opj_image_t* decode_opj_common(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint32_t max_heap_size, int color_format, double x0, double y0, double x1, double y1, int use_ratio) {
+       39:  169:    uint32_t divider = (color_format == COLOR_FORMAT_RGB565) ? 2 : 4;
+       39:  170:    uint32_t max_input_size = max_heap_size / divider;
+        -:  171:
+       39:  172:    if (!data || data_len < MIN_INPUT_SIZE || data_len > max_input_size) {
+        5:  173:        last_error = ERR_INPUT_DATA_SIZE;
+        5:  174:        return NULL;
+        -:  175:    }
+        -:  176:
+       34:  177:    OPJ_CODEC_FORMAT format = get_codec_format(data, data_len);
+       34:  178:    return decode_internal(data, data_len, format, max_pixels, x0, y0, x1, y1, use_ratio);
+        -:  179:}
+        -:  180:
+        5:  181:static int32_t* get_alpha_component(opj_image_t* image) {
+        5:  182:    if (image->numcomps <= 3) return NULL;
+       20:  183:    for (uint32_t i = 0; i < image->numcomps; i++) {
+       17:  184:        if (image->comps[i].alpha != 0) return image->comps[i].data;
+        -:  185:    }
+        3:  186:    return image->comps[3].data;
+        -:  187:}
+        -:  188:
+        5:  189:static void write_headers_argb8888(uint8_t* buffer, uint32_t file_size, uint32_t width, uint32_t height) {
+        5:  190:    uint32_t bmp_header_size = 14;
+        5:  191:    uint32_t dib_header_size = 40;
+        5:  192:    uint32_t offset = bmp_header_size + dib_header_size;
+        -:  193:
+        -:  194:    // BMP Header
+        5:  195:    buffer[0] = 0x42; // 'B'
+        5:  196:    buffer[1] = 0x4D; // 'M'
+        5:  197:    memcpy(&buffer[2], &file_size, 4);
+        5:  198:    uint32_t reserved = 0;
+        5:  199:    memcpy(&buffer[6], &reserved, 4);
+        5:  200:    memcpy(&buffer[10], &offset, 4);
+        -:  201:
+        -:  202:    // DIB Header (BITMAPINFOHEADER)
+        5:  203:    memcpy(&buffer[14], &dib_header_size, 4);
+        5:  204:    memcpy(&buffer[18], &width, 4);
+        5:  205:    int32_t neg_height = -(int32_t)height; // Top-down
+        5:  206:    memcpy(&buffer[22], &neg_height, 4);
+        5:  207:    uint16_t planes = 1;
+        5:  208:    memcpy(&buffer[26], &planes, 2);
+        5:  209:    uint16_t bpp = 32;
+        5:  210:    memcpy(&buffer[28], &bpp, 2);
+        5:  211:    uint32_t compression = 0; // BI_RGB
+        5:  212:    memcpy(&buffer[30], &compression, 4);
+        5:  213:    uint32_t image_size = 0; // Can be 0 for BI_RGB
+        5:  214:    memcpy(&buffer[34], &image_size, 4);
+        5:  215:    int32_t resolution = 0;
+        5:  216:    memcpy(&buffer[38], &resolution, 4);
+        5:  217:    memcpy(&buffer[42], &resolution, 4);
+        5:  218:    uint32_t colors = 0;
+        5:  219:    memcpy(&buffer[46], &colors, 4);
+        5:  220:    memcpy(&buffer[50], &colors, 4);
+        5:  221:}
+        -:  222:
+        3:  223:static void write_headers_rgb565(uint8_t* buffer, uint32_t file_size, uint32_t width, uint32_t height) {
+        3:  224:    uint32_t bmp_header_size = 14;
+        3:  225:    uint32_t dib_header_size = 40;
+        3:  226:    uint32_t mask_size = 12; // 3 * 4 bytes for bitfields
+        3:  227:    uint32_t offset = bmp_header_size + dib_header_size + mask_size;
+        -:  228:
+        -:  229:    // BMP Header
+        3:  230:    buffer[0] = 0x42;
+        3:  231:    buffer[1] = 0x4D;
+        3:  232:    memcpy(&buffer[2], &file_size, 4);
+        3:  233:    uint32_t reserved = 0;
+        3:  234:    memcpy(&buffer[6], &reserved, 4);
+        3:  235:    memcpy(&buffer[10], &offset, 4);
+        -:  236:
+        -:  237:    // DIB Header
+        3:  238:    memcpy(&buffer[14], &dib_header_size, 4);
+        3:  239:    memcpy(&buffer[18], &width, 4);
+        3:  240:    int32_t neg_height = -(int32_t)height;
+        3:  241:    memcpy(&buffer[22], &neg_height, 4);
+        3:  242:    uint16_t planes = 1;
+        3:  243:    memcpy(&buffer[26], &planes, 2);
+        3:  244:    uint16_t bpp = 16;
+        3:  245:    memcpy(&buffer[28], &bpp, 2);
+        3:  246:    uint32_t compression = 3; // BI_BITFIELDS
+        3:  247:    memcpy(&buffer[30], &compression, 4);
+        3:  248:    uint32_t image_size = 0;
+        3:  249:    memcpy(&buffer[34], &image_size, 4);
+        3:  250:    int32_t resolution = 0;
+        3:  251:    memcpy(&buffer[38], &resolution, 4);
+        3:  252:    memcpy(&buffer[42], &resolution, 4);
+        3:  253:    uint32_t colors = 0;
+        3:  254:    memcpy(&buffer[46], &colors, 4);
+        3:  255:    memcpy(&buffer[50], &colors, 4);
+        -:  256:
+        -:  257:    // Color Masks (Red, Green, Blue)
+        -:  258:    // 565 format: R(5) G(6) B(5)
+        -:  259:    // Masks are usually written as DWORDs in R, G, B order
+        3:  260:    uint32_t r_mask = 0xF800;
+        3:  261:    uint32_t g_mask = 0x07E0;
+        3:  262:    uint32_t b_mask = 0x001F;
+        3:  263:    memcpy(&buffer[54], &r_mask, 4);
+        3:  264:    memcpy(&buffer[58], &g_mask, 4);
+        3:  265:    memcpy(&buffer[62], &b_mask, 4);
+        3:  266:}
+        -:  267:
+        8:  268:static uint8_t* convert_image_to_bmp(opj_image_t* image, int color_format) {
+        8:  269:    uint32_t width = image->x1 - image->x0;
+        8:  270:    uint32_t height = image->y1 - image->y0;
+        -:  271:
+        8:  272:    if (image->numcomps < 1) {
+    #####:  273:        last_error = ERR_DECODE;
+    #####:  274:        return NULL;
+        -:  275:    }
+        -:  276:
+        8:  277:    int32_t* r_data = NULL;
+        8:  278:    int32_t* g_data = NULL;
+        8:  279:    int32_t* b_data = NULL;
+        8:  280:    int32_t* a_data = NULL;
+        -:  281:
+        8:  282:    if (image->numcomps == 1) {
+        2:  283:        r_data = image->comps[0].data;
+        2:  284:        g_data = image->comps[0].data;
+        2:  285:        b_data = image->comps[0].data;
+        6:  286:    } else if (image->numcomps == 2) {
+        1:  287:        r_data = image->comps[0].data;
+        1:  288:        g_data = image->comps[0].data;
+        1:  289:        b_data = image->comps[0].data;
+        1:  290:        if (image->comps[1].alpha != 0) {
+        1:  291:            a_data = image->comps[1].data;
+        -:  292:        }
+        -:  293:    } else {
+        5:  294:        r_data = image->comps[0].data;
+        5:  295:        g_data = image->comps[1].data;
+        5:  296:        b_data = image->comps[2].data;
+        5:  297:        a_data = get_alpha_component(image);
+        -:  298:    }
+        -:  299:
+        8:  300:    uint8_t* bmp_buffer = NULL;
+        -:  301:
+        8:  302:    if (color_format == COLOR_FORMAT_RGB565) {
+        -:  303:        // RGB565: 2 bytes per pixel. Rows padded to 4 bytes.
+        3:  304:        uint32_t row_bytes = (width * 2 + 3) & ~3;
+        3:  305:        uint32_t pixel_data_size = row_bytes * height;
+        3:  306:        uint32_t header_size = 14 + 40 + 12; // Header + DIB + Masks
+        3:  307:        uint32_t file_size = header_size + pixel_data_size;
+        -:  308:
+        3:  309:        bmp_buffer = (uint8_t*)malloc(file_size);
+        3:  310:        if (!bmp_buffer) {
+    #####:  311:            last_error = ERR_DECODE;
+    #####:  312:            return NULL;
+        -:  313:        }
+        -:  314:
+        3:  315:        write_headers_rgb565(bmp_buffer, file_size, width, height);
+        -:  316:
+        3:  317:        uint8_t* ptr = bmp_buffer + header_size;
+       16:  318:        for (uint32_t y = 0; y < height; y++) {
+       13:  319:            uint16_t* row_ptr = (uint16_t*)ptr;
+      119:  320:            for (uint32_t x = 0; x < width; x++) {
+      106:  321:                uint32_t idx = y * width + x;
+      106:  322:                uint16_t r = ((uint16_t)r_data[idx] >> 3) & 0x1F;
+      106:  323:                uint16_t g = ((uint16_t)g_data[idx] >> 2) & 0x3F;
+      106:  324:                uint16_t b = ((uint16_t)b_data[idx] >> 3) & 0x1F;
+      106:  325:                row_ptr[x] = (r << 11) | (g << 5) | b;
+        -:  326:            }
+       13:  327:            ptr += row_bytes;
+        -:  328:        }
+        -:  329:
+        -:  330:    } else {
+        -:  331:        // ARGB8888: 4 bytes per pixel. Rows always aligned to 4.
+        5:  332:        uint32_t row_bytes = width * 4;
+        5:  333:        uint32_t pixel_data_size = row_bytes * height;
+        5:  334:        uint32_t header_size = 14 + 40;
+        5:  335:        uint32_t file_size = header_size + pixel_data_size;
+        -:  336:
+        5:  337:        bmp_buffer = (uint8_t*)malloc(file_size);
+        5:  338:        if (!bmp_buffer) {
+    #####:  339:            last_error = ERR_DECODE;
+    #####:  340:            return NULL;
+        -:  341:        }
+        -:  342:
+        5:  343:        write_headers_argb8888(bmp_buffer, file_size, width, height);
+        -:  344:
+        5:  345:        uint8_t* ptr = bmp_buffer + header_size;
+        5:  346:        if (a_data) {
+      110:  347:            for (uint32_t i = 0; i < width * height; i++) {
+      106:  348:                *ptr++ = (uint8_t)b_data[i];
+      106:  349:                *ptr++ = (uint8_t)g_data[i];
+      106:  350:                *ptr++ = (uint8_t)r_data[i];
+      106:  351:                *ptr++ = (uint8_t)a_data[i];
+        -:  352:            }
+        -:  353:        } else {
+        3:  354:            for (uint32_t i = 0; i < width * height; i++) {
+        2:  355:                *ptr++ = (uint8_t)b_data[i];
+        2:  356:                *ptr++ = (uint8_t)g_data[i];
+        2:  357:                *ptr++ = (uint8_t)r_data[i];
+        2:  358:                *ptr++ = 0xFF;
+        -:  359:            }
+        -:  360:        }
+        -:  361:    }
+        8:  362:    return bmp_buffer;
+        -:  363:}
+        -:  364:
+        -:  365:EMSCRIPTEN_KEEPALIVE
+       35:  366:uint8_t* decodeToBmp(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint32_t max_heap_size, int color_format, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1) {
+       35:  367:    opj_image_t* image = decode_opj_common(data, data_len, max_pixels, max_heap_size, color_format, (double)x0, (double)y0, (double)x1, (double)y1, 0);
+       35:  368:    if (!image) return NULL;
+        -:  369:
+        2:  370:    uint8_t* bmp_buffer = convert_image_to_bmp(image, color_format);
+        -:  371:
+        2:  372:    opj_image_destroy(image);
+        2:  373:    return bmp_buffer;
+        -:  374:}
+        -:  375:
+        -:  376:EMSCRIPTEN_KEEPALIVE
+        4:  377:uint8_t* decodeToBmpWithRatio(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint32_t max_heap_size, int color_format, double x0, double y0, double x1, double y1) {
+        4:  378:    opj_image_t* image = decode_opj_common(data, data_len, max_pixels, max_heap_size, color_format, x0, y0, x1, y1, 1);
+        4:  379:    if (!image) return NULL;
+        -:  380:
+    #####:  381:    uint8_t* bmp_buffer = convert_image_to_bmp(image, color_format);
+        -:  382:
+    #####:  383:    opj_image_destroy(image);
+    #####:  384:    return bmp_buffer;
+        -:  385:}
+        -:  386:
+        -:  387:EMSCRIPTEN_KEEPALIVE
+        4:  388:uint32_t* getSize(uint8_t* data, uint32_t data_len) {
+        4:  389:    last_error = ERR_NONE;
+        4:  390:    if (!data || data_len < MIN_INPUT_SIZE) {
+        2:  391:        last_error = ERR_INPUT_DATA_SIZE;
+        2:  392:        return NULL;
+        -:  393:    }
+        -:  394:
+        2:  395:    opj_buffer_info_t buffer_info = {data, data_len, 0};
+        -:  396:
+        2:  397:    OPJ_CODEC_FORMAT format = get_codec_format(data, data_len);
+        -:  398:
+        2:  399:    opj_codec_t* l_codec = create_decoder(format);
+        2:  400:    if (!l_codec) {
+    #####:  401:        last_error = ERR_DECODER_SETUP;
+    #####:  402:        return NULL;
+        -:  403:    }
+        -:  404:
+        2:  405:    opj_stream_t* l_stream = create_mem_stream(&buffer_info, data_len);
+        -:  406:
+        2:  407:    opj_image_t* l_image = NULL;
+        2:  408:    uint32_t* result = NULL;
+        -:  409:
+        2:  410:    if (!opj_read_header(l_stream, l_codec, &l_image)) {
+        1:  411:        last_error = ERR_HEADER;
+        -:  412:    } else {
+        1:  413:        uint32_t width = l_image->x1 - l_image->x0;
+        1:  414:        uint32_t height = l_image->y1 - l_image->y0;
+        -:  415:
+        1:  416:        result = (uint32_t*)malloc(2 * sizeof(uint32_t));
+        1:  417:        if (result) {
+        1:  418:            result[0] = width;
+        1:  419:            result[1] = height;
+        -:  420:        } else {
+    #####:  421:            last_error = ERR_DECODE;
+        -:  422:        }
+        1:  423:        opj_image_destroy(l_image);
+        -:  424:    }
+        -:  425:
+        2:  426:    opj_stream_destroy(l_stream);
+        2:  427:    opj_destroy_codec(l_codec);
+        -:  428:
+        2:  429:    return result;
+        -:  430:}

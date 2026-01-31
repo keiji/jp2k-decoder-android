@@ -5,7 +5,7 @@
 
 // Include wrapper.c to access static functions
 // This is a bit hacky but effective for unit testing static functions
-#include "../wrapper.c"
+#include "wrapper.c"
 
 // Helper to create a mock opj_image_t
 opj_image_t* create_mock_image(uint32_t width, uint32_t height, int numcomps, int with_alpha) {

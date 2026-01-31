@@ -1,0 +1,684 @@
+        -:    0:Source:test/test_wrapper.c
+        -:    0:Graph:test_wrapper_cov-test_wrapper.gcno
+        -:    0:Data:test_wrapper_cov-test_wrapper.gcda
+        -:    0:Runs:1
+        -:    1:#include <stdio.h>
+        -:    2:#include <stdlib.h>
+        -:    3:#include <assert.h>
+        -:    4:#include "emscripten.h"
+        -:    5:
+        -:    6:// Include wrapper.c to access static functions
+        -:    7:// This is a bit hacky but effective for unit testing static functions
+        -:    8:#include "wrapper.c"
+        -:    9:
+        -:   10:// Helper to create a mock opj_image_t
+        5:   11:opj_image_t* create_mock_image(uint32_t width, uint32_t height, int numcomps, int with_alpha) {
+        5:   12:    opj_image_t* image = (opj_image_t*)calloc(1, sizeof(opj_image_t));
+        5:   13:    image->x0 = 0;
+        5:   14:    image->y0 = 0;
+        5:   15:    image->x1 = width;
+        5:   16:    image->y1 = height;
+        5:   17:    image->numcomps = numcomps;
+        5:   18:    image->comps = (opj_image_comp_t*)calloc(numcomps, sizeof(opj_image_comp_t));
+        -:   19:
+       20:   20:    for (int i = 0; i < numcomps; i++) {
+       15:   21:        image->comps[i].data = (int32_t*)malloc(width * height * sizeof(int32_t));
+        -:   22:        // Initialize with 0
+       15:   23:        memset(image->comps[i].data, 0, width * height * sizeof(int32_t));
+        -:   24:    }
+        -:   25:
+        5:   26:    if (with_alpha && numcomps > 3) {
+        1:   27:        image->comps[3].alpha = 1;
+        -:   28:    }
+        -:   29:
+        5:   30:    return image;
+        -:   31:}
+        -:   32:
+        1:   33:void test_argb8888() {
+        1:   34:    printf("Testing ARGB8888...\n");
+        1:   35:    uint32_t width = 2;
+        1:   36:    uint32_t height = 2;
+        1:   37:    opj_image_t* image = create_mock_image(width, height, 4, 1);
+        -:   38:
+        -:   39:    // Set specific pixels
+        -:   40:    // Pixel 0 (Top-Left): Red (255, 0, 0, 128)
+        1:   41:    image->comps[0].data[0] = 255;
+        1:   42:    image->comps[1].data[0] = 0;
+        1:   43:    image->comps[2].data[0] = 0;
+        1:   44:    image->comps[3].data[0] = 128;
+        -:   45:
+        -:   46:    // Pixel 1 (Top-Right): Green (0, 255, 0, 255)
+        1:   47:    image->comps[0].data[1] = 0;
+        1:   48:    image->comps[1].data[1] = 255;
+        1:   49:    image->comps[2].data[1] = 0;
+        1:   50:    image->comps[3].data[1] = 255;
+        -:   51:
+        -:   52:    // Pixel 2 (Bottom-Left): Blue (0, 0, 255, 255)
+        1:   53:    image->comps[0].data[2] = 0;
+        1:   54:    image->comps[1].data[2] = 0;
+        1:   55:    image->comps[2].data[2] = 255;
+        1:   56:    image->comps[3].data[2] = 255;
+        -:   57:
+        -:   58:    // Pixel 3 (Bottom-Right): White (255, 255, 255, 255)
+        1:   59:    image->comps[0].data[3] = 255;
+        1:   60:    image->comps[1].data[3] = 255;
+        1:   61:    image->comps[2].data[3] = 255;
+        1:   62:    image->comps[3].data[3] = 255;
+        -:   63:
+        1:   64:    uint8_t* bmp = convert_image_to_bmp(image, COLOR_FORMAT_ARGB8888);
+       1*:   65:    assert(bmp != NULL);
+        -:   66:
+        -:   67:    // Check header
+        -:   68:    // Offset 0: 'BM'
+       1*:   69:    assert(bmp[0] == 0x42);
+       1*:   70:    assert(bmp[1] == 0x4D);
+        -:   71:
+        -:   72:    // File size at offset 2
+        1:   73:    uint32_t fileSize = *(uint32_t*)(bmp + 2);
+        -:   74:    // Header 14 + DIB 40 = 54
+        -:   75:    // Pixels: 2*2 * 4 = 16 bytes
+        -:   76:    // Total 70 bytes
+        1:   77:    if (fileSize != 54 + 16) {
+    #####:   78:        printf("Expected file size 70, got %u\n", fileSize);
+    #####:   79:        assert(fileSize == 54 + 16);
+        -:   80:    }
+        -:   81:
+        -:   82:    // Pixel data at offset 54
+        1:   83:    uint8_t* pixels = bmp + 54;
+        -:   84:
+        -:   85:    // Code uses BGRA order for ARGB8888
+        -:   86:
+        -:   87:    // Pixel 0: B=0, G=0, R=255, A=128
+       1*:   88:    assert(pixels[0] == 0);   // B
+       1*:   89:    assert(pixels[1] == 0);   // G
+       1*:   90:    assert(pixels[2] == 255); // R
+       1*:   91:    assert(pixels[3] == 128); // A
+        -:   92:
+        -:   93:    // Pixel 1: B=0, G=255, R=0, A=255
+       1*:   94:    assert(pixels[4] == 0);
+       1*:   95:    assert(pixels[5] == 255);
+       1*:   96:    assert(pixels[6] == 0);
+       1*:   97:    assert(pixels[7] == 255);
+        -:   98:
+        -:   99:    // Pixel 2: B=255, G=0, R=0, A=255
+       1*:  100:    assert(pixels[8] == 255);
+       1*:  101:    assert(pixels[9] == 0);
+       1*:  102:    assert(pixels[10] == 0);
+       1*:  103:    assert(pixels[11] == 255);
+        -:  104:
+        -:  105:    // Pixel 3: B=255, G=255, R=255, A=255
+       1*:  106:    assert(pixels[12] == 255);
+       1*:  107:    assert(pixels[13] == 255);
+       1*:  108:    assert(pixels[14] == 255);
+       1*:  109:    assert(pixels[15] == 255);
+        -:  110:
+        1:  111:    free(bmp);
+        1:  112:    opj_image_destroy(image); // Uses our stub
+        1:  113:    printf("ARGB8888 Passed.\n");
+        1:  114:}
+        -:  115:
+        1:  116:void test_rgb565() {
+        1:  117:    printf("Testing RGB565...\n");
+        1:  118:    uint32_t width = 2;
+        1:  119:    uint32_t height = 2;
+        1:  120:    opj_image_t* image = create_mock_image(width, height, 3, 0);
+        -:  121:
+        -:  122:    // Pixel 0: Red (255, 0, 0)
+        1:  123:    image->comps[0].data[0] = 255;
+        1:  124:    image->comps[1].data[0] = 0;
+        1:  125:    image->comps[2].data[0] = 0;
+        -:  126:
+        -:  127:    // Pixel 1: Green (0, 255, 0)
+        1:  128:    image->comps[0].data[1] = 0;
+        1:  129:    image->comps[1].data[1] = 255;
+        1:  130:    image->comps[2].data[1] = 0;
+        -:  131:
+        -:  132:    // Pixel 2: Blue (0, 0, 255)
+        1:  133:    image->comps[0].data[2] = 0;
+        1:  134:    image->comps[1].data[2] = 0;
+        1:  135:    image->comps[2].data[2] = 255;
+        -:  136:
+        -:  137:    // Pixel 3: White (255, 255, 255)
+        1:  138:    image->comps[0].data[3] = 255;
+        1:  139:    image->comps[1].data[3] = 255;
+        1:  140:    image->comps[2].data[3] = 255;
+        -:  141:
+        1:  142:    uint8_t* bmp = convert_image_to_bmp(image, COLOR_FORMAT_RGB565);
+       1*:  143:    assert(bmp != NULL);
+        -:  144:
+        -:  145:    // Header size: 14 + 40 + 12 = 66
+        -:  146:    // Pixels: 2 * 2bytes = 4 bytes per row. 2 rows. 8 bytes.
+        -:  147:    // Total 74 bytes.
+        1:  148:    uint32_t fileSize = *(uint32_t*)(bmp + 2);
+        1:  149:    if (fileSize != 66 + 8) {
+    #####:  150:        printf("Expected file size 74, got %u\n", fileSize);
+    #####:  151:        assert(fileSize == 66 + 8);
+        -:  152:    }
+        -:  153:
+        1:  154:    uint8_t* pixels = bmp + 66;
+        -:  155:
+        -:  156:    // RGB565: R(5) G(6) B(5)
+        -:  157:    // Red: 11111 000000 00000 -> 0xF800
+        -:  158:    // Green: 00000 111111 00000 -> 0x07E0
+        -:  159:    // Blue: 00000 000000 11111 -> 0x001F
+        -:  160:    // White: 11111 111111 11111 -> 0xFFFF
+        -:  161:
+        1:  162:    uint16_t* p16 = (uint16_t*)pixels;
+        -:  163:
+        1:  164:    if (p16[0] != 0xF800) {
+    #####:  165:        printf("Expected Red 0xF800, got 0x%04X\n", p16[0]);
+    #####:  166:        assert(p16[0] == 0xF800);
+        -:  167:    }
+        1:  168:    if (p16[1] != 0x07E0) {
+    #####:  169:        printf("Expected Green 0x07E0, got 0x%04X\n", p16[1]);
+    #####:  170:        assert(p16[1] == 0x07E0);
+        -:  171:    }
+        1:  172:    if (p16[2] != 0x001F) {
+    #####:  173:        printf("Expected Blue 0x001F, got 0x%04X\n", p16[2]);
+    #####:  174:        assert(p16[2] == 0x001F);
+        -:  175:    }
+        1:  176:    if (p16[3] != 0xFFFF) {
+    #####:  177:        printf("Expected White 0xFFFF, got 0x%04X\n", p16[3]);
+    #####:  178:        assert(p16[3] == 0xFFFF);
+        -:  179:    }
+        -:  180:
+        1:  181:    free(bmp);
+        1:  182:    opj_image_destroy(image);
+        1:  183:    printf("RGB565 Passed.\n");
+        1:  184:}
+        -:  185:
+        1:  186:void test_grayscale() {
+        1:  187:    printf("Testing Grayscale (1ch)...\n");
+        1:  188:    uint32_t width = 2;
+        1:  189:    uint32_t height = 1;
+        1:  190:    opj_image_t* image = create_mock_image(width, height, 1, 0);
+        -:  191:
+        -:  192:    // Pixel 0: 0
+        1:  193:    image->comps[0].data[0] = 0;
+        -:  194:    // Pixel 1: 255
+        1:  195:    image->comps[0].data[1] = 255;
+        -:  196:
+        -:  197:    // 1. Test ARGB8888 Expansion (Gray -> R=G=B, A=255)
+        1:  198:    uint8_t* bmp = convert_image_to_bmp(image, COLOR_FORMAT_ARGB8888);
+       1*:  199:    assert(bmp != NULL);
+        1:  200:    uint8_t* pixels = bmp + 54;
+        -:  201:
+        -:  202:    // Pixel 0: B=0, G=0, R=0, A=255
+       1*:  203:    assert(pixels[0] == 0);
+       1*:  204:    assert(pixels[1] == 0);
+       1*:  205:    assert(pixels[2] == 0);
+       1*:  206:    assert(pixels[3] == 255);
+        -:  207:
+        -:  208:    // Pixel 1: B=255, G=255, R=255, A=255
+       1*:  209:    assert(pixels[4] == 255);
+       1*:  210:    assert(pixels[5] == 255);
+       1*:  211:    assert(pixels[6] == 255);
+       1*:  212:    assert(pixels[7] == 255);
+        -:  213:
+        1:  214:    free(bmp);
+        -:  215:
+        -:  216:    // 2. Test RGB565 Expansion (Gray -> R=G=B)
+        1:  217:    bmp = convert_image_to_bmp(image, COLOR_FORMAT_RGB565);
+       1*:  218:    assert(bmp != NULL);
+        1:  219:    uint16_t* p16 = (uint16_t*)(bmp + 66);
+        -:  220:
+        -:  221:    // Pixel 0: Black (0x0000)
+       1*:  222:    assert(p16[0] == 0x0000);
+        -:  223:
+        -:  224:    // Pixel 1: White (0xFFFF)
+       1*:  225:    assert(p16[1] == 0xFFFF);
+        -:  226:
+        1:  227:    free(bmp);
+        1:  228:    opj_image_destroy(image);
+        1:  229:    printf("Grayscale Passed.\n");
+        1:  230:}
+        -:  231:
+        1:  232:void test_grayscale_alpha() {
+        1:  233:    printf("Testing Grayscale + Alpha (2ch)...\n");
+        1:  234:    uint32_t width = 1;
+        1:  235:    uint32_t height = 1;
+        1:  236:    opj_image_t* image = create_mock_image(width, height, 2, 0);
+        -:  237:
+        -:  238:    // Gray: 100
+        1:  239:    image->comps[0].data[0] = 100;
+        -:  240:    // Alpha: 200 (explicitly marked as alpha by our logic check if we set the flag,
+        -:  241:    // OR just by position if we assume 2nd channel is alpha?
+        -:  242:    // My code says: if (image->comps[1].alpha != 0) { a_data = image->comps[1].data; }
+        -:  243:    // So I must set the alpha flag in the mock for it to be picked up as Alpha.
+        1:  244:    image->comps[1].data[0] = 200;
+        1:  245:    image->comps[1].alpha = 1;
+        -:  246:
+        1:  247:    uint8_t* bmp = convert_image_to_bmp(image, COLOR_FORMAT_ARGB8888);
+       1*:  248:    assert(bmp != NULL);
+        1:  249:    uint8_t* pixels = bmp + 54;
+        -:  250:
+        -:  251:    // B=100, G=100, R=100, A=200
+       1*:  252:    assert(pixels[0] == 100);
+       1*:  253:    assert(pixels[1] == 100);
+       1*:  254:    assert(pixels[2] == 100);
+       1*:  255:    assert(pixels[3] == 200);
+        -:  256:
+        1:  257:    free(bmp);
+        1:  258:    opj_image_destroy(image);
+        1:  259:    printf("Grayscale + Alpha Passed.\n");
+        1:  260:}
+        -:  261:
+        1:  262:void test_multichannel() {
+        1:  263:    printf("Testing Multi-channel (5ch)...\n");
+        1:  264:    uint32_t width = 1;
+        1:  265:    uint32_t height = 1;
+        1:  266:    opj_image_t* image = create_mock_image(width, height, 5, 0);
+        -:  267:
+        -:  268:    // Set pixel values
+        -:  269:    // Comp 0 (R): 255
+        1:  270:    image->comps[0].data[0] = 255;
+        -:  271:    // Comp 1 (G): 0
+        1:  272:    image->comps[1].data[0] = 0;
+        -:  273:    // Comp 2 (B): 0
+        1:  274:    image->comps[2].data[0] = 0;
+        -:  275:    // Comp 3 (A): 128 (treated as alpha if flag set, or index 3 if not)
+        -:  276:    // In create_mock_image, we didn't set alpha flag for index 3 unless called with with_alpha=1
+        -:  277:    // But get_alpha_component returns comps[3].data if no alpha flag is found and numcomps > 3
+        1:  278:    image->comps[3].data[0] = 128;
+        -:  279:    // Comp 4 (Ignored): 100
+        1:  280:    image->comps[4].data[0] = 100;
+        -:  281:
+        1:  282:    uint8_t* bmp = convert_image_to_bmp(image, COLOR_FORMAT_ARGB8888);
+       1*:  283:    assert(bmp != NULL);
+        1:  284:    uint8_t* pixels = bmp + 54;
+        -:  285:
+        -:  286:    // Check BGRA
+        -:  287:    // B=0 (from comp 2)
+       1*:  288:    assert(pixels[0] == 0);
+        -:  289:    // G=0 (from comp 1)
+       1*:  290:    assert(pixels[1] == 0);
+        -:  291:    // R=255 (from comp 0)
+       1*:  292:    assert(pixels[2] == 255);
+        -:  293:    // A=128 (from comp 3)
+       1*:  294:    assert(pixels[3] == 128);
+        -:  295:
+        1:  296:    free(bmp);
+        1:  297:    opj_image_destroy(image);
+        1:  298:    printf("Multi-channel Passed.\n");
+        1:  299:}
+        -:  300:
+        1:  301:void test_input_validation() {
+        1:  302:    printf("Testing Input Validation...\n");
+        -:  303:
+        1:  304:    uint8_t dummy_data[100] = {0};
+        -:  305:    uint8_t* result;
+        -:  306:
+        -:  307:    // Case 1: Input size too small (< MIN_INPUT_SIZE)
+        1:  308:    result = decodeToBmp(dummy_data, 11, 0, 1000, COLOR_FORMAT_ARGB8888, 0, 0, 0, 0);
+       1*:  309:    assert(result == NULL);
+       1*:  310:    assert(last_error == ERR_INPUT_DATA_SIZE);
+        -:  311:
+        -:  312:    // Case 2: ARGB8888 size check (data_len > max_heap / 4)
+        -:  313:    // max_heap = 100 -> max_input = 25
+        -:  314:    // input = 26 -> Error
+        1:  315:    result = decodeToBmp(dummy_data, 26, 0, 100, COLOR_FORMAT_ARGB8888, 0, 0, 0, 0);
+       1*:  316:    assert(result == NULL);
+       1*:  317:    assert(last_error == ERR_INPUT_DATA_SIZE);
+        -:  318:
+        -:  319:    // Case 3: ARGB8888 size check success boundary
+        -:  320:    // max_heap = 100 -> max_input = 25
+        -:  321:    // input = 25 -> OK (proceeds to decode, fails there)
+        1:  322:    result = decodeToBmp(dummy_data, 25, 0, 100, COLOR_FORMAT_ARGB8888, 0, 0, 0, 0);
+       1*:  323:    assert(result == NULL);
+        -:  324:    // Since stubs opj_read_header returns false, we expect ERR_HEADER
+        -:  325:    // But verify it PASSED the size check (NOT ERR_INPUT_DATA_SIZE)
+       1*:  326:    assert(last_error == ERR_HEADER);
+        -:  327:
+        -:  328:    // Case 4: RGB565 size check (data_len > max_heap / 2)
+        -:  329:    // max_heap = 100 -> max_input = 50
+        -:  330:    // input = 51 -> Error
+        1:  331:    result = decodeToBmp(dummy_data, 51, 0, 100, COLOR_FORMAT_RGB565, 0, 0, 0, 0);
+       1*:  332:    assert(result == NULL);
+       1*:  333:    assert(last_error == ERR_INPUT_DATA_SIZE);
+        -:  334:
+        -:  335:    // Case 5: RGB565 size check success boundary
+        -:  336:    // max_heap = 100 -> max_input = 50
+        -:  337:    // input = 50 -> OK (proceeds to decode)
+        1:  338:    result = decodeToBmp(dummy_data, 50, 0, 100, COLOR_FORMAT_RGB565, 0, 0, 0, 0);
+       1*:  339:    assert(result == NULL);
+       1*:  340:    assert(last_error == ERR_HEADER);
+        -:  341:
+        1:  342:    printf("Input Validation Passed.\n");
+        1:  343:}
+        -:  344:
+        -:  345:extern int stub_should_header_succeed;
+        -:  346:extern uint32_t stub_width;
+        -:  347:extern uint32_t stub_height;
+        -:  348:extern int stub_should_decompress_create_succeed;
+        -:  349:extern int stub_should_setup_succeed;
+        -:  350:extern int stub_should_decode_succeed;
+        -:  351:
+        1:  352:void test_jp2_signature() {
+        1:  353:    printf("Testing JP2 Signature...\n");
+        -:  354:    // JP2 Signature: 00 00 00 0C ...
+        1:  355:    uint8_t dummy_data[20] = {0x00, 0x00, 0x00, 0x0C, 0x00};
+        -:  356:
+        -:  357:    // We expect it to reach decode_internal and fail at opj_read_header (since we didn't set stub_should_header_succeed)
+        -:  358:    // But we want to ensure it calls opj_create_decompress(OPJ_CODEC_JP2)
+        -:  359:    // We can't verify the argument to opj_create_decompress easily without mocking it with arg check.
+        -:  360:    // However, we know get_codec_format is called.
+        -:  361:    // This test is mainly to execute the line in get_codec_format.
+        -:  362:
+        1:  363:    uint8_t* result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 0, 0, 0, 0);
+       1*:  364:    assert(result == NULL);
+       1*:  365:    assert(last_error == ERR_HEADER);
+        1:  366:    printf("JP2 Signature Passed.\n");
+        1:  367:}
+        -:  368:
+        1:  369:void test_pixel_limit() {
+        1:  370:    printf("Testing Pixel Limit...\n");
+        1:  371:    uint8_t dummy_data[20] = {0};
+        -:  372:
+        -:  373:    // Setup success stubs for header
+        1:  374:    stub_should_header_succeed = 1;
+        1:  375:    stub_width = 20;
+        1:  376:    stub_height = 20;
+        -:  377:    // Pixels = 400.
+        -:  378:
+        -:  379:    // Limit = 100.
+        1:  380:    uint8_t* result = decodeToBmp(dummy_data, 20, 100, 1000, COLOR_FORMAT_ARGB8888, 0, 0, 0, 0);
+       1*:  381:    assert(result == NULL);
+       1*:  382:    assert(last_error == ERR_PIXEL_DATA_SIZE);
+        -:  383:
+        1:  384:    printf("Pixel Limit Passed.\n");
+        1:  385:    stub_should_header_succeed = 0;
+        1:  386:}
+        -:  387:
+        1:  388:void test_full_decode_success() {
+        1:  389:    printf("Testing Full Decode Success...\n");
+        1:  390:    uint8_t dummy_data[20] = {0};
+        -:  391:
+        1:  392:    stub_should_header_succeed = 1;
+        1:  393:    stub_should_decode_succeed = 1;
+        1:  394:    stub_width = 10;
+        1:  395:    stub_height = 10;
+        -:  396:
+        -:  397:    // ARGB8888
+        1:  398:    uint8_t* result = decodeToBmp(dummy_data, 20, 0, 10000, COLOR_FORMAT_ARGB8888, 0, 0, 0, 0);
+       1*:  399:    assert(result != NULL);
+        -:  400:
+        -:  401:    // Check BMP header briefly
+       1*:  402:    assert(result[0] == 0x42);
+       1*:  403:    assert(result[1] == 0x4D);
+        -:  404:
+        1:  405:    free(result);
+        -:  406:
+        -:  407:    // RGB565
+        1:  408:    result = decodeToBmp(dummy_data, 20, 0, 10000, COLOR_FORMAT_RGB565, 0, 0, 0, 0);
+       1*:  409:    assert(result != NULL);
+        1:  410:    free(result);
+        -:  411:
+        1:  412:    printf("Full Decode Success Passed.\n");
+        1:  413:    stub_should_header_succeed = 0;
+        1:  414:    stub_should_decode_succeed = 0;
+        1:  415:}
+        -:  416:
+        1:  417:void test_getSize() {
+        1:  418:    printf("Testing getSize...\n");
+        1:  419:    uint8_t dummy_data[20] = {0}; // > MIN_INPUT_SIZE (12)
+        -:  420:
+        -:  421:    // Case 1: Header failure
+        1:  422:    stub_should_header_succeed = 0;
+        1:  423:    uint32_t* result = getSize(dummy_data, 20);
+       1*:  424:    assert(result == NULL);
+       1*:  425:    assert(last_error == ERR_HEADER);
+        -:  426:
+        -:  427:    // Case 2: Success
+        1:  428:    stub_should_header_succeed = 1;
+        1:  429:    stub_width = 1920;
+        1:  430:    stub_height = 1080;
+        -:  431:
+        1:  432:    result = getSize(dummy_data, 20);
+       1*:  433:    assert(result != NULL);
+       1*:  434:    assert(result[0] == 1920);
+       1*:  435:    assert(result[1] == 1080);
+        -:  436:
+        1:  437:    free(result);
+        1:  438:    printf("getSize Passed.\n");
+        -:  439:
+        -:  440:    // Reset stubs
+        1:  441:    stub_should_header_succeed = 0;
+        1:  442:}
+        -:  443:
+        1:  444:void test_decode_failures() {
+        1:  445:    printf("Testing Decode Failures...\n");
+        1:  446:    uint8_t dummy_data[100] = {0};
+        -:  447:
+        -:  448:    // 1. Null Data
+        1:  449:    printf("Debug: 1. Null Data\n");
+        1:  450:    uint8_t* result = decodeToBmp(NULL, 100, 0, 1000, COLOR_FORMAT_ARGB8888, 0, 0, 0, 0);
+       1*:  451:    assert(result == NULL);
+       1*:  452:    assert(last_error == ERR_INPUT_DATA_SIZE);
+        -:  453:
+        -:  454:    // 2. Zero Length
+        1:  455:    printf("Debug: 2. Zero Length\n");
+        1:  456:    result = decodeToBmp(dummy_data, 0, 0, 1000, COLOR_FORMAT_ARGB8888, 0, 0, 0, 0);
+       1*:  457:    assert(result == NULL);
+       1*:  458:    assert(last_error == ERR_INPUT_DATA_SIZE);
+        -:  459:
+        -:  460:    // 3. Create Decoder Failure
+        1:  461:    printf("Debug: 3. Create Decoder Failure\n");
+        1:  462:    stub_should_decompress_create_succeed = 0;
+        1:  463:    result = decodeToBmp(dummy_data, 100, 0, 1000, COLOR_FORMAT_ARGB8888, 0, 0, 0, 0);
+       1*:  464:    assert(result == NULL);
+       1*:  465:    assert(last_error == ERR_DECODER_SETUP);
+        1:  466:    stub_should_decompress_create_succeed = 1; // Reset
+        -:  467:
+        -:  468:    // 4. Setup Decoder Failure
+        1:  469:    printf("Debug: 4. Setup Decoder Failure\n");
+        1:  470:    stub_should_setup_succeed = 0;
+        1:  471:    result = decodeToBmp(dummy_data, 100, 0, 1000, COLOR_FORMAT_ARGB8888, 0, 0, 0, 0);
+       1*:  472:    assert(result == NULL);
+       1*:  473:    assert(last_error == ERR_DECODER_SETUP);
+        1:  474:    stub_should_setup_succeed = 1; // Reset
+        -:  475:
+        1:  476:    printf("Decode Failures Passed.\n");
+        1:  477:}
+        -:  478:
+        1:  479:void test_bounds_check() {
+        1:  480:    printf("Testing Bounds Check...\n");
+        1:  481:    uint8_t dummy_data[20] = {0};
+        -:  482:
+        -:  483:    // Setup success stubs
+        1:  484:    stub_should_header_succeed = 1;
+        1:  485:    stub_width = 100;
+        1:  486:    stub_height = 100;
+        -:  487:
+        -:  488:    // 1. Valid Full Decode (explicit 0s)
+        1:  489:    uint8_t* result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 0, 0, 0, 0);
+       1*:  490:    assert(result == NULL);
+        -:  491:    // decode stub returns FALSE, so ERR_DECODE is expected, NOT ERR_REGION_OUT_OF_BOUNDS
+       1*:  492:    assert(last_error == ERR_DECODE);
+        -:  493:
+        -:  494:    // 2. Valid Partial Decode
+        1:  495:    result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 10, 10, 20, 20);
+       1*:  496:    assert(result == NULL);
+       1*:  497:    assert(last_error == ERR_DECODE);
+        -:  498:
+        -:  499:    // 3. Invalid: x1 > width
+        1:  500:    result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 0, 0, 101, 20);
+       1*:  501:    assert(result == NULL);
+       1*:  502:    assert(last_error == ERR_REGION_OUT_OF_BOUNDS);
+        -:  503:
+        -:  504:    // 4. Invalid: y1 > height
+        1:  505:    result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 0, 0, 100, 101);
+       1*:  506:    assert(result == NULL);
+       1*:  507:    assert(last_error == ERR_REGION_OUT_OF_BOUNDS);
+        -:  508:
+        -:  509:    // 5. Invalid: x0 < 0 (uint32, so large number check? No, passed as uint32, always >= 0)
+        -:  510:    // Checking bounds relative to x1.
+        -:  511:    // Invalid: x0 >= x1
+        1:  512:    result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 20, 0, 20, 20);
+       1*:  513:    assert(result == NULL);
+       1*:  514:    assert(last_error == ERR_REGION_OUT_OF_BOUNDS);
+        -:  515:
+        -:  516:    // 6. Invalid: x0 >= x1 (bigger)
+        1:  517:    result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 21, 0, 20, 20);
+       1*:  518:    assert(result == NULL);
+       1*:  519:    assert(last_error == ERR_REGION_OUT_OF_BOUNDS);
+        -:  520:
+        1:  521:    printf("Bounds Check Passed.\n");
+        -:  522:
+        1:  523:    stub_should_header_succeed = 0;
+        1:  524:}
+        -:  525:
+        1:  526:void test_getsize_failures() {
+        1:  527:    printf("Testing getSize Failures...\n");
+        1:  528:    uint8_t dummy_data[100] = {0};
+        -:  529:
+        -:  530:    // 1. Null Data
+        1:  531:    uint32_t* result = getSize(NULL, 100);
+       1*:  532:    assert(result == NULL);
+       1*:  533:    assert(last_error == ERR_INPUT_DATA_SIZE);
+        -:  534:
+        -:  535:    // 2. Zero Length
+        1:  536:    result = getSize(dummy_data, 0);
+       1*:  537:    assert(result == NULL);
+       1*:  538:    assert(last_error == ERR_INPUT_DATA_SIZE);
+        -:  539:
+        1:  540:    printf("getSize Failures Passed.\n");
+        1:  541:}
+        -:  542:
+        1:  543:void test_ratio_decode() {
+        1:  544:    printf("Testing Ratio Decode...\n");
+        1:  545:    uint8_t dummy_data[20] = {0};
+        -:  546:
+        -:  547:    // Setup success stubs
+        1:  548:    stub_should_header_succeed = 1;
+        1:  549:    stub_width = 100;
+        1:  550:    stub_height = 200;
+        -:  551:
+        -:  552:    // Test 1: Ratio 0.0, 0.0, 0.5, 0.5 -> 0, 0, 50, 100
+        -:  553:    // We expect decode_internal to call opj_set_decode_area(..., 0, 0, 50, 100)
+        -:  554:    // But we can't verify that directly in this unit test structure unless we mock opj_set_decode_area and record args.
+        -:  555:    // However, we can verify that it does NOT return OUT_OF_BOUNDS for valid ratio.
+        -:  556:
+        -:  557:    // 0.0, 0.0, 0.5, 0.5
+        1:  558:    uint8_t* result = decodeToBmpWithRatio(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 0.0, 0.0, 0.5, 0.5);
+        -:  559:    // It should fail at opj_decode stage (ERR_DECODE), not REGION_OUT_OF_BOUNDS
+       1*:  560:    assert(result == NULL);
+       1*:  561:    assert(last_error == ERR_DECODE);
+        -:  562:
+        -:  563:    // Test 2: Invalid Ratio (resulting in out of bounds?)
+        -:  564:    // 0.0, 0.0, 1.1, 1.1 -> 0, 0, 100, 200 (clamped)
+        -:  565:    // My implementation clamps to width/height.
+        -:  566:    // So 1.1 becomes 1.0 (width).
+        -:  567:    // So it should still be valid.
+        1:  568:    result = decodeToBmpWithRatio(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 0.0, 0.0, 1.1, 1.1);
+       1*:  569:    assert(result == NULL);
+       1*:  570:    assert(last_error == ERR_DECODE);
+        -:  571:
+        -:  572:    // Test 3: "Empty" ratio? 0.5, 0.5, 0.5, 0.5 -> x0=50, x1=50 -> is_partial=0?
+        -:  573:    // x0=50, y0=100, x1=50, y1=100.
+        -:  574:    // is_partial check: (ux1 != 0 || uy1 != 0) -> true.
+        -:  575:    // bounds check: ux0 >= ux1 -> 50 >= 50 -> fail.
+        1:  576:    result = decodeToBmpWithRatio(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 0.5, 0.5, 0.5, 0.5);
+       1*:  577:    assert(result == NULL);
+       1*:  578:    assert(last_error == ERR_REGION_OUT_OF_BOUNDS);
+        -:  579:
+        -:  580:    // Test 4: Ratio Full Decode (0.0, 0.0, 1.0, 1.0) -> 0, 0, 100, 200
+        -:  581:    // ux0=0, uy0=0, ux1=100, uy1=200.
+        -:  582:    // is_partial = (100!=0 || 200!=0) -> true.
+        -:  583:    // Bounds OK. opj_set_decode_area called.
+        1:  584:    result = decodeToBmpWithRatio(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 0.0, 0.0, 1.0, 1.0);
+       1*:  585:    assert(result == NULL);
+       1*:  586:    assert(last_error == ERR_DECODE);
+        -:  587:
+        1:  588:    printf("Ratio Decode Passed.\n");
+        1:  589:    stub_should_header_succeed = 0;
+        1:  590:}
+        -:  591:
+       16:  592:void check_decode_boundary(const char* test_name, uint8_t* data, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, int expected_error) {
+       16:  593:    uint8_t* result = decodeToBmp(data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, x0, y0, x1, y1);
+      16*:  594:    assert(result == NULL);
+       16:  595:    if (last_error != expected_error) {
+    #####:  596:        printf("Test '%s' failed: expected error %d, got %d\n", test_name, expected_error, last_error);
+    #####:  597:        assert(last_error == expected_error);
+        -:  598:    }
+       16:  599:}
+        -:  600:
+        1:  601:void test_detailed_boundaries() {
+        1:  602:    printf("Testing Detailed Boundaries...\n");
+        1:  603:    uint8_t dummy_data[20] = {0};
+        -:  604:
+        -:  605:    // Setup success stubs for 100x100 image
+        1:  606:    stub_should_header_succeed = 1;
+        1:  607:    stub_width = 100;
+        1:  608:    stub_height = 100;
+        -:  609:
+        -:  610:    // 1. Left-Up Limit: 0, 0, 10, 10 (Valid)
+        1:  611:    check_decode_boundary("1. Left-Up Limit", dummy_data, 0, 0, 10, 10, ERR_DECODE);
+        -:  612:
+        -:  613:    // 2. Left-Up Exceed: (Left Exceeds, Up Exceeds)
+        -:  614:    // Using UINT32_MAX to represent -1 in unsigned arithmetic
+        1:  615:    check_decode_boundary("2. Left-Up Exceed", dummy_data, UINT32_MAX, UINT32_MAX, 10, 10, ERR_REGION_OUT_OF_BOUNDS);
+        -:  616:
+        -:  617:    // 3. Right-Up Limit: 90, 0, 100, 10 (Valid)
+        1:  618:    check_decode_boundary("3. Right-Up Limit", dummy_data, 90, 0, 100, 10, ERR_DECODE);
+        -:  619:
+        -:  620:    // 4. Right-Up Exceed: (Right Exceeds, Up Exceeds)
+        1:  621:    check_decode_boundary("4. Right-Up Exceed", dummy_data, 90, UINT32_MAX, 101, 10, ERR_REGION_OUT_OF_BOUNDS);
+        -:  622:
+        -:  623:    // 5. Left-Down Limit: 0, 90, 10, 100 (Valid)
+        1:  624:    check_decode_boundary("5. Left-Down Limit", dummy_data, 0, 90, 10, 100, ERR_DECODE);
+        -:  625:
+        -:  626:    // 6. Left-Down Exceed: (Left Exceeds, Down Exceeds)
+        1:  627:    check_decode_boundary("6. Left-Down Exceed", dummy_data, UINT32_MAX, 90, 10, 101, ERR_REGION_OUT_OF_BOUNDS);
+        -:  628:
+        -:  629:    // 7. Right-Down Limit: 90, 90, 100, 100 (Valid)
+        1:  630:    check_decode_boundary("7. Right-Down Limit", dummy_data, 90, 90, 100, 100, ERR_DECODE);
+        -:  631:
+        -:  632:    // 8. Right-Down Exceed: (Right Exceeds, Down Exceeds)
+        1:  633:    check_decode_boundary("8. Right-Down Exceed", dummy_data, 90, 90, 101, 101, ERR_REGION_OUT_OF_BOUNDS);
+        -:  634:
+        -:  635:    // 9. Top Limit (y0=0), Left Exceed (x0 < 0)
+        1:  636:    check_decode_boundary("9. Top Limit, Left Exceed", dummy_data, UINT32_MAX, 0, 10, 10, ERR_REGION_OUT_OF_BOUNDS);
+        -:  637:
+        -:  638:    // 10. Top Limit (y0=0), Right Exceed (x1 > 100)
+        1:  639:    check_decode_boundary("10. Top Limit, Right Exceed", dummy_data, 90, 0, 101, 10, ERR_REGION_OUT_OF_BOUNDS);
+        -:  640:
+        -:  641:    // 11. Bottom Limit (y1=100), Left Exceed (x0 < 0)
+        1:  642:    check_decode_boundary("11. Bottom Limit, Left Exceed", dummy_data, UINT32_MAX, 90, 10, 100, ERR_REGION_OUT_OF_BOUNDS);
+        -:  643:
+        -:  644:    // 12. Bottom Limit (y1=100), Right Exceed (x1 > 100)
+        1:  645:    check_decode_boundary("12. Bottom Limit, Right Exceed", dummy_data, 90, 90, 101, 100, ERR_REGION_OUT_OF_BOUNDS);
+        -:  646:
+        -:  647:    // 13. Left Limit (x0=0), Top Exceed (y0 < 0)
+        1:  648:    check_decode_boundary("13. Left Limit, Top Exceed", dummy_data, 0, UINT32_MAX, 10, 10, ERR_REGION_OUT_OF_BOUNDS);
+        -:  649:
+        -:  650:    // 14. Left Limit (x0=0), Bottom Exceed (y1 > 100)
+        1:  651:    check_decode_boundary("14. Left Limit, Bottom Exceed", dummy_data, 0, 90, 10, 101, ERR_REGION_OUT_OF_BOUNDS);
+        -:  652:
+        -:  653:    // 15. Right Limit (x1=100), Top Exceed (y0 < 0)
+        1:  654:    check_decode_boundary("15. Right Limit, Top Exceed", dummy_data, 90, UINT32_MAX, 100, 10, ERR_REGION_OUT_OF_BOUNDS);
+        -:  655:
+        -:  656:    // 16. Right Limit (x1=100), Bottom Exceed (y1 > 100)
+        1:  657:    check_decode_boundary("16. Right Limit, Bottom Exceed", dummy_data, 90, 90, 100, 101, ERR_REGION_OUT_OF_BOUNDS);
+        -:  658:
+        1:  659:    printf("Detailed Boundaries Passed.\n");
+        1:  660:    stub_should_header_succeed = 0;
+        1:  661:}
+        -:  662:
+        1:  663:int main() {
+        1:  664:    test_argb8888();
+        1:  665:    test_rgb565();
+        1:  666:    test_grayscale();
+        1:  667:    test_grayscale_alpha();
+        1:  668:    test_multichannel();
+        1:  669:    test_input_validation();
+        1:  670:    test_getSize();
+        1:  671:    test_decode_failures();
+        1:  672:    test_bounds_check();
+        1:  673:    test_getsize_failures();
+        1:  674:    test_ratio_decode();
+        1:  675:    test_jp2_signature();
+        1:  676:    test_pixel_limit();
+        1:  677:    test_full_decode_success();
+        1:  678:    test_detailed_boundaries();
+        1:  679:    return 0;
+        -:  680:}
