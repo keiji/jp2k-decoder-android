@@ -14,6 +14,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.mockito.ArgumentCaptor
 import org.mockito.Mock
 import org.mockito.MockedStatic
 import org.mockito.Mockito
@@ -368,6 +369,320 @@ class Jp2kDecoderAsyncCoverageTest {
         verify(callback).onError(org.mockito.kotlin.check {
             assertTrue(it is RuntimeException)
             assertEquals("JS Error", it.message)
+        })
+    }
+
+    @Test
+    fun testInit_AlreadyInitialized() {
+        val decoder = createInitializedDecoder()
+        val callback = org.mockito.kotlin.mock<Callback<Unit>>()
+
+        // Call init again
+        decoder.init(context, callback)
+
+        // Should success immediately
+        verify(callback).onSuccess(Unit)
+    }
+
+    @Test
+    fun testInit_Released() {
+        val decoder = createInitializedDecoder()
+        decoder.release()
+
+        val callback = org.mockito.kotlin.mock<Callback<Unit>>()
+        decoder.init(context, callback)
+
+        verify(callback).onError(org.mockito.kotlin.check {
+            assertTrue(it is java.util.concurrent.CancellationException)
+            assertEquals("Decoder was released.", it.message)
+        })
+    }
+
+    @Test
+    fun testInit_StateError() {
+        val decoder = createInitializedDecoder()
+        // Simulate processing state
+        val stateField = Jp2kDecoderAsync::class.java.getDeclaredField("_state")
+        stateField.isAccessible = true
+        stateField.set(decoder, State.Processing)
+
+        val callback = org.mockito.kotlin.mock<Callback<Unit>>()
+        decoder.init(context, callback)
+
+        verify(callback).onError(org.mockito.kotlin.check {
+            assertTrue(it is IllegalStateException)
+            assertTrue(it.message!!.contains("Cannot initialize while in state"))
+        })
+    }
+
+    @Test
+    fun testInit_SandboxFailure() {
+        val exception = RuntimeException("Sandbox creation failed")
+        val failedFuture = object : ListenableFuture<JavaScriptSandbox> {
+            override fun cancel(mayInterruptIfRunning: Boolean): Boolean = false
+            override fun isCancelled(): Boolean = false
+            override fun isDone(): Boolean = true
+            override fun get(): JavaScriptSandbox { throw java.util.concurrent.ExecutionException(exception) }
+            override fun get(timeout: Long, unit: TimeUnit?): JavaScriptSandbox { throw java.util.concurrent.ExecutionException(exception) }
+            override fun addListener(listener: Runnable, executor: Executor) {
+                listener.run()
+            }
+        }
+
+        mockJp2kSandbox.`when`<ListenableFuture<JavaScriptSandbox>> {
+            Jp2kSandbox.get(any<Context>())
+        }.thenReturn(failedFuture)
+
+        val directExecutor = Executor { it.run() }
+        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
+        val callback = org.mockito.kotlin.mock<Callback<Unit>>()
+
+        decoder.init(context, callback)
+
+        verify(callback).onError(org.mockito.kotlin.check {
+            assertTrue(it is java.util.concurrent.ExecutionException)
+            assertEquals("Sandbox creation failed", it.cause?.message ?: it.message)
+        })
+    }
+
+    @Test
+    fun testInit_IsolateFailure() {
+        val exception = RuntimeException("Isolate creation failed")
+
+        mockJp2kSandbox.`when`<JavaScriptIsolate> {
+            Jp2kSandbox.createIsolate(any(), any(), any())
+        }.thenThrow(exception)
+
+        val directExecutor = Executor { it.run() }
+        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
+        val callback = org.mockito.kotlin.mock<Callback<Unit>>()
+
+        decoder.init(context, callback)
+
+        verify(callback).onError(org.mockito.kotlin.check {
+            assertTrue(it is RuntimeException)
+        })
+    }
+
+    @Test
+    fun testLoadWasm_Failure() {
+         // Setup isolate to fail on loadWasm
+        val directExecutor = Executor { it.run() }
+        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
+
+        doAnswer { invocation ->
+            TestListenableFuture("0")
+        }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
+
+        val callback = org.mockito.kotlin.mock<Callback<Unit>>()
+        decoder.init(context, callback)
+
+         verify(callback).onError(org.mockito.kotlin.check {
+            assertTrue(it is IllegalStateException)
+            assertEquals("WASM instantiation failed.", it.message)
+        })
+    }
+
+    @Test
+    fun testLoadWasm_Exception() {
+         // Setup isolate to fail on loadWasm
+        val directExecutor = Executor { it.run() }
+        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
+
+        val exception = RuntimeException("WASM Error")
+        doAnswer { invocation ->
+            val future = org.mockito.kotlin.mock<ListenableFuture<String>>()
+            whenever(future.get()).thenThrow(java.util.concurrent.ExecutionException(exception))
+            future
+        }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
+
+        val callback = org.mockito.kotlin.mock<Callback<Unit>>()
+        decoder.init(context, callback)
+
+         verify(callback).onError(org.mockito.kotlin.check {
+            assertEquals("WASM Error", it.message)
+        })
+    }
+
+    @Test
+    fun testGetMemoryUsage_Success() {
+        val decoder = createInitializedDecoder()
+        val callback = org.mockito.kotlin.mock<Callback<MemoryUsage>>()
+
+        val jsonUsage = """{"wasmHeapSizeBytes": 2048}"""
+        doAnswer {
+            TestListenableFuture(jsonUsage)
+        }.whenever(isolate).evaluateJavaScriptAsync(org.mockito.ArgumentMatchers.contains("getMemoryUsage"))
+
+        decoder.getMemoryUsage(callback)
+
+        verify(callback).onSuccess(org.mockito.kotlin.check {
+            assertEquals(2048L, it.wasmHeapSizeBytes)
+        })
+    }
+
+    @Test
+    fun testGetMemoryUsage_Error() {
+        val decoder = createInitializedDecoder()
+        val callback = org.mockito.kotlin.mock<Callback<MemoryUsage>>()
+
+        val exception = RuntimeException("JS Error")
+        doAnswer {
+            throw exception
+        }.whenever(isolate).evaluateJavaScriptAsync(org.mockito.ArgumentMatchers.contains("getMemoryUsage"))
+
+        decoder.getMemoryUsage(callback)
+
+        verify(callback).onError(exception)
+    }
+
+    @Test
+    fun testGetMemoryUsage_StateError() {
+        val directExecutor = Executor { it.run() }
+        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
+        val callback = org.mockito.kotlin.mock<Callback<MemoryUsage>>()
+
+        // Uninitialized
+        decoder.getMemoryUsage(callback)
+        verify(callback).onError(org.mockito.kotlin.check {
+            assertTrue(it is IllegalStateException)
+            assertTrue(it.message!!.contains("Cannot getMemoryUsage while in state"))
+        })
+    }
+
+    @Test
+    fun testDecodeImage_InvalidRatio() {
+        val decoder = createInitializedDecoder()
+        val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
+        val data = ByteArray(20)
+
+        decoder.decodeImage(data, -0.1f, 0f, 0.5f, 0.5f, callback)
+        verify(callback).onError(org.mockito.kotlin.check {
+            assertTrue(it is IllegalArgumentException)
+            assertEquals("Ratio must be 0.0 - 1.0", it.message)
+        })
+    }
+
+    @Test
+    fun testDecodeImage_InputTooShort() {
+        val decoder = createInitializedDecoder()
+        val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
+        val data = ByteArray(5) // Too short
+
+        decoder.decodeImage(data, callback)
+        verify(callback).onError(org.mockito.kotlin.check {
+            assertTrue(it is IllegalArgumentException)
+            assertEquals("Input data is too short", it.message)
+        })
+    }
+
+    @Test
+    fun testDecodeImage_BitmapNull() {
+        val decoder = createInitializedDecoder()
+        val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
+        val data = ByteArray(20)
+
+        val jsonBmp = """{"bmp": "AQID"}"""
+        doAnswer {
+            TestListenableFuture(jsonBmp)
+        }.whenever(isolate).evaluateJavaScriptAsync(org.mockito.ArgumentMatchers.contains("decodeJ2K"))
+
+        // Mock BitmapFactory to return null
+        mockBitmapFactory.`when`<Bitmap> {
+            BitmapFactory.decodeByteArray(any(), any(), any(), any())
+        }.thenReturn(null)
+
+        decoder.decodeImage(data, callback)
+
+        verify(callback).onError(org.mockito.kotlin.check {
+            assertTrue(it is IllegalStateException)
+            assertEquals("Bitmap decoding failed (returned null).", it.message)
+        })
+    }
+
+    @Test
+    fun testPrecache_StateError() {
+        val directExecutor = Executor { it.run() }
+        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
+        val callback = org.mockito.kotlin.mock<Callback<Unit>>()
+
+        decoder.precache(ByteArray(20), callback)
+
+        verify(callback).onError(org.mockito.kotlin.check {
+            assertTrue(it is IllegalStateException)
+            assertTrue(it.message!!.contains("Cannot precache while in state"))
+        })
+    }
+
+    @Test
+    fun testGetSize_StateError() {
+        val directExecutor = Executor { it.run() }
+        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
+        val callback = org.mockito.kotlin.mock<Callback<Size>>()
+
+        decoder.getSize(callback)
+
+        verify(callback).onError(org.mockito.kotlin.check {
+            assertTrue(it is IllegalStateException)
+            assertTrue(it.message!!.contains("Cannot getSize while in state"))
+        })
+    }
+
+    @Test
+    fun testDecodeImage_StateError() {
+        val directExecutor = Executor { it.run() }
+        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
+        val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
+
+        decoder.decodeImage(ByteArray(20), callback)
+
+        verify(callback).onError(org.mockito.kotlin.check {
+             assertTrue(it is IllegalStateException)
+             assertTrue(it.message!!.contains("Cannot decodeImage while in state"))
+        })
+    }
+
+    @Test
+    fun testRelease_Exception() {
+         val decoder = createInitializedDecoder()
+
+         doAnswer { throw RuntimeException("Close failed") }.whenever(isolate).close()
+
+         decoder.release()
+
+         // Should verify no crash
+    }
+
+    @Test
+    fun testDecodeImage_ConcurrentRelease() {
+        val capturedRunnable = ArgumentCaptor.forClass(Runnable::class.java)
+        val mockExecutor = Mockito.mock(Executor::class.java)
+        val decoder = Jp2kDecoderAsync(backgroundExecutor = mockExecutor)
+
+        // Manual init
+        val stateField = Jp2kDecoderAsync::class.java.getDeclaredField("_state")
+        stateField.isAccessible = true
+        stateField.set(decoder, State.Initialized)
+        val jsIsolateField = Jp2kDecoderAsync::class.java.getDeclaredField("jsIsolate")
+        jsIsolateField.isAccessible = true
+        jsIsolateField.set(decoder, isolate)
+
+        val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
+        decoder.decodeImage(ByteArray(20), callback)
+
+        verify(mockExecutor).execute(capturedRunnable.capture())
+        val runnable = capturedRunnable.value
+
+        // Now call release
+        decoder.release()
+
+        // Now run the runnable
+        runnable.run()
+
+        // Verify callback error "Decoder was released."
+        verify(callback).onError(org.mockito.kotlin.check {
+            assertTrue(it is java.util.concurrent.CancellationException)
+            assertEquals("Decoder was released.", it.message)
         })
     }
 }

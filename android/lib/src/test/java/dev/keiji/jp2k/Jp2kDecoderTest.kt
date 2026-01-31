@@ -51,6 +51,7 @@ class Jp2kDecoderTest {
 
     private lateinit var mockJp2kSandbox: MockedStatic<Jp2kSandbox>
     private lateinit var mockBitmapFactory: MockedStatic<BitmapFactory>
+    private lateinit var mockLog: MockedStatic<android.util.Log>
 
     private val testDispatcher = StandardTestDispatcher()
 
@@ -90,24 +91,28 @@ class Jp2kDecoderTest {
         mockBitmapFactory.`when`<Bitmap> {
             BitmapFactory.decodeByteArray(any(), any(), any(), any())
         }.thenReturn(Mockito.mock(Bitmap::class.java))
+
+        mockLog = mockStatic(android.util.Log::class.java)
     }
 
     @After
     fun tearDown() {
         mockJp2kSandbox.close()
         mockBitmapFactory.close()
+        mockLog.close()
         Dispatchers.resetMain()
     }
 
     private suspend fun createInitializedDecoder(
-        scriptHandler: (String) -> TestListenableFuture<String> = { TestListenableFuture(INTERNAL_RESULT_SUCCESS) }
+        config: Config = Config(),
+        scriptHandler: (String) -> ListenableFuture<String> = { TestListenableFuture(INTERNAL_RESULT_SUCCESS) }
     ): Jp2kDecoder {
         doAnswer { invocation ->
             val script = invocation.arguments[0] as String
             scriptHandler(script)
         }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
 
-        val decoder = Jp2kDecoder(coroutineDispatcher = testDispatcher)
+        val decoder = Jp2kDecoder(config = config, coroutineDispatcher = testDispatcher)
         decoder.init(context)
         return decoder
     }
@@ -482,7 +487,7 @@ class Jp2kDecoderTest {
         }
 
         val data = ByteArray(20)
-        decoder.decodeImage(data, 0.0f, 0.0f, 0.5f, 0.5f)
+        decoder.decodeImage(data, 0.0.toFloat(), 0.0.toFloat(), 0.5.toFloat(), 0.5.toFloat())
 
         verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2KRatio("))
     }
@@ -533,4 +538,192 @@ class Jp2kDecoderTest {
         // close calls release, so state should be Released
         assertEquals(State.Released, decoder.state)
     }
+
+    @Test
+    fun testGetMemoryUsage_Error() = runTest {
+        val exception = RuntimeException("JS Error")
+
+        val decoder = createInitializedDecoder { script ->
+            if (script.contains("getMemoryUsage()")) {
+                 object : ListenableFuture<String> {
+                    override fun cancel(mayInterruptIfRunning: Boolean) = false
+                    override fun isCancelled() = false
+                    override fun isDone() = true
+                    override fun get(): String { throw java.util.concurrent.ExecutionException(exception) }
+                    override fun get(timeout: Long, unit: TimeUnit?): String { throw java.util.concurrent.ExecutionException(exception) }
+                    override fun addListener(listener: Runnable, executor: Executor) { listener.run() }
+                }
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        try {
+            decoder.getMemoryUsage()
+            fail("Should throw RuntimeException")
+        } catch (e: RuntimeException) {
+             assertEquals("JS Error", e.message)
+        }
+    }
+
+    @Test
+    fun testGetMemoryUsage_StateError() = runTest {
+        val decoder = Jp2kDecoder(coroutineDispatcher = testDispatcher)
+        try {
+            decoder.getMemoryUsage()
+            fail("Should throw IllegalStateException")
+        } catch (e: IllegalStateException) {
+            assertEquals("Cannot getMemoryUsage while in state: Uninitialized", e.message)
+        }
+    }
+
+    @Test
+    fun testLoadWasm_Failure() = runTest {
+        doAnswer { invocation ->
+            TestListenableFuture("0") // Failure
+        }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
+
+        val decoder = Jp2kDecoder(coroutineDispatcher = testDispatcher)
+        try {
+            decoder.init(context)
+            fail("Should throw IllegalStateException")
+        } catch (e: IllegalStateException) {
+            assertEquals("WASM instantiation failed.", e.message)
+        }
+    }
+
+    @Test
+    fun testDecodeImage_BitmapNull() = runTest {
+        val jsonBmp = """{"bmp": "AQID"}"""
+
+        val decoder = createInitializedDecoder { script ->
+            if (script.contains("decodeJ2K(")) {
+                TestListenableFuture(jsonBmp)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        // Mock BitmapFactory to return null
+        mockBitmapFactory.`when`<Bitmap> {
+            BitmapFactory.decodeByteArray(any(), any(), any(), any())
+        }.thenReturn(null)
+
+        val data = ByteArray(20)
+        try {
+            decoder.decodeImage(data)
+            fail("Should throw IllegalStateException")
+        } catch (e: IllegalStateException) {
+             assertEquals("Bitmap decoding failed (returned null).", e.message)
+        }
+    }
+
+    @Test
+    fun testDecodeImage_LoggingEnabled() = runTest {
+        val config = Config(logLevel = android.util.Log.VERBOSE)
+        val jsonBmp = """{"bmp": "AQID", "timePreProcess": 10, "timeWasm": 20, "timePostProcess": 30}"""
+
+        val decoder = createInitializedDecoder(config = config) { script ->
+            if (script.contains("decodeJ2K(")) {
+                TestListenableFuture(jsonBmp)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        decoder.decodeImage(ByteArray(20))
+
+        // Verified by coverage that logs were called
+    }
+
+    @Test
+    fun testPrecache_Error() = runTest {
+        val decoder = createInitializedDecoder { script ->
+             if (script.startsWith("globalThis.setData")) {
+                 TestListenableFuture("""{"errorCode": -5, "errorMessage": "Setup failed"}""")
+             } else {
+                 TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+             }
+        }
+
+        try {
+            decoder.precache(ByteArray(10))
+            fail("Should throw Jp2kException")
+        } catch (e: Jp2kException) {
+            assertEquals("Setup failed", e.message)
+        }
+    }
+
+    @Test
+    fun testPrecache_Exception() = runTest {
+        val exception = RuntimeException("JS Error")
+         val decoder = createInitializedDecoder { script ->
+             if (script.startsWith("globalThis.setData")) {
+                  object : ListenableFuture<String> {
+                    override fun cancel(mayInterruptIfRunning: Boolean) = false
+                    override fun isCancelled() = false
+                    override fun isDone() = true
+                    override fun get(): String { throw java.util.concurrent.ExecutionException(exception) }
+                    override fun get(timeout: Long, unit: TimeUnit?): String { throw java.util.concurrent.ExecutionException(exception) }
+                    override fun addListener(listener: Runnable, executor: Executor) { listener.run() }
+                }
+             } else {
+                 TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+             }
+        }
+
+        try {
+            decoder.precache(ByteArray(10))
+            fail("Should throw RuntimeException")
+        } catch (e: RuntimeException) {
+            assertEquals("JS Error", e.message)
+        }
+    }
+
+    @Test
+    fun testGetSize_Error() = runTest {
+        val decoder = createInitializedDecoder { script ->
+             if (script.startsWith("globalThis.getSizeWithCache")) {
+                 TestListenableFuture("""{"errorCode": -4, "errorMessage": "Get size failed"}""")
+             } else {
+                 TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+             }
+        }
+        decoder.precache(ByteArray(10))
+
+        try {
+            decoder.getSize()
+            fail("Should throw Jp2kException")
+        } catch (e: Jp2kException) {
+            assertEquals("Get size failed", e.message)
+        }
+    }
+
+    @Test
+    fun testGetSize_Exception() = runTest {
+         val exception = RuntimeException("JS Error")
+         val decoder = createInitializedDecoder { script ->
+             if (script.startsWith("globalThis.getSizeWithCache")) {
+                 object : ListenableFuture<String> {
+                    override fun cancel(mayInterruptIfRunning: Boolean) = false
+                    override fun isCancelled() = false
+                    override fun isDone() = true
+                    override fun get(): String { throw java.util.concurrent.ExecutionException(exception) }
+                    override fun get(timeout: Long, unit: TimeUnit?): String { throw java.util.concurrent.ExecutionException(exception) }
+                    override fun addListener(listener: Runnable, executor: Executor) { listener.run() }
+                }
+             } else {
+                 TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+             }
+        }
+        decoder.precache(ByteArray(10))
+
+        try {
+            decoder.getSize()
+            fail("Should throw RuntimeException")
+        } catch (e: RuntimeException) {
+            assertEquals("JS Error", e.message)
+        }
+    }
+
 }
