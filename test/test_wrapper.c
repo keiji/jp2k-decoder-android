@@ -27,6 +27,8 @@ void my_free(void* ptr) {
 // This is a bit hacky but effective for unit testing static functions
 #include "../wrapper.c"
 
+#define ERR_MEMORY -7
+
 // Helper to create a mock opj_image_t
 opj_image_t* create_mock_image(uint32_t width, uint32_t height, int numcomps, int with_alpha) {
     opj_image_t* image = (opj_image_t*)calloc(1, sizeof(opj_image_t));
@@ -788,7 +790,7 @@ void test_malloc_failures() {
     stub_should_malloc_succeed = 0;
     bmp = convert_image_to_bmp(image, COLOR_FORMAT_ARGB8888);
     assert(bmp == NULL);
-    assert(last_error == ERR_DECODE);
+    assert(last_error == ERR_MEMORY);
     stub_should_malloc_succeed = 1;
     opj_image_destroy(image);
 
@@ -797,7 +799,7 @@ void test_malloc_failures() {
     stub_should_malloc_succeed = 0;
     bmp = convert_image_to_bmp(image, COLOR_FORMAT_RGB565);
     assert(bmp == NULL);
-    assert(last_error == ERR_DECODE);
+    assert(last_error == ERR_MEMORY);
     stub_should_malloc_succeed = 1;
     opj_image_destroy(image);
 
@@ -809,7 +811,7 @@ void test_malloc_failures() {
 
     uint32_t* size = getSize(dummy_data, 20);
     assert(size == NULL);
-    assert(last_error == ERR_DECODE);
+    assert(last_error == ERR_MEMORY);
 
     stub_should_malloc_succeed = 1;
     stub_should_header_succeed = 0;

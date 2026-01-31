@@ -12,6 +12,7 @@
 #define ERR_DECODE -4
 #define ERR_DECODER_SETUP -5
 #define ERR_REGION_OUT_OF_BOUNDS -6
+#define ERR_MEMORY -7
 
 #define MIN_INPUT_SIZE 12
 
@@ -308,7 +309,7 @@ static uint8_t* convert_image_to_bmp(opj_image_t* image, int color_format) {
 
         bmp_buffer = (uint8_t*)malloc(file_size);
         if (!bmp_buffer) {
-            last_error = ERR_DECODE;
+            last_error = ERR_MEMORY;
             return NULL;
         }
 
@@ -336,7 +337,7 @@ static uint8_t* convert_image_to_bmp(opj_image_t* image, int color_format) {
 
         bmp_buffer = (uint8_t*)malloc(file_size);
         if (!bmp_buffer) {
-            last_error = ERR_DECODE;
+            last_error = ERR_MEMORY;
             return NULL;
         }
 
@@ -418,7 +419,7 @@ uint32_t* getSize(uint8_t* data, uint32_t data_len) {
             result[0] = width;
             result[1] = height;
         } else {
-            last_error = ERR_DECODE;
+            last_error = ERR_MEMORY;
         }
         opj_image_destroy(l_image);
     }
