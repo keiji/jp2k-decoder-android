@@ -10,6 +10,8 @@ import androidx.javascriptengine.JavaScriptSandbox
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.Mock
@@ -273,8 +275,8 @@ class Jp2kDecoderAsyncCoverageTest {
         decoder.decodeImage(callback)
 
         verify(callback).onError(org.mockito.kotlin.check {
-            assert(it is IllegalStateException)
-            assert(it.message == "No data cached")
+            assertTrue(it is IllegalStateException)
+            assertEquals("No data cached", it.message)
         })
     }
 
@@ -292,8 +294,8 @@ class Jp2kDecoderAsyncCoverageTest {
         decoder.decodeImage(callback)
 
         verify(callback).onError(org.mockito.kotlin.check {
-            assert(it is Jp2kException)
-            assert(it.message == "Some random error")
+            assertTrue(it is Jp2kException)
+            assertEquals("Some random error", it.message)
         })
     }
 
@@ -311,8 +313,8 @@ class Jp2kDecoderAsyncCoverageTest {
         decoder.precache(data, callback)
 
         verify(callback).onError(org.mockito.kotlin.check {
-            assert(it is Jp2kException)
-            assert(it.message == "Setup failed")
+            assertTrue(it is Jp2kException)
+            assertEquals("Setup failed", it.message)
         })
     }
 
@@ -329,8 +331,8 @@ class Jp2kDecoderAsyncCoverageTest {
         decoder.precache(data, callback)
 
         verify(callback).onError(org.mockito.kotlin.check {
-            assert(it is RuntimeException)
-            assert(it.message == "JS Error")
+            assertTrue(it is RuntimeException)
+            assertEquals("JS Error", it.message)
         })
     }
 
@@ -347,8 +349,8 @@ class Jp2kDecoderAsyncCoverageTest {
         decoder.getSize(callback)
 
         verify(callback).onError(org.mockito.kotlin.check {
-            assert(it is Jp2kException)
-            assert(it.message == "Get size failed")
+            assertTrue(it is Jp2kException)
+            assertEquals("Get size failed", it.message)
         })
     }
 
@@ -364,8 +366,8 @@ class Jp2kDecoderAsyncCoverageTest {
         decoder.getSize(callback)
 
         verify(callback).onError(org.mockito.kotlin.check {
-            assert(it is RuntimeException)
-            assert(it.message == "JS Error")
+            assertTrue(it is RuntimeException)
+            assertEquals("JS Error", it.message)
         })
     }
 }
