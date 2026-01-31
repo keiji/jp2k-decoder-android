@@ -589,6 +589,106 @@ void test_ratio_decode() {
     stub_should_header_succeed = 0;
 }
 
+void test_detailed_boundaries() {
+    printf("Testing Detailed Boundaries...\n");
+    uint8_t dummy_data[20] = {0};
+
+    // Setup success stubs for 100x100 image
+    stub_should_header_succeed = 1;
+    stub_width = 100;
+    stub_height = 100;
+
+    uint8_t* result;
+
+    // 1. Left-Up Limit: 0, 0, 10, 10 (Valid)
+    result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 0, 0, 10, 10);
+    assert(result == NULL);
+    assert(last_error == ERR_DECODE); // Not REGION_OUT_OF_BOUNDS
+
+    // 2. Left-Up Exceed: (Left Exceeds, Up Exceeds)
+    // Using UINT32_MAX to represent -1 in unsigned arithmetic
+    // "Left Exceed" usually means x0 < 0
+    // "Up Exceed" usually means y0 < 0
+    result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, UINT32_MAX, UINT32_MAX, 10, 10);
+    assert(result == NULL);
+    assert(last_error == ERR_REGION_OUT_OF_BOUNDS);
+
+    // 3. Right-Up Limit: 90, 0, 100, 10 (Valid)
+    result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 90, 0, 100, 10);
+    assert(result == NULL);
+    assert(last_error == ERR_DECODE);
+
+    // 4. Right-Up Exceed: (Right Exceeds)
+    // x1 > 100
+    result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 90, UINT32_MAX, 101, 10);
+    assert(result == NULL);
+    assert(last_error == ERR_REGION_OUT_OF_BOUNDS);
+
+    // 5. Left-Down Limit: 0, 90, 10, 100 (Valid)
+    result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 0, 90, 10, 100);
+    assert(result == NULL);
+    assert(last_error == ERR_DECODE);
+
+    // 6. Left-Down Exceed: (Down Exceeds)
+    // y1 > 100
+    result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, UINT32_MAX, 90, 10, 101);
+    assert(result == NULL);
+    assert(last_error == ERR_REGION_OUT_OF_BOUNDS);
+
+    // 7. Right-Down Limit: 90, 90, 100, 100 (Valid)
+    result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 90, 90, 100, 100);
+    assert(result == NULL);
+    assert(last_error == ERR_DECODE);
+
+    // 8. Right-Down Exceed: (Right Exceeds, Down Exceeds)
+    result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 90, 90, 101, 101);
+    assert(result == NULL);
+    assert(last_error == ERR_REGION_OUT_OF_BOUNDS);
+
+    // 9. Top Limit (y0=0), Left Exceed (x0 < 0)
+    result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, UINT32_MAX, 0, 10, 10);
+    assert(result == NULL);
+    assert(last_error == ERR_REGION_OUT_OF_BOUNDS);
+
+    // 10. Top Limit (y0=0), Right Exceed (x1 > 100)
+    result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 90, 0, 101, 10);
+    assert(result == NULL);
+    assert(last_error == ERR_REGION_OUT_OF_BOUNDS);
+
+    // 11. Bottom Limit (y1=100), Left Exceed (x0 < 0)
+    result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, UINT32_MAX, 90, 10, 100);
+    assert(result == NULL);
+    assert(last_error == ERR_REGION_OUT_OF_BOUNDS);
+
+    // 12. Bottom Limit (y1=100), Right Exceed (x1 > 100)
+    result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 90, 90, 101, 100);
+    assert(result == NULL);
+    assert(last_error == ERR_REGION_OUT_OF_BOUNDS);
+
+    // 13. Left Limit (x0=0), Top Exceed (y0 < 0)
+    result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 0, UINT32_MAX, 10, 10);
+    assert(result == NULL);
+    assert(last_error == ERR_REGION_OUT_OF_BOUNDS);
+
+    // 14. Left Limit (x0=0), Bottom Exceed (y1 > 100)
+    result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 0, 90, 10, 101);
+    assert(result == NULL);
+    assert(last_error == ERR_REGION_OUT_OF_BOUNDS);
+
+    // 15. Right Limit (x1=100), Top Exceed (y0 < 0)
+    result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 90, UINT32_MAX, 100, 10);
+    assert(result == NULL);
+    assert(last_error == ERR_REGION_OUT_OF_BOUNDS);
+
+    // 16. Right Limit (x1=100), Bottom Exceed (y1 > 100)
+    result = decodeToBmp(dummy_data, 20, 0, 1000, COLOR_FORMAT_ARGB8888, 90, 90, 100, 101);
+    assert(result == NULL);
+    assert(last_error == ERR_REGION_OUT_OF_BOUNDS);
+
+    printf("Detailed Boundaries Passed.\n");
+    stub_should_header_succeed = 0;
+}
+
 int main() {
     test_argb8888();
     test_rgb565();
@@ -604,5 +704,6 @@ int main() {
     test_jp2_signature();
     test_pixel_limit();
     test_full_decode_success();
+    test_detailed_boundaries();
     return 0;
 }
