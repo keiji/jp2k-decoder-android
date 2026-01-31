@@ -3,27 +3,50 @@
 #include <assert.h>
 #include "emscripten.h"
 
-// Malloc hooking for testing
-int stub_should_malloc_succeed = 1;
+// Define STATIC to nothing to match wrapper.c's test configuration
+#define STATIC
 
-void* my_malloc(size_t size) {
-    if (!stub_should_malloc_succeed) return NULL;
-    return malloc(size);
-}
+// Forward declarations for functions in wrapper.c (which are now STATIC instead of static)
+#include <string.h>
+#include <openjpeg.h>
 
-void my_free(void* ptr) {
-    free(ptr);
-}
+// Struct definition must match wrapper.c
+typedef struct {
+    OPJ_BYTE* data;
+    OPJ_SIZE_T size;
+    OPJ_SIZE_T offset;
+} opj_buffer_info_t;
 
-#define malloc my_malloc
-#define free my_free
+// Functions from wrapper.c we want to test directly
+STATIC OPJ_SIZE_T opj_read_from_buffer(void* p_buffer, OPJ_SIZE_T p_nb_bytes, void* p_user_data);
+STATIC uint8_t* convert_image_to_bmp(opj_image_t* image, int color_format);
+STATIC opj_image_t* decode_internal(uint8_t* data, uint32_t data_len, OPJ_CODEC_FORMAT format, uint32_t max_pixels, double x0, double y0, double x1, double y1, int use_ratio);
 
-// Include wrapper.c to access static functions
-// This is a bit hacky but effective for unit testing static functions
-#include "../wrapper.c"
+// Public API
+EMSCRIPTEN_KEEPALIVE int getLastError();
+EMSCRIPTEN_KEEPALIVE uint8_t* decodeToBmp(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint32_t max_heap_size, int color_format, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1);
+EMSCRIPTEN_KEEPALIVE uint8_t* decodeToBmpWithRatio(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint32_t max_heap_size, int color_format, double x0, double y0, double x1, double y1);
+EMSCRIPTEN_KEEPALIVE uint32_t* getSize(uint8_t* data, uint32_t data_len);
 
-#undef malloc
-#undef free
+// Error Codes (copied from wrapper.c for assertions)
+#define ERR_NONE 0
+#define ERR_HEADER -1
+#define ERR_INPUT_DATA_SIZE -2
+#define ERR_PIXEL_DATA_SIZE -3
+#define ERR_DECODE -4
+#define ERR_DECODER_SETUP -5
+#define ERR_REGION_OUT_OF_BOUNDS -6
+
+#define COLOR_FORMAT_RGB565 565
+#define COLOR_FORMAT_ARGB8888 8888
+
+// Malloc hooking for testing (declared extern in wrapper.c if we modify it, but we can't easily hook inside linked object without linker tricks or recompiling wrapper.c with macros.
+// Since we are now compiling wrapper.c SEPARATELY, we need a way to hook malloc INSIDE wrapper.c.
+// The previous method worked because we included the source.
+// To make it work with separate compilation, we need to pass -Dmalloc=my_malloc to the compiler for wrapper.c.
+
+extern int last_error;
+extern int stub_should_malloc_succeed;
 
 // Helper to create a mock opj_image_t
 opj_image_t* create_mock_image(uint32_t width, uint32_t height, int numcomps, int with_alpha) {

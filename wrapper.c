@@ -19,6 +19,13 @@
 #define COLOR_FORMAT_RGB565 565
 #define COLOR_FORMAT_ARGB8888 8888
 
+// Allow static functions to be tested
+#ifdef TEST_BUILD
+#define STATIC
+#else
+#define STATIC static
+#endif
+
 int last_error = ERR_NONE;
 
 EMSCRIPTEN_KEEPALIVE
@@ -32,7 +39,7 @@ typedef struct {
     OPJ_SIZE_T offset;
 } opj_buffer_info_t;
 
-static OPJ_SIZE_T opj_read_from_buffer(void* p_buffer, OPJ_SIZE_T p_nb_bytes, void* p_user_data) {
+STATIC OPJ_SIZE_T opj_read_from_buffer(void* p_buffer, OPJ_SIZE_T p_nb_bytes, void* p_user_data) {
     opj_buffer_info_t* p_info = (opj_buffer_info_t*)p_user_data;
     OPJ_SIZE_T l_nb_read = p_nb_bytes;
     if (p_info->offset >= p_info->size) return (OPJ_SIZE_T)-1;
@@ -42,7 +49,7 @@ static OPJ_SIZE_T opj_read_from_buffer(void* p_buffer, OPJ_SIZE_T p_nb_bytes, vo
     return l_nb_read;
 }
 
-static OPJ_CODEC_FORMAT get_codec_format(uint8_t* data, uint32_t data_len) {
+STATIC OPJ_CODEC_FORMAT get_codec_format(uint8_t* data, uint32_t data_len) {
     if (data_len >= 4 &&
         data[0] == 0x00 &&
         data[1] == 0x00 &&
@@ -53,7 +60,7 @@ static OPJ_CODEC_FORMAT get_codec_format(uint8_t* data, uint32_t data_len) {
     return OPJ_CODEC_J2K;
 }
 
-static opj_codec_t* create_decoder(OPJ_CODEC_FORMAT format) {
+STATIC opj_codec_t* create_decoder(OPJ_CODEC_FORMAT format) {
     opj_codec_t* l_codec = opj_create_decompress(format);
     if (!l_codec) return NULL;
 
@@ -66,7 +73,7 @@ static opj_codec_t* create_decoder(OPJ_CODEC_FORMAT format) {
     return l_codec;
 }
 
-static opj_stream_t* create_mem_stream(opj_buffer_info_t* buffer_info, uint32_t data_len) {
+STATIC opj_stream_t* create_mem_stream(opj_buffer_info_t* buffer_info, uint32_t data_len) {
     opj_stream_t* l_stream = opj_stream_default_create(OPJ_TRUE);
     opj_stream_set_read_function(l_stream, opj_read_from_buffer);
     opj_stream_set_user_data(l_stream, buffer_info, NULL);
@@ -74,7 +81,7 @@ static opj_stream_t* create_mem_stream(opj_buffer_info_t* buffer_info, uint32_t 
     return l_stream;
 }
 
-static opj_image_t* decode_internal(uint8_t* data, uint32_t data_len, OPJ_CODEC_FORMAT format, uint32_t max_pixels, double x0, double y0, double x1, double y1, int use_ratio) {
+STATIC opj_image_t* decode_internal(uint8_t* data, uint32_t data_len, OPJ_CODEC_FORMAT format, uint32_t max_pixels, double x0, double y0, double x1, double y1, int use_ratio) {
     last_error = ERR_NONE;
 
     opj_buffer_info_t buffer_info = {data, data_len, 0};
@@ -165,7 +172,7 @@ static opj_image_t* decode_internal(uint8_t* data, uint32_t data_len, OPJ_CODEC_
     return l_image;
 }
 
-static opj_image_t* decode_opj_common(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint32_t max_heap_size, int color_format, double x0, double y0, double x1, double y1, int use_ratio) {
+STATIC opj_image_t* decode_opj_common(uint8_t* data, uint32_t data_len, uint32_t max_pixels, uint32_t max_heap_size, int color_format, double x0, double y0, double x1, double y1, int use_ratio) {
     uint32_t divider = (color_format == COLOR_FORMAT_RGB565) ? 2 : 4;
     uint32_t max_input_size = max_heap_size / divider;
 
@@ -178,7 +185,7 @@ static opj_image_t* decode_opj_common(uint8_t* data, uint32_t data_len, uint32_t
     return decode_internal(data, data_len, format, max_pixels, x0, y0, x1, y1, use_ratio);
 }
 
-static int32_t* get_alpha_component(opj_image_t* image) {
+STATIC int32_t* get_alpha_component(opj_image_t* image) {
     if (image->numcomps <= 3) return NULL;
     for (uint32_t i = 0; i < image->numcomps; i++) {
         if (image->comps[i].alpha != 0) return image->comps[i].data;
@@ -186,7 +193,7 @@ static int32_t* get_alpha_component(opj_image_t* image) {
     return image->comps[3].data;
 }
 
-static void write_headers_argb8888(uint8_t* buffer, uint32_t file_size, uint32_t width, uint32_t height) {
+STATIC void write_headers_argb8888(uint8_t* buffer, uint32_t file_size, uint32_t width, uint32_t height) {
     uint32_t bmp_header_size = 14;
     uint32_t dib_header_size = 40;
     uint32_t offset = bmp_header_size + dib_header_size;
@@ -220,7 +227,7 @@ static void write_headers_argb8888(uint8_t* buffer, uint32_t file_size, uint32_t
     memcpy(&buffer[50], &colors, 4);
 }
 
-static void write_headers_rgb565(uint8_t* buffer, uint32_t file_size, uint32_t width, uint32_t height) {
+STATIC void write_headers_rgb565(uint8_t* buffer, uint32_t file_size, uint32_t width, uint32_t height) {
     uint32_t bmp_header_size = 14;
     uint32_t dib_header_size = 40;
     uint32_t mask_size = 12; // 3 * 4 bytes for bitfields
@@ -265,7 +272,7 @@ static void write_headers_rgb565(uint8_t* buffer, uint32_t file_size, uint32_t w
     memcpy(&buffer[62], &b_mask, 4);
 }
 
-static uint8_t* convert_image_to_bmp(opj_image_t* image, int color_format) {
+STATIC uint8_t* convert_image_to_bmp(opj_image_t* image, int color_format) {
     uint32_t width = image->x1 - image->x0;
     uint32_t height = image->y1 - image->y0;
 
