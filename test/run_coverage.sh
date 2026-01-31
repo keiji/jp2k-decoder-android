@@ -21,7 +21,8 @@ gcc -o test_wrapper_cov test/test_wrapper.c test/stubs.c \
 if command -v lcov >/dev/null 2>&1; then
     lcov --capture --directory . --output-file coverage.info
     # Remove system files, test files, and stubs
-    lcov --remove coverage.info '/usr*' '*test_wrapper.c' '*stubs.c' --output-file coverage_filtered.info
+    # --ignore-errors unused is required for lcov 2.0+ if a pattern (like /usr*) doesn't match anything
+    lcov --remove coverage.info '/usr*' '*test_wrapper.c' '*stubs.c' --output-file coverage_filtered.info --ignore-errors unused
     lcov --list coverage_filtered.info > coverage_summary.txt
     cat coverage_summary.txt
 else
