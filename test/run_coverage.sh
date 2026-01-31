@@ -2,10 +2,10 @@
 set -e
 
 # Clean previous coverage
-rm -f *.gcda *.gcno coverage.info coverage_summary.txt
+rm -f *.gcda *.gcno coverage.info coverage_filtered.info coverage_summary.txt
 
 cleanup() {
-  rm -f test_wrapper_cov *.gcda *.gcno coverage.info
+  rm -f test_wrapper_cov *.gcda *.gcno coverage.info coverage_filtered.info
 }
 trap cleanup EXIT
 
@@ -20,7 +20,8 @@ gcc -o test_wrapper_cov test/test_wrapper.c test/stubs.c \
 # Capture coverage (only if lcov is available)
 if command -v lcov >/dev/null 2>&1; then
     lcov --capture --directory . --output-file coverage.info
-    lcov --extract coverage.info '*/wrapper.c' --output-file coverage_filtered.info
+    lcov --extract coverage.info '*wrapper.c' --output-file coverage_filtered.info
+    lcov --remove coverage_filtered.info '*test_wrapper.c' --output-file coverage_filtered.info
     lcov --list coverage_filtered.info > coverage_summary.txt
     cat coverage_summary.txt
 else
