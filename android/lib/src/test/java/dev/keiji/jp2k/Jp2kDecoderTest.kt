@@ -99,6 +99,19 @@ class Jp2kDecoderTest {
         Dispatchers.resetMain()
     }
 
+    private suspend fun createInitializedDecoder(
+        scriptHandler: (String) -> TestListenableFuture<String> = { TestListenableFuture(INTERNAL_RESULT_SUCCESS) }
+    ): Jp2kDecoder {
+        doAnswer { invocation ->
+            val script = invocation.arguments[0] as String
+            scriptHandler(script)
+        }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
+
+        val decoder = Jp2kDecoder(coroutineDispatcher = testDispatcher)
+        decoder.init(context)
+        return decoder
+    }
+
     @Test
     fun testPrecache_Success() = runTest {
         // Mock evaluateJavaScriptAsync for WASM load (returns "1") and setData (returns "1")
@@ -295,17 +308,13 @@ class Jp2kDecoderTest {
     fun testGetMemoryUsage_Success() = runTest {
         val jsonUsage = """{"wasmHeapSizeBytes": 2048}"""
 
-        doAnswer { invocation ->
-            val script = invocation.arguments[0] as String
+        val decoder = createInitializedDecoder { script ->
             if (script.contains("getMemoryUsage()")) {
                 TestListenableFuture(jsonUsage)
             } else {
                 TestListenableFuture(INTERNAL_RESULT_SUCCESS)
             }
-        }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
-
-        val decoder = Jp2kDecoder(coroutineDispatcher = testDispatcher)
-        decoder.init(context)
+        }
 
         val memoryUsage = decoder.getMemoryUsage()
         assertEquals(2048L, memoryUsage.wasmHeapSizeBytes)
@@ -316,17 +325,13 @@ class Jp2kDecoderTest {
     fun testDecodeImage_ByteArray_Success() = runTest {
         val jsonBmp = """{"bmp": "AQID", "timePreProcess": 0, "timeWasm": 0, "timePostProcess": 0}"""
 
-        doAnswer { invocation ->
-            val script = invocation.arguments[0] as String
+        val decoder = createInitializedDecoder { script ->
             if (script.contains("decodeJ2K(")) {
                 TestListenableFuture(jsonBmp)
             } else {
                 TestListenableFuture(INTERNAL_RESULT_SUCCESS)
             }
-        }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
-
-        val decoder = Jp2kDecoder(coroutineDispatcher = testDispatcher)
-        decoder.init(context)
+        }
 
         val data = ByteArray(20)
         decoder.decodeImage(data)

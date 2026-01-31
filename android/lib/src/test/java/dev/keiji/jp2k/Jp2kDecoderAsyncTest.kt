@@ -95,6 +95,20 @@ class Jp2kDecoderAsyncTest {
         mockBitmapFactory.close()
     }
 
+    private fun createInitializedDecoder(
+        scriptHandler: (String) -> TestListenableFuture<String> = { TestListenableFuture(INTERNAL_RESULT_SUCCESS) }
+    ): Jp2kDecoderAsync {
+        doAnswer { invocation ->
+            val script = invocation.arguments[0] as String
+            scriptHandler(script)
+        }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
+
+        val directExecutor = Executor { it.run() }
+        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
+        decoder.init(context, org.mockito.kotlin.mock<Callback<Unit>>())
+        return decoder
+    }
+
     @Test
     fun testPrecache_Success() {
         // Mock evaluateJavaScriptAsync for WASM load (returns "1") and setData (returns "1")
@@ -315,19 +329,13 @@ class Jp2kDecoderAsyncTest {
     fun testGetMemoryUsage_Success() {
         val jsonUsage = """{"wasmHeapSizeBytes": 1024}"""
 
-        doAnswer { invocation ->
-            val script = invocation.arguments[0] as String
+        val decoder = createInitializedDecoder { script ->
             if (script.contains("getMemoryUsage()")) {
                 TestListenableFuture(jsonUsage)
             } else {
                 TestListenableFuture(INTERNAL_RESULT_SUCCESS)
             }
-        }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
-
-        val directExecutor = Executor { it.run() }
-        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
-
-        decoder.init(context, org.mockito.kotlin.mock<Callback<Unit>>())
+        }
 
         val callback = org.mockito.kotlin.mock<Callback<MemoryUsage>>()
         decoder.getMemoryUsage(callback)
@@ -339,14 +347,7 @@ class Jp2kDecoderAsyncTest {
 
     @Test
     fun testRelease_StateAndCancellation() {
-        doAnswer {
-            TestListenableFuture(INTERNAL_RESULT_SUCCESS)
-        }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
-
-        val directExecutor = Executor { it.run() }
-        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
-
-        decoder.init(context, org.mockito.kotlin.mock<Callback<Unit>>())
+        val decoder = createInitializedDecoder()
         assertEquals(State.Initialized, decoder.state)
 
         decoder.release()
@@ -359,7 +360,8 @@ class Jp2kDecoderAsyncTest {
 
         // Verify decode returns cancellation
         val callbackDecode = org.mockito.kotlin.mock<Callback<Bitmap>>()
-        decoder.decodeImage(ByteArray(0), callbackDecode)
+        // Use a valid size array to bypass size check and hit the state check
+        decoder.decodeImage(ByteArray(20), callbackDecode)
         verify(callbackDecode).onError(any())
     }
 
@@ -367,19 +369,13 @@ class Jp2kDecoderAsyncTest {
     fun testDecodeImage_ByteArray_Success() {
         val jsonBmp = """{"bmp": "AQID", "timePreProcess": 0, "timeWasm": 0, "timePostProcess": 0}"""
 
-        doAnswer { invocation ->
-            val script = invocation.arguments[0] as String
+        val decoder = createInitializedDecoder { script ->
             if (script.contains("decodeJ2K(")) { // Direct decode check
                 TestListenableFuture(jsonBmp)
             } else {
                 TestListenableFuture(INTERNAL_RESULT_SUCCESS)
             }
-        }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
-
-        val directExecutor = Executor { it.run() }
-        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
-
-        decoder.init(context, org.mockito.kotlin.mock<Callback<Unit>>())
+        }
 
         val data = ByteArray(20)
         val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
@@ -393,21 +389,19 @@ class Jp2kDecoderAsyncTest {
     fun testDecodeImage_Rect_Success() {
         val jsonBmp = """{"bmp": "AQID", "timePreProcess": 0, "timeWasm": 0, "timePostProcess": 0}"""
 
-        doAnswer { invocation ->
-            val script = invocation.arguments[0] as String
+        val decoder = createInitializedDecoder { script ->
             if (script.contains("decodeJ2KWithCache(")) {
                 TestListenableFuture(jsonBmp)
             } else {
                 TestListenableFuture(INTERNAL_RESULT_SUCCESS)
             }
-        }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
-
-        val directExecutor = Executor { it.run() }
-        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
+        }
         val data = ByteArray(20)
 
-        decoder.init(context, org.mockito.kotlin.mock<Callback<Unit>>())
-        decoder.precache(data, org.mockito.kotlin.mock<Callback<Unit>>())
+        // Precache manually
+        val callbackPrecache = org.mockito.kotlin.mock<Callback<Unit>>()
+        decoder.precache(data, callbackPrecache)
+        verify(callbackPrecache).onSuccess(any())
 
         val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
         val rect = android.graphics.Rect(0, 0, 10, 10)
