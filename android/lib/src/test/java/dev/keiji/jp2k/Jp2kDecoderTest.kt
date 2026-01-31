@@ -505,4 +505,32 @@ class Jp2kDecoderTest {
 
         verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2K("))
     }
+
+    @Test
+    fun testDecodeImage_ColorFormat() = runTest {
+        val jsonBmp = """{"bmp": "AQID", "timePreProcess": 0, "timeWasm": 0, "timePostProcess": 0}"""
+
+        val decoder = createInitializedDecoder { script ->
+            if (script.contains("decodeJ2KWithCache(")) {
+                TestListenableFuture(jsonBmp)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+        val data = ByteArray(10)
+        decoder.precache(data)
+
+        // Exercises: decodeImage(ColorFormat)
+        decoder.decodeImage(ColorFormat.ARGB8888)
+
+        verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2KWithCache("))
+    }
+
+    @Test
+    fun testClose() = runTest {
+        val decoder = createInitializedDecoder()
+        decoder.close()
+        // close calls release, so state should be Released
+        assertEquals(State.Released, decoder.state)
+    }
 }
