@@ -20,7 +20,8 @@ gcc -o test_wrapper_cov test/test_wrapper.c test/stubs.c \
 
 # Capture coverage (only if lcov is available)
 if command -v lcov >/dev/null 2>&1; then
-    lcov --capture --directory . --output-file coverage.info
+    # --base-directory . helps lcov find the source files relative to the current directory
+    lcov --capture --directory . --base-directory . --output-file coverage.info
     # Remove system files, test files, and stubs
     # --ignore-errors unused is required for lcov 2.0+ if a pattern (like /usr*) doesn't match anything
     lcov --remove coverage.info '/usr*' '*test_wrapper.c' '*stubs.c' --output-file coverage_filtered.info --ignore-errors unused
