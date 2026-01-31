@@ -392,44 +392,35 @@ class Jp2kDecoderAsyncTest {
 
     @Test
     fun testDecodeImage_Uninitialized() {
-        val directExecutor = Executor { it.run() }
-        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
-
         val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
-        decoder.decodeImage(ByteArray(20), callback)
-
+        runUninitializedAction { it.decodeImage(ByteArray(20), callback) }
         verify(callback).onError(org.mockito.kotlin.check {
-            assert(it is IllegalStateException)
             assertEquals("Cannot decodeImage while in state: Uninitialized", it.message)
         })
     }
 
     @Test
     fun testGetSize_Uninitialized() {
-        val directExecutor = Executor { it.run() }
-        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
-
         val callback = org.mockito.kotlin.mock<Callback<Size>>()
-        decoder.getSize(callback)
-
+        runUninitializedAction { it.getSize(callback) }
         verify(callback).onError(org.mockito.kotlin.check {
-            assert(it is IllegalStateException)
             assertEquals("Cannot getSize while in state: Uninitialized", it.message)
         })
     }
 
     @Test
     fun testPrecache_Uninitialized() {
-        val directExecutor = Executor { it.run() }
-        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
-
         val callback = org.mockito.kotlin.mock<Callback<Unit>>()
-        decoder.precache(ByteArray(10), callback)
-
+        runUninitializedAction { it.precache(ByteArray(10), callback) }
         verify(callback).onError(org.mockito.kotlin.check {
-            assert(it is IllegalStateException)
             assertEquals("Cannot precache while in state: Uninitialized", it.message)
         })
+    }
+
+    private fun runUninitializedAction(action: (Jp2kDecoderAsync) -> Unit) {
+        val directExecutor = Executor { it.run() }
+        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
+        action(decoder)
     }
 
     @Test
