@@ -55,17 +55,6 @@ class Jp2kDecoderTest {
 
     private val testDispatcher = StandardTestDispatcher()
 
-    class TestListenableFuture<T>(private val result: T) : ListenableFuture<T> {
-        override fun cancel(mayInterruptIfRunning: Boolean): Boolean = false
-        override fun isCancelled(): Boolean = false
-        override fun isDone(): Boolean = true
-        override fun get(): T = result
-        override fun get(timeout: Long, unit: TimeUnit?): T = result
-        override fun addListener(listener: Runnable, executor: Executor) {
-            listener.run()
-        }
-    }
-
     @Before
     fun setUp() {
         MockitoAnnotations.openMocks(this)
@@ -487,7 +476,7 @@ class Jp2kDecoderTest {
         }
 
         val data = ByteArray(20)
-        decoder.decodeImage(data, 0.0.toFloat(), 0.0.toFloat(), 0.5.toFloat(), 0.5.toFloat())
+        decoder.decodeImage(data, 0.0f, 0.0f, 0.5f, 0.5f)
 
         verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2KRatio("))
     }
@@ -545,14 +534,7 @@ class Jp2kDecoderTest {
 
         val decoder = createInitializedDecoder { script ->
             if (script.contains("getMemoryUsage()")) {
-                 object : ListenableFuture<String> {
-                    override fun cancel(mayInterruptIfRunning: Boolean) = false
-                    override fun isCancelled() = false
-                    override fun isDone() = true
-                    override fun get(): String { throw java.util.concurrent.ExecutionException(exception) }
-                    override fun get(timeout: Long, unit: TimeUnit?): String { throw java.util.concurrent.ExecutionException(exception) }
-                    override fun addListener(listener: Runnable, executor: Executor) { listener.run() }
-                }
+                 FailingListenableFuture(exception)
             } else {
                 TestListenableFuture(INTERNAL_RESULT_SUCCESS)
             }
@@ -634,6 +616,13 @@ class Jp2kDecoderTest {
         decoder.decodeImage(ByteArray(20))
 
         // Verified by coverage that logs were called
+        mockLog.verify({
+            android.util.Log.println(
+                org.mockito.kotlin.eq(android.util.Log.INFO),
+                org.mockito.kotlin.any(),
+                org.mockito.kotlin.any()
+            )
+        }, Mockito.atLeastOnce())
     }
 
     @Test
@@ -659,14 +648,7 @@ class Jp2kDecoderTest {
         val exception = RuntimeException("JS Error")
          val decoder = createInitializedDecoder { script ->
              if (script.startsWith("globalThis.setData")) {
-                  object : ListenableFuture<String> {
-                    override fun cancel(mayInterruptIfRunning: Boolean) = false
-                    override fun isCancelled() = false
-                    override fun isDone() = true
-                    override fun get(): String { throw java.util.concurrent.ExecutionException(exception) }
-                    override fun get(timeout: Long, unit: TimeUnit?): String { throw java.util.concurrent.ExecutionException(exception) }
-                    override fun addListener(listener: Runnable, executor: Executor) { listener.run() }
-                }
+                  FailingListenableFuture(exception)
              } else {
                  TestListenableFuture(INTERNAL_RESULT_SUCCESS)
              }
@@ -704,14 +686,7 @@ class Jp2kDecoderTest {
          val exception = RuntimeException("JS Error")
          val decoder = createInitializedDecoder { script ->
              if (script.startsWith("globalThis.getSizeWithCache")) {
-                 object : ListenableFuture<String> {
-                    override fun cancel(mayInterruptIfRunning: Boolean) = false
-                    override fun isCancelled() = false
-                    override fun isDone() = true
-                    override fun get(): String { throw java.util.concurrent.ExecutionException(exception) }
-                    override fun get(timeout: Long, unit: TimeUnit?): String { throw java.util.concurrent.ExecutionException(exception) }
-                    override fun addListener(listener: Runnable, executor: Executor) { listener.run() }
-                }
+                 FailingListenableFuture(exception)
              } else {
                  TestListenableFuture(INTERNAL_RESULT_SUCCESS)
              }

@@ -47,17 +47,6 @@ class Jp2kDecoderAsyncCoverageTest {
     private lateinit var mockBitmapFactory: MockedStatic<BitmapFactory>
     private lateinit var mockLog: MockedStatic<android.util.Log>
 
-    class TestListenableFuture<T>(private val result: T) : ListenableFuture<T> {
-        override fun cancel(mayInterruptIfRunning: Boolean): Boolean = false
-        override fun isCancelled(): Boolean = false
-        override fun isDone(): Boolean = true
-        override fun get(): T = result
-        override fun get(timeout: Long, unit: TimeUnit?): T = result
-        override fun addListener(listener: Runnable, executor: Executor) {
-            listener.run()
-        }
-    }
-
     @Before
     fun setUp() {
         MockitoAnnotations.openMocks(this)

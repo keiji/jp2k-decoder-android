@@ -48,15 +48,6 @@ class Jp2kOverloadsTest {
 
     private val testDispatcher = StandardTestDispatcher()
 
-    class TestListenableFuture<T>(private val result: T) : ListenableFuture<T> {
-        override fun cancel(mayInterruptIfRunning: Boolean) = false
-        override fun isCancelled() = false
-        override fun isDone() = true
-        override fun get() = result
-        override fun get(timeout: Long, unit: TimeUnit?) = result
-        override fun addListener(listener: Runnable, executor: Executor) { listener.run() }
-    }
-
     @Before
     fun setUp() {
         MockitoAnnotations.openMocks(this)
