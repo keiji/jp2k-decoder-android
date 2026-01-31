@@ -12,6 +12,7 @@ uint32_t stub_height = 0;
 int stub_should_decompress_create_succeed = 1;
 int stub_should_setup_succeed = 1;
 int stub_should_decode_succeed = 0;
+int stub_should_set_decode_area_succeed = 1;
 
 opj_codec_t* opj_create_decompress(OPJ_CODEC_FORMAT format) {
     if (stub_should_decompress_create_succeed) {
@@ -43,7 +44,8 @@ OPJ_BOOL opj_read_header(opj_stream_t *p_stream, opj_codec_t *p_codec, opj_image
     return OPJ_FALSE;
 }
 OPJ_BOOL opj_set_decode_area(opj_codec_t *p_codec, opj_image_t* p_image, OPJ_INT32 p_start_x, OPJ_INT32 p_start_y, OPJ_INT32 p_end_x, OPJ_INT32 p_end_y) {
-    return OPJ_TRUE;
+    if (stub_should_set_decode_area_succeed) return OPJ_TRUE;
+    return OPJ_FALSE;
 }
 void opj_image_destroy(opj_image_t *image) {
     if (image) {
