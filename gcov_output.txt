@@ -1,0 +1,8 @@
+File '/app/wrapper.c'
+Lines executed:100.00% of 269
+Branches executed:100.00% of 116
+Taken at least once:92.24% of 116
+Calls executed:100.00% of 41
+Creating 'wrapper.c.gcov'
+
+Lines executed:100.00% of 269

@@ -2,35 +2,17 @@
 set -e
 
 # Clean previous coverage
-rm -f *.gcda *.gcno coverage.info coverage_summary.txt *.o
+rm -f *.gcda *.gcno coverage.info coverage_summary.txt
 
 cleanup() {
-  rm -f test_wrapper_cov *.gcda *.gcno coverage.info coverage_filtered.info coverage_tmp.info *.o
+  rm -f test_wrapper_cov *.gcda *.gcno coverage.info coverage_filtered.info coverage_tmp.info
 }
 trap cleanup EXIT
 
-# Compile wrapper.c separately with coverage, exposing static functions, and hooking malloc
-# -DTEST_BUILD: enables STATIC macro to be empty
-# -Dmalloc=my_malloc -Dfree=my_free: redirects malloc/free to hooks
-gcc -c -o wrapper.o wrapper.c \
-    -I. -Iopenjpeg/src/lib/openjp2 -Itest \
-    -fprofile-arcs -ftest-coverage -g \
-    -DTEST_BUILD -Dmalloc=my_malloc -Dfree=my_free
-
-# Compile malloc hook
-gcc -c -o malloc_hook.o test/malloc_hook.c -g
-
-# Compile stubs
-gcc -c -o stubs.o test/stubs.c -I. -Iopenjpeg/src/lib/openjp2 -Itest -g
-
-# Compile test runner
-gcc -c -o test_wrapper.o test/test_wrapper.c \
-    -I. -Iopenjpeg/src/lib/openjp2 -Itest \
-    -DTEST_BUILD -g
-
-# Link everything
-gcc -o test_wrapper_cov wrapper.o malloc_hook.o stubs.o test_wrapper.o \
-    -lgcov
+# Compile with coverage flags
+gcc -o test_wrapper_cov test/test_wrapper.c test/stubs.c \
+    -I. -Iopenjpeg/src/lib/openjp2 -Itest -DOPJ_STATIC \
+    -fprofile-arcs -ftest-coverage -g
 
 # Run the test executable
 ./test_wrapper_cov
@@ -38,24 +20,19 @@ gcc -o test_wrapper_cov wrapper.o malloc_hook.o stubs.o test_wrapper.o \
 # Capture coverage (only if lcov is available)
 if command -v lcov >/dev/null 2>&1; then
     # Capture all coverage
-    # Using --ignore-errors mismatch to handle potential checksum issues
-    lcov --capture --directory . --output-file coverage.info --ignore-errors mismatch,empty
+    lcov --capture --directory . --output-file coverage.info
 
     echo "=== Files captured by lcov (Debug) ==="
     lcov --list coverage.info
     echo "======================================"
 
-    # Strategy:
-    # 1. Extract specifically 'wrapper.c' (assuming exact name match).
-    #    We use '*/wrapper.c' to catch it regardless of relative path prefix ./ or full path.
-    #    Also extracting 'test_wrapper.c' just to see it in debug if needed, but we want to isolate wrapper.c
-
-    # Intention: Keep ONLY wrapper.c
-    # We do this by extracting it directly.
+    # Robust Filtering Strategy:
+    # 1. Extract specifically 'wrapper.c' (assuming it's in the root or close to it).
+    #    '*/wrapper.c' should catch /path/to/wrapper.c or ./wrapper.c
     lcov --extract coverage.info '*/wrapper.c' --output-file coverage_tmp.info --ignore-errors unused
 
-    # 2. To be absolutely sure 'test/test_wrapper.c' isn't matching '*/wrapper.c',
-    #    we explicitly remove it.
+    # 2. Explicitly remove test_wrapper.c if it got caught by the above pattern (unlikely but safe).
+    #    Also remove any system headers that might have slipped in if they match the pattern (very unlikely).
     lcov --remove coverage_tmp.info '*/test_wrapper.c' --output-file coverage_filtered.info --ignore-errors unused
 
     echo "=== Final Coverage Report ==="
