@@ -26,13 +26,14 @@ if command -v lcov >/dev/null 2>&1; then
     lcov --list coverage.info
     echo "======================================"
 
-    # Strategy:
-    # 1. Extract ONLY files ending in 'wrapper.c' (This includes wrapper.c and test_wrapper.c)
-    #    This automatically excludes openjpeg, stubs, system headers, etc.
-    lcov --extract coverage.info '*wrapper.c' --output-file coverage_tmp.info
+    # Robust Filtering Strategy:
+    # 1. Extract specifically 'wrapper.c' (assuming it's in the root or close to it).
+    #    '*/wrapper.c' should catch /path/to/wrapper.c or ./wrapper.c
+    lcov --extract coverage.info '*/wrapper.c' --output-file coverage_tmp.info
 
-    # 2. Remove 'test_wrapper.c' from the result to leave only the production code.
-    lcov --remove coverage_tmp.info '*test_wrapper.c' --output-file coverage_filtered.info
+    # 2. Explicitly remove test_wrapper.c if it got caught by the above pattern (unlikely but safe).
+    #    Also remove any system headers that might have slipped in if they match the pattern (very unlikely).
+    lcov --remove coverage_tmp.info '*/test_wrapper.c' --output-file coverage_filtered.info
 
     echo "=== Final Coverage Report ==="
     lcov --list coverage_filtered.info > coverage_summary.txt
