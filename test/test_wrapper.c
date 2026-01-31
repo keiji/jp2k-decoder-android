@@ -373,6 +373,8 @@ void test_opj_read_from_buffer() {
     assert(read == 3);
     assert(info.offset == 3);
     assert(buffer[0] == 1);
+    assert(buffer[1] == 2);
+    assert(buffer[2] == 3);
 
     // 2. Partial Read at end
     // Remaining: 2 bytes (index 3, 4)
@@ -380,6 +382,7 @@ void test_opj_read_from_buffer() {
     assert(read == 2);
     assert(info.offset == 5);
     assert(buffer[0] == 4);
+    assert(buffer[1] == 5);
 
     // 3. Read Past End
     read = opj_read_from_buffer(buffer, 1, &info);
