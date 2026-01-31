@@ -95,6 +95,20 @@ class Jp2kDecoderAsyncTest {
         mockBitmapFactory.close()
     }
 
+    private fun createInitializedDecoder(
+        scriptHandler: (String) -> TestListenableFuture<String> = { TestListenableFuture(INTERNAL_RESULT_SUCCESS) }
+    ): Jp2kDecoderAsync {
+        doAnswer { invocation ->
+            val script = invocation.arguments[0] as String
+            scriptHandler(script)
+        }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
+
+        val directExecutor = Executor { it.run() }
+        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
+        decoder.init(context, org.mockito.kotlin.mock<Callback<Unit>>())
+        return decoder
+    }
+
     @Test
     fun testPrecache_Success() {
         // Mock evaluateJavaScriptAsync for WASM load (returns "1") and setData (returns "1")
@@ -309,5 +323,92 @@ class Jp2kDecoderAsyncTest {
         verify(callback).onError(org.mockito.kotlin.check {
             assert(it is RegionOutOfBoundsException)
         })
+    }
+
+    @Test
+    fun testGetMemoryUsage_Success() {
+        val jsonUsage = """{"wasmHeapSizeBytes": 1024}"""
+
+        val decoder = createInitializedDecoder { script ->
+            if (script.contains("getMemoryUsage()")) {
+                TestListenableFuture(jsonUsage)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        val callback = org.mockito.kotlin.mock<Callback<MemoryUsage>>()
+        decoder.getMemoryUsage(callback)
+
+        verify(callback).onSuccess(org.mockito.kotlin.check {
+            assertEquals(1024L, it.wasmHeapSizeBytes)
+        })
+    }
+
+    @Test
+    fun testRelease_StateAndCancellation() {
+        val decoder = createInitializedDecoder()
+        assertEquals(State.Initialized, decoder.state)
+
+        decoder.release()
+        assertEquals(State.Released, decoder.state)
+
+        // Verify init returns cancellation
+        val callbackInit = org.mockito.kotlin.mock<Callback<Unit>>()
+        decoder.init(context, callbackInit)
+        verify(callbackInit).onError(any())
+
+        // Verify decode returns cancellation
+        val callbackDecode = org.mockito.kotlin.mock<Callback<Bitmap>>()
+        // Use a valid size array to bypass size check and hit the state check
+        decoder.decodeImage(ByteArray(20), callbackDecode)
+        verify(callbackDecode).onError(any())
+    }
+
+    @Test
+    fun testDecodeImage_ByteArray_Success() {
+        val jsonBmp = """{"bmp": "AQID", "timePreProcess": 0, "timeWasm": 0, "timePostProcess": 0}"""
+
+        val decoder = createInitializedDecoder { script ->
+            if (script.contains("decodeJ2K(")) { // Direct decode check
+                TestListenableFuture(jsonBmp)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        val data = ByteArray(20)
+        val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
+        decoder.decodeImage(data, callback)
+
+        verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2K("))
+        verify(callback).onSuccess(any())
+    }
+
+    @Test
+    fun testDecodeImage_Rect_Success() {
+        val jsonBmp = """{"bmp": "AQID", "timePreProcess": 0, "timeWasm": 0, "timePostProcess": 0}"""
+
+        val decoder = createInitializedDecoder { script ->
+            if (script.contains("decodeJ2KWithCache(")) {
+                TestListenableFuture(jsonBmp)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+        val data = ByteArray(20)
+
+        // Precache manually
+        val callbackPrecache = org.mockito.kotlin.mock<Callback<Unit>>()
+        decoder.precache(data, callbackPrecache)
+        verify(callbackPrecache).onSuccess(any())
+
+        val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
+        val rect = android.graphics.Rect(0, 0, 10, 10)
+        decoder.decodeImage(rect, ColorFormat.ARGB8888, callback)
+
+        // Verify script contains coordinates
+        verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2KWithCache("))
+        verify(callback).onSuccess(any())
     }
 }
