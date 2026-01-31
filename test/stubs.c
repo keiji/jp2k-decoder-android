@@ -8,8 +8,10 @@
 int stub_should_header_succeed = 0;
 uint32_t stub_width = 0;
 uint32_t stub_height = 0;
+int stub_num_comps = 4;
 
 int stub_should_decompress_create_succeed = 1;
+int stub_should_set_decode_area_succeed = 1;
 int stub_should_setup_succeed = 1;
 int stub_should_decode_succeed = 0;
 
@@ -36,14 +38,19 @@ OPJ_BOOL opj_read_header(opj_stream_t *p_stream, opj_codec_t *p_codec, opj_image
         (*p_image)->y0 = 0;
         (*p_image)->x1 = stub_width;
         (*p_image)->y1 = stub_height;
-        (*p_image)->numcomps = 4;
-        (*p_image)->comps = (opj_image_comp_t*)calloc(4, sizeof(opj_image_comp_t));
+        (*p_image)->numcomps = stub_num_comps;
+        if (stub_num_comps > 0) {
+            (*p_image)->comps = (opj_image_comp_t*)calloc(stub_num_comps, sizeof(opj_image_comp_t));
+        } else {
+            (*p_image)->comps = NULL;
+        }
         return OPJ_TRUE;
     }
     return OPJ_FALSE;
 }
 OPJ_BOOL opj_set_decode_area(opj_codec_t *p_codec, opj_image_t* p_image, OPJ_INT32 p_start_x, OPJ_INT32 p_start_y, OPJ_INT32 p_end_x, OPJ_INT32 p_end_y) {
-    return OPJ_TRUE;
+    if (stub_should_set_decode_area_succeed) return OPJ_TRUE;
+    return OPJ_FALSE;
 }
 void opj_image_destroy(opj_image_t *image) {
     if (image) {
