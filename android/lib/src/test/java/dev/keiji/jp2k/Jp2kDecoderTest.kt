@@ -338,4 +338,171 @@ class Jp2kDecoderTest {
 
         verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2K("))
     }
+
+    @Test
+    fun testInit_AlreadyInitialized() = runTest {
+        val decoder = createInitializedDecoder()
+        assertEquals(State.Initialized, decoder.state)
+
+        // Reset mock interactions to ensure no new calls are made
+        Mockito.clearInvocations(isolate)
+
+        // Call init again
+        decoder.init(context)
+
+        // Verify state is still Initialized
+        assertEquals(State.Initialized, decoder.state)
+
+        // Verify loadWasm was NOT called again (by checking evaluateJavaScriptAsync)
+        verify(isolate, Mockito.never()).evaluateJavaScriptAsync(any<String>())
+    }
+
+    @Test
+    fun testRelease_Cancellation() = runTest {
+        val decoder = createInitializedDecoder()
+        decoder.release()
+
+        assertEquals(State.Released, decoder.state)
+
+        // Verify init throws IllegalStateException because state is Released
+        try {
+            decoder.init(context)
+            fail("Should throw IllegalStateException")
+        } catch (e: IllegalStateException) {
+            assertEquals("Cannot initialize while in state: Released", e.message)
+        }
+
+        // Verify precache throws CancellationException
+        try {
+            decoder.precache(ByteArray(10))
+            fail("Should throw CancellationException")
+        } catch (e: java.util.concurrent.CancellationException) {
+            assertEquals("Decoder was released.", e.message)
+        }
+
+        // Verify getSize throws CancellationException
+        try {
+            decoder.getSize()
+            fail("Should throw CancellationException")
+        } catch (e: java.util.concurrent.CancellationException) {
+            assertEquals("Decoder was released.", e.message)
+        }
+
+        // Verify decodeImage throws CancellationException
+        try {
+            decoder.decodeImage(ByteArray(20))
+            fail("Should throw CancellationException")
+        } catch (e: java.util.concurrent.CancellationException) {
+            assertEquals("Decoder was released.", e.message)
+        }
+    }
+
+    @Test
+    fun testDecodeImage_Rect() = runTest {
+        val jsonBmp = """{"bmp": "AQID", "timePreProcess": 0, "timeWasm": 0, "timePostProcess": 0}"""
+
+        val decoder = createInitializedDecoder { script ->
+            if (script.contains("decodeJ2KWithCache(")) {
+                TestListenableFuture(jsonBmp)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+        val data = ByteArray(10)
+        decoder.precache(data)
+
+        val rect = android.graphics.Rect(0, 0, 100, 100)
+        decoder.decodeImage(rect)
+
+        verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2KWithCache("))
+    }
+
+    @Test
+    fun testDecodeImage_IntCoordinates() = runTest {
+        val jsonBmp = """{"bmp": "AQID", "timePreProcess": 0, "timeWasm": 0, "timePostProcess": 0}"""
+
+        val decoder = createInitializedDecoder { script ->
+            if (script.contains("decodeJ2KWithCache(")) {
+                TestListenableFuture(jsonBmp)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+        val data = ByteArray(10)
+        decoder.precache(data)
+
+        decoder.decodeImage(0, 0, 100, 100)
+
+        verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2KWithCache("))
+    }
+
+    @Test
+    fun testDecodeImage_Uninitialized() = runTest {
+        val decoder = Jp2kDecoder(coroutineDispatcher = testDispatcher)
+        try {
+            decoder.decodeImage(ByteArray(20))
+            fail("Should throw IllegalStateException")
+        } catch (e: IllegalStateException) {
+            assertEquals("Cannot decodeImage while in state: Uninitialized", e.message)
+        }
+    }
+
+    @Test
+    fun testGetSize_Uninitialized() = runTest {
+        val decoder = Jp2kDecoder(coroutineDispatcher = testDispatcher)
+        try {
+            decoder.getSize()
+            fail("Should throw IllegalStateException")
+        } catch (e: IllegalStateException) {
+            assertEquals("Cannot getSize while in state: Uninitialized", e.message)
+        }
+    }
+
+    @Test
+    fun testPrecache_Uninitialized() = runTest {
+        val decoder = Jp2kDecoder(coroutineDispatcher = testDispatcher)
+        try {
+            decoder.precache(ByteArray(10))
+            fail("Should throw IllegalStateException")
+        } catch (e: IllegalStateException) {
+            assertEquals("Cannot precache while in state: Uninitialized", e.message)
+        }
+    }
+
+    @Test
+    fun testDecodeImage_ByteArray_Ratio() = runTest {
+        val jsonBmp = """{"bmp": "AQID", "timePreProcess": 0, "timeWasm": 0, "timePostProcess": 0}"""
+
+        val decoder = createInitializedDecoder { script ->
+            if (script.contains("decodeJ2KRatio(")) {
+                TestListenableFuture(jsonBmp)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        val data = ByteArray(20)
+        decoder.decodeImage(data, 0.0f, 0.0f, 0.5f, 0.5f)
+
+        verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2KRatio("))
+    }
+
+    @Test
+    fun testDecodeImage_ByteArray_Rect() = runTest {
+        val jsonBmp = """{"bmp": "AQID", "timePreProcess": 0, "timeWasm": 0, "timePostProcess": 0}"""
+
+        val decoder = createInitializedDecoder { script ->
+            if (script.contains("decodeJ2K(")) {
+                TestListenableFuture(jsonBmp)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        val data = ByteArray(20)
+        val rect = android.graphics.Rect(0, 0, 100, 100)
+        decoder.decodeImage(data, rect)
+
+        verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2K("))
+    }
 }

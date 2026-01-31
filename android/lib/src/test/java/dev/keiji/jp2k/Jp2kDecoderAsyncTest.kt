@@ -363,6 +363,64 @@ class Jp2kDecoderAsyncTest {
         // Use a valid size array to bypass size check and hit the state check
         decoder.decodeImage(ByteArray(20), callbackDecode)
         verify(callbackDecode).onError(any())
+
+        // Verify precache returns cancellation
+        val callbackPrecache = org.mockito.kotlin.mock<Callback<Unit>>()
+        decoder.precache(ByteArray(10), callbackPrecache)
+        verify(callbackPrecache).onError(any())
+
+        // Verify getSize returns cancellation
+        val callbackSize = org.mockito.kotlin.mock<Callback<Size>>()
+        decoder.getSize(callbackSize)
+        verify(callbackSize).onError(any())
+    }
+
+    @Test
+    fun testInit_AlreadyInitialized() {
+        val decoder = createInitializedDecoder()
+        assertEquals(State.Initialized, decoder.state)
+
+        Mockito.clearInvocations(isolate)
+
+        val callback = org.mockito.kotlin.mock<Callback<Unit>>()
+        decoder.init(context, callback)
+
+        verify(callback).onSuccess(any())
+        // Should not have called JS again
+        verify(isolate, Mockito.never()).evaluateJavaScriptAsync(any<String>())
+    }
+
+    @Test
+    fun testDecodeImage_Uninitialized() {
+        val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
+        runUninitializedAction { it.decodeImage(ByteArray(20), callback) }
+        verify(callback).onError(org.mockito.kotlin.check {
+            assertEquals("Cannot decodeImage while in state: Uninitialized", it.message)
+        })
+    }
+
+    @Test
+    fun testGetSize_Uninitialized() {
+        val callback = org.mockito.kotlin.mock<Callback<Size>>()
+        runUninitializedAction { it.getSize(callback) }
+        verify(callback).onError(org.mockito.kotlin.check {
+            assertEquals("Cannot getSize while in state: Uninitialized", it.message)
+        })
+    }
+
+    @Test
+    fun testPrecache_Uninitialized() {
+        val callback = org.mockito.kotlin.mock<Callback<Unit>>()
+        runUninitializedAction { it.precache(ByteArray(10), callback) }
+        verify(callback).onError(org.mockito.kotlin.check {
+            assertEquals("Cannot precache while in state: Uninitialized", it.message)
+        })
+    }
+
+    private fun runUninitializedAction(action: (Jp2kDecoderAsync) -> Unit) {
+        val directExecutor = Executor { it.run() }
+        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
+        action(decoder)
     }
 
     @Test
@@ -409,6 +467,47 @@ class Jp2kDecoderAsyncTest {
 
         // Verify script contains coordinates
         verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2KWithCache("))
+        verify(callback).onSuccess(any())
+    }
+
+    @Test
+    fun testDecodeImage_ByteArray_Ratio() {
+        val jsonBmp = """{"bmp": "AQID", "timePreProcess": 0, "timeWasm": 0, "timePostProcess": 0}"""
+
+        val decoder = createInitializedDecoder { script ->
+            if (script.contains("decodeJ2KRatio(")) {
+                TestListenableFuture(jsonBmp)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        val data = ByteArray(20)
+        val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
+        decoder.decodeImage(data, 0.0f, 0.0f, 0.5f, 0.5f, ColorFormat.ARGB8888, callback)
+
+        verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2KRatio("))
+        verify(callback).onSuccess(any())
+    }
+
+    @Test
+    fun testDecodeImage_ByteArray_Rect() {
+        val jsonBmp = """{"bmp": "AQID", "timePreProcess": 0, "timeWasm": 0, "timePostProcess": 0}"""
+
+        val decoder = createInitializedDecoder { script ->
+            if (script.contains("decodeJ2K(")) {
+                TestListenableFuture(jsonBmp)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        val data = ByteArray(20)
+        val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
+        val rect = android.graphics.Rect(0, 0, 100, 100)
+        decoder.decodeImage(data, rect, ColorFormat.ARGB8888, callback)
+
+        verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2K("))
         verify(callback).onSuccess(any())
     }
 }
