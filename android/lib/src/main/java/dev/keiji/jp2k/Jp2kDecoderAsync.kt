@@ -5,6 +5,7 @@ import android.content.res.AssetManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Rect
+import android.graphics.RectF
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.javascriptengine.JavaScriptIsolate
@@ -430,6 +431,34 @@ class Jp2kDecoderAsync(
     /**
      * Decodes a specific region of a JPEG 2000 image asynchronously using cached data.
      *
+     * @param region The region to decode.
+     * @param colorFormat The desired output color format.
+     * @param callback The callback to receive the decoded [Bitmap] or error.
+     */
+    fun decodeImage(
+        region: RectF,
+        colorFormat: ColorFormat = ColorFormat.ARGB8888,
+        callback: Callback<Bitmap>
+    ) {
+        decodeImage(region.left, region.top, region.right, region.bottom, colorFormat, callback)
+    }
+
+    /**
+     * Decodes a specific region of a JPEG 2000 image asynchronously using cached data with default color format (ARGB 8888).
+     *
+     * @param region The region to decode.
+     * @param callback The callback to receive the decoded [Bitmap] or error.
+     */
+    fun decodeImage(
+        region: RectF,
+        callback: Callback<Bitmap>
+    ) {
+        decodeImage(region, ColorFormat.ARGB8888, callback)
+    }
+
+    /**
+     * Decodes a specific region of a JPEG 2000 image asynchronously using cached data.
+     *
      * @param left The left coordinate ratio (0.0 - 1.0).
      * @param top The top coordinate ratio (0.0 - 1.0).
      * @param right The right coordinate ratio (0.0 - 1.0).
@@ -584,6 +613,38 @@ class Jp2kDecoderAsync(
     fun decodeImage(
         j2kData: ByteArray,
         region: Rect,
+        callback: Callback<Bitmap>
+    ) {
+        decodeImage(j2kData, region, ColorFormat.ARGB8888, callback)
+    }
+
+    /**
+     * Decodes a specific region of a JPEG 2000 image asynchronously.
+     *
+     * @param j2kData The raw byte array of the JPEG 2000 image.
+     * @param region The region to decode.
+     * @param colorFormat The desired output color format.
+     * @param callback The callback to receive the decoded [Bitmap] or error.
+     */
+    fun decodeImage(
+        j2kData: ByteArray,
+        region: RectF,
+        colorFormat: ColorFormat = ColorFormat.ARGB8888,
+        callback: Callback<Bitmap>
+    ) {
+        decodeImage(j2kData, region.left, region.top, region.right, region.bottom, colorFormat, callback)
+    }
+
+    /**
+     * Decodes a specific region of a JPEG 2000 image asynchronously with default color format (ARGB 8888).
+     *
+     * @param j2kData The raw byte array of the JPEG 2000 image.
+     * @param region The region to decode.
+     * @param callback The callback to receive the decoded [Bitmap] or error.
+     */
+    fun decodeImage(
+        j2kData: ByteArray,
+        region: RectF,
         callback: Callback<Bitmap>
     ) {
         decodeImage(j2kData, region, ColorFormat.ARGB8888, callback)
