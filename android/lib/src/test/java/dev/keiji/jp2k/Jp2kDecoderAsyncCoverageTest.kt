@@ -5,6 +5,7 @@ import android.content.res.AssetManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Rect
+import android.graphics.RectF
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
 import com.google.common.util.concurrent.ListenableFuture
@@ -192,6 +193,33 @@ class Jp2kDecoderAsyncCoverageTest {
 
         // Exercises: decodeImage(ByteArray, left, top, right, bottom, Callback)
         decoder.decodeImage(data, 0f, 0f, 1f, 1f, callback)
+
+        verify(isolate, Mockito.atLeastOnce()).evaluateJavaScriptAsync(any<String>())
+    }
+
+    @Test
+    fun testDecodeImage_RectF_NoColorFormat() {
+        val decoder = createInitializedDecoder()
+        val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
+        val data = ByteArray(12)
+        decoder.precache(data, org.mockito.kotlin.mock<Callback<Unit>>())
+        val rectF = RectF(0f, 0f, 0.5f, 0.5f)
+
+        // Exercises: decodeImage(RectF, Callback)
+        decoder.decodeImage(rectF, callback)
+
+        verify(isolate, Mockito.atLeastOnce()).evaluateJavaScriptAsync(any<String>())
+    }
+
+    @Test
+    fun testDecodeImage_ByteArray_RectF_NoColorFormat() {
+        val decoder = createInitializedDecoder()
+        val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
+        val data = ByteArray(12)
+        val rectF = RectF(0f, 0f, 0.5f, 0.5f)
+
+        // Exercises: decodeImage(ByteArray, RectF, Callback)
+        decoder.decodeImage(data, rectF, callback)
 
         verify(isolate, Mockito.atLeastOnce()).evaluateJavaScriptAsync(any<String>())
     }
@@ -546,6 +574,18 @@ class Jp2kDecoderAsyncCoverageTest {
         val data = ByteArray(20)
 
         decoder.decodeImage(data, -0.1f, 0f, 0.5f, 0.5f, callback)
+        verify(callback).onError(org.mockito.kotlin.check {
+            assertTrue(it is IllegalArgumentException)
+            assertEquals("Ratio must be 0.0 - 1.0", it.message)
+        })
+    }
+
+    @Test
+    fun testDecodeImage_InvalidRatio_Precaching() {
+        val decoder = createInitializedDecoder()
+        val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
+
+        decoder.decodeImage(-0.1f, 0f, 0.5f, 0.5f, callback)
         verify(callback).onError(org.mockito.kotlin.check {
             assertTrue(it is IllegalArgumentException)
             assertEquals("Ratio must be 0.0 - 1.0", it.message)

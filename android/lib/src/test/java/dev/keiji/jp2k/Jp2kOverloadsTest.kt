@@ -5,6 +5,7 @@ import android.content.res.AssetManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Rect
+import android.graphics.RectF
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
 import com.google.common.util.concurrent.ListenableFuture
@@ -92,6 +93,7 @@ class Jp2kOverloadsTest {
         val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
         val data = ByteArray(12)
         val rect = Rect(0, 0, 10, 10)
+        val rectF = RectF(0f, 0f, 0.5f, 0.5f)
 
         // Prepare mock for decode execution
         val jsonBmp = """{"bmp": "AQID"}"""
@@ -105,6 +107,8 @@ class Jp2kOverloadsTest {
         decoder.decodeImage(rect, callback)
         decoder.decodeImage(0f, 0f, 0.5f, 0.5f, ColorFormat.ARGB8888, callback)
         decoder.decodeImage(0f, 0f, 0.5f, 0.5f, callback)
+        decoder.decodeImage(rectF, ColorFormat.ARGB8888, callback)
+        decoder.decodeImage(rectF, callback)
 
         // Data overloads
         decoder.decodeImage(data, ColorFormat.ARGB8888, callback)
@@ -112,11 +116,13 @@ class Jp2kOverloadsTest {
         decoder.decodeImage(data, 0, 0, 10, 10, callback)
         decoder.decodeImage(data, rect, ColorFormat.ARGB8888, callback)
         decoder.decodeImage(data, rect, callback)
+        decoder.decodeImage(data, rectF, ColorFormat.ARGB8888, callback)
+        decoder.decodeImage(data, rectF, callback)
         decoder.decodeImage(data, 0f, 0f, 0.5f, 0.5f, ColorFormat.ARGB8888, callback)
         decoder.decodeImage(data, 0f, 0f, 0.5f, 0.5f, callback)
 
         // Just verify called many times
-        verify(isolate, Mockito.atLeast(14)).evaluateJavaScriptAsync(any<String>())
+        verify(isolate, Mockito.atLeast(18)).evaluateJavaScriptAsync(any<String>())
     }
 
     @Test
@@ -132,6 +138,7 @@ class Jp2kOverloadsTest {
 
         val data = ByteArray(12)
         val rect = Rect(0, 0, 10, 10)
+        val rectF = RectF(0f, 0f, 0.5f, 0.5f)
         val jsonBmp = """{"bmp": "AQID"}"""
         doAnswer { TestListenableFuture(jsonBmp) }.whenever(isolate).evaluateJavaScriptAsync(org.mockito.ArgumentMatchers.contains("decodeJ2K"))
 
@@ -139,14 +146,16 @@ class Jp2kOverloadsTest {
         decoder.decodeImage(ColorFormat.ARGB8888)
         decoder.decodeImage(0, 0, 10, 10, ColorFormat.ARGB8888)
         decoder.decodeImage(rect, ColorFormat.ARGB8888)
+        decoder.decodeImage(rectF, ColorFormat.ARGB8888)
         decoder.decodeImage(0f, 0f, 0.5f, 0.5f, ColorFormat.ARGB8888)
 
         // Data overloads
         decoder.decodeImage(data, ColorFormat.ARGB8888)
         decoder.decodeImage(data, 0, 0, 10, 10, ColorFormat.ARGB8888)
         decoder.decodeImage(data, rect, ColorFormat.ARGB8888)
+        decoder.decodeImage(data, rectF, ColorFormat.ARGB8888)
         decoder.decodeImage(data, 0f, 0f, 0.5f, 0.5f, ColorFormat.ARGB8888)
 
-        verify(isolate, Mockito.atLeast(8)).evaluateJavaScriptAsync(any<String>())
+        verify(isolate, Mockito.atLeast(10)).evaluateJavaScriptAsync(any<String>())
     }
 }
