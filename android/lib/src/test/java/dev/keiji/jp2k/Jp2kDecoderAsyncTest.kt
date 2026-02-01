@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.AssetManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.RectF
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
 import com.google.common.util.concurrent.ListenableFuture
@@ -508,6 +509,54 @@ class Jp2kDecoderAsyncTest {
         decoder.decodeImage(data, rect, ColorFormat.ARGB8888, callback)
 
         verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2K("))
+        verify(callback).onSuccess(any())
+    }
+
+    @Test
+    fun testDecodeImage_RectF_Success() {
+        val jsonBmp = """{"bmp": "AQID", "timePreProcess": 0, "timeWasm": 0, "timePostProcess": 0}"""
+
+        val decoder = createInitializedDecoder { script ->
+            if (script.contains("decodeJ2KWithCacheRatio(")) {
+                TestListenableFuture(jsonBmp)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+        val data = ByteArray(20)
+
+        // Precache manually
+        val callbackPrecache = org.mockito.kotlin.mock<Callback<Unit>>()
+        decoder.precache(data, callbackPrecache)
+        verify(callbackPrecache).onSuccess(any())
+
+        val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
+        val rectF = RectF(0.0f, 0.0f, 0.5f, 0.5f)
+        decoder.decodeImage(rectF, ColorFormat.ARGB8888, callback)
+
+        // Verify script contains coordinates
+        verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2KWithCacheRatio("))
+        verify(callback).onSuccess(any())
+    }
+
+    @Test
+    fun testDecodeImage_ByteArray_RectF_Success() {
+        val jsonBmp = """{"bmp": "AQID", "timePreProcess": 0, "timeWasm": 0, "timePostProcess": 0}"""
+
+        val decoder = createInitializedDecoder { script ->
+            if (script.contains("decodeJ2KRatio(")) {
+                TestListenableFuture(jsonBmp)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        val data = ByteArray(20)
+        val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
+        val rectF = RectF(0.0f, 0.0f, 0.5f, 0.5f)
+        decoder.decodeImage(data, rectF, ColorFormat.ARGB8888, callback)
+
+        verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2KRatio("))
         verify(callback).onSuccess(any())
     }
 }

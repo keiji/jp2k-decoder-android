@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.AssetManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.RectF
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
 import com.google.common.util.concurrent.ListenableFuture
@@ -498,6 +499,45 @@ class Jp2kDecoderTest {
         decoder.decodeImage(data, rect)
 
         verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2K("))
+    }
+
+    @Test
+    fun testDecodeImage_RectF_Success() = runTest {
+        val jsonBmp = """{"bmp": "AQID", "timePreProcess": 0, "timeWasm": 0, "timePostProcess": 0}"""
+
+        val decoder = createInitializedDecoder { script ->
+            if (script.contains("decodeJ2KWithCacheRatio(")) {
+                TestListenableFuture(jsonBmp)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+        val data = ByteArray(10)
+        decoder.precache(data)
+
+        val rectF = RectF(0.0f, 0.0f, 0.5f, 0.5f)
+        decoder.decodeImage(rectF)
+
+        verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2KWithCacheRatio("))
+    }
+
+    @Test
+    fun testDecodeImage_ByteArray_RectF_Success() = runTest {
+        val jsonBmp = """{"bmp": "AQID", "timePreProcess": 0, "timeWasm": 0, "timePostProcess": 0}"""
+
+        val decoder = createInitializedDecoder { script ->
+            if (script.contains("decodeJ2KRatio(")) {
+                TestListenableFuture(jsonBmp)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        val data = ByteArray(20)
+        val rectF = RectF(0.0f, 0.0f, 0.5f, 0.5f)
+        decoder.decodeImage(data, rectF)
+
+        verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2KRatio("))
     }
 
     @Test

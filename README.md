@@ -136,10 +136,33 @@ val bitmap = decoder.decodeImage(jp2kBytes, 100, 100, 300, 300)
 decoder.precache(jp2kBytes)
 val bitmap = decoder.decodeImage(100, 100, 300, 300)
 
-// Using Rect (Requires precached data)
+// Using Rect
 val rect = Rect(100, 100, 300, 300)
+// With byte array
+val bitmap = decoder.decodeImage(jp2kBytes, rect)
+// Or with precached data
 decoder.precache(jp2kBytes)
 val bitmap = decoder.decodeImage(rect)
+```
+
+#### Ratio-based Partial Decoding
+
+You can also specify the region using ratios (0.0 - 1.0).
+
+```kotlin
+// Decode a region (ratio)
+val bitmap = decoder.decodeImage(jp2kBytes, 0.0f, 0.0f, 0.5f, 0.5f)
+
+// Or using precached data
+decoder.precache(jp2kBytes)
+val bitmap = decoder.decodeImage(0.0f, 0.0f, 0.5f, 0.5f)
+
+// Using RectF
+val rectF = RectF(0.0f, 0.0f, 0.5f, 0.5f)
+// With byte array
+val bitmap = decoder.decodeImage(jp2kBytes, rectF)
+// Or with precached data
+val bitmap = decoder.decodeImage(rectF)
 ```
 
 ## Configuration
