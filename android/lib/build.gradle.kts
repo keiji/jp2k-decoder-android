@@ -15,8 +15,8 @@ plugins {
 
 nmcpAggregation {
     centralPortal {
-        username = System.getenv("CENTRAL_PORTAL_USERNAME")
-        password = System.getenv("CENTRAL_PORTAL_PASSWORD")
+        username = providers.environmentVariable("CENTRAL_PORTAL_USERNAME")
+        password = providers.environmentVariable("CENTRAL_PORTAL_PASSWORD")
         publishingType = "USER_MANAGED"
     }
 }
