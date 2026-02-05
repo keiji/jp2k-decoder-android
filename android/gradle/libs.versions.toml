@@ -13,7 +13,7 @@ coroutines = "1.10.2"
 dokka = "2.1.0"
 nmcp = "1.4.4"
 mockito = "5.2.0"
-json = "20240303"
+json = "20251224"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
