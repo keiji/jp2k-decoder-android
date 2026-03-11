@@ -66,7 +66,7 @@ jobs:
         run: ./gradlew :lib:dokkaGenerate
 
       - name: Upload Documentation
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: dokka-html
           path: android/lib/build/dokka/html
@@ -152,7 +152,7 @@ jobs:
           fi
 
       - name: Upload WASM artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: openjpeg_core.wasm
           path: openjpeg_core.wasm
