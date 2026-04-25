@@ -163,10 +163,10 @@ class Jp2kDecoderAsync(
 
         try {
             val result = resultFuture.get()
-            if (result.isNullOrBlank()) {
-                throw IllegalStateException("JavaScriptEngine returned empty result - expected Success indicator")
-            }
             if (result != INTERNAL_RESULT_SUCCESS) {
+                if (result.isNullOrBlank()) {
+                    throw IllegalStateException("JavaScriptEngine returned empty result - expected Success indicator")
+                }
                 throw IllegalStateException("WASM instantiation failed.")
             }
         } catch (e: ExecutionException) {
@@ -218,11 +218,11 @@ class Jp2kDecoderAsync(
                     val resultFuture = isolate.evaluateJavaScriptAsync(script)
                     val result = resultFuture.get()
 
-                    if (result.isNullOrBlank()) {
-                        throw IllegalStateException("JavaScriptEngine returned empty result - expected Success indicator or JSON error")
-                    }
-
                     if (result != INTERNAL_RESULT_SUCCESS) {
+                        if (result.isNullOrBlank()) {
+                            throw IllegalStateException("JavaScriptEngine returned empty result - expected Success indicator or JSON error")
+                        }
+
                         val root = JSONObject(result)
                         if (root.has("errorCode")) {
                             val errorCode = root.getInt("errorCode")
