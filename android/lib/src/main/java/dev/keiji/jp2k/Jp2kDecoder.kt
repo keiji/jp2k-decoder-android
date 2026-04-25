@@ -145,6 +145,7 @@ class Jp2kDecoder(
             try {
                 val result = resultFuture.await()
                 if (result != INTERNAL_RESULT_SUCCESS) {
+                    ensureNotEmpty(result, "Success indicator")
                     throw IllegalStateException("WASM instantiation failed.")
                 }
             } catch (e: ExecutionException) {
@@ -181,9 +182,8 @@ class Jp2kDecoder(
                 val result = resultFuture.await()
 
                 if (result != INTERNAL_RESULT_SUCCESS) {
-                    if (result.isNullOrEmpty()) {
-                        throw IllegalStateException("JS engine returned empty result - expression may have evaluated to a non-string type")
-                    }
+                    ensureNotEmpty(result, "Success indicator or JSON error")
+
                     val root = JSONObject(result)
                     if (root.has("errorCode")) {
                         val errorCode = root.getInt("errorCode")
@@ -238,10 +238,7 @@ class Jp2kDecoder(
 
             val result = withContext(coroutineDispatcher) {
                 val resultFuture = isolate.evaluateJavaScriptAsync(script)
-                val jsonResult = resultFuture.await()
-                if (jsonResult.isNullOrEmpty()) {
-                    throw IllegalStateException("JS engine returned empty result - expression may have evaluated to a non-string type")
-                }
+                val jsonResult = ensureNotEmpty(resultFuture.await(), "JSON")
 
                 val root = JSONObject(jsonResult)
                 if (root.has("errorCode")) {
@@ -519,10 +516,7 @@ class Jp2kDecoder(
                 val measureTimes = config.logLevel != null
 
                 val resultFuture = isolate.evaluateJavaScriptAsync(script)
-                val jsonResult = resultFuture.await()
-                if (jsonResult.isNullOrEmpty()) {
-                    throw IllegalStateException("JS engine returned empty result - expression may have evaluated to a non-string type")
-                }
+                val jsonResult = ensureNotEmpty(resultFuture.await(), "JSON")
 
                 val root = JSONObject(jsonResult)
                 if (root.has("errorCode")) {
@@ -600,6 +594,12 @@ class Jp2kDecoder(
         }
     }
 
+    private fun ensureNotEmpty(value: String?, expectedDescription: String): String {
+        if (value.isNullOrBlank()) {
+            throw IllegalStateException("JavaScriptEngine returned empty result - expected $expectedDescription")
+        }
+        return value
+    }
 
     /**
      * Retrieves memory usage statistics from the JS/WASM environment.
@@ -620,10 +620,8 @@ class Jp2kDecoder(
         try {
             return withContext(coroutineDispatcher) {
                 val resultFuture = isolate.evaluateJavaScriptAsync("globalThis.getMemoryUsage()")
-                val jsonResult = resultFuture.await()
-                if (jsonResult.isNullOrEmpty()) {
-                    throw IllegalStateException("JS engine returned empty result - expression may have evaluated to a non-string type")
-                }
+                val jsonResult = ensureNotEmpty(resultFuture.await(), "JSON")
+
                 val root = JSONObject(jsonResult)
 
                 MemoryUsage(

@@ -559,4 +559,98 @@ class Jp2kDecoderAsyncTest {
         verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2KRatio("))
         verify(callback).onSuccess(any())
     }
+
+    @Test
+    fun testLoadWasm_EmptyResult() {
+        doAnswer { invocation ->
+            TestListenableFuture("") // Empty result
+        }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
+
+        val directExecutor = Executor { it.run() }
+        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
+        val callback = org.mockito.kotlin.mock<Callback<Unit>>()
+        decoder.init(context, callback)
+
+        verify(callback).onError(org.mockito.kotlin.check {
+            assert(it is IllegalStateException)
+            assertEquals("JavaScriptEngine returned empty result - expected Success indicator", it.message)
+        })
+    }
+
+    @Test
+    fun testPrecache_EmptyResult() {
+        val decoder = createInitializedDecoder { script ->
+            if (script.startsWith("globalThis.setData")) {
+                TestListenableFuture("") // Empty result
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        val callback = org.mockito.kotlin.mock<Callback<Unit>>()
+        decoder.precache(ByteArray(10), callback)
+
+        verify(callback).onError(org.mockito.kotlin.check {
+            assert(it is IllegalStateException)
+            assertEquals("JavaScriptEngine returned empty result - expected Success indicator or JSON error", it.message)
+        })
+    }
+
+    @Test
+    fun testGetSize_EmptyResult() {
+        val decoder = createInitializedDecoder { script ->
+            if (script.startsWith("globalThis.getSizeWithCache")) {
+                TestListenableFuture("") // Empty result
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+        decoder.precache(ByteArray(10), org.mockito.kotlin.mock<Callback<Unit>>())
+
+        val callback = org.mockito.kotlin.mock<Callback<Size>>()
+        decoder.getSize(callback)
+
+        verify(callback).onError(org.mockito.kotlin.check {
+            assert(it is IllegalStateException)
+            assertEquals("JavaScriptEngine returned empty result - expected JSON", it.message)
+        })
+    }
+
+    @Test
+    fun testDecodeImage_EmptyResult() {
+        val decoder = createInitializedDecoder { script ->
+            if (script.contains("decodeJ2K(")) {
+                TestListenableFuture("") // Empty result
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
+        decoder.decodeImage(ByteArray(20), callback)
+
+        verify(callback).onError(org.mockito.kotlin.check {
+            assert(it is IllegalStateException)
+            assertEquals("JavaScriptEngine returned empty result - expected JSON", it.message)
+        })
+    }
+
+    @Test
+    fun testGetMemoryUsage_EmptyResult() {
+        val decoder = createInitializedDecoder { script ->
+            if (script.contains("getMemoryUsage()")) {
+                TestListenableFuture("") // Empty result
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        val callback = org.mockito.kotlin.mock<Callback<MemoryUsage>>()
+        decoder.getMemoryUsage(callback)
+
+        verify(callback).onError(org.mockito.kotlin.check {
+            assert(it is IllegalStateException)
+            assertEquals("JavaScriptEngine returned empty result - expected JSON", it.message)
+        })
+    }
 }
