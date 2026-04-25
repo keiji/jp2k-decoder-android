@@ -181,6 +181,9 @@ class Jp2kDecoder(
                 val result = resultFuture.await()
 
                 if (result != INTERNAL_RESULT_SUCCESS) {
+                    if (result.isNullOrEmpty()) {
+                        throw IllegalStateException("JS engine returned empty result - expression may have evaluated to a non-string type")
+                    }
                     val root = JSONObject(result)
                     if (root.has("errorCode")) {
                         val errorCode = root.getInt("errorCode")
@@ -236,7 +239,9 @@ class Jp2kDecoder(
             val result = withContext(coroutineDispatcher) {
                 val resultFuture = isolate.evaluateJavaScriptAsync(script)
                 val jsonResult = resultFuture.await()
-                    ?: throw IllegalStateException("Result Future is null")
+                if (jsonResult.isNullOrEmpty()) {
+                    throw IllegalStateException("JS engine returned empty result - expression may have evaluated to a non-string type")
+                }
 
                 val root = JSONObject(jsonResult)
                 if (root.has("errorCode")) {
@@ -515,7 +520,9 @@ class Jp2kDecoder(
 
                 val resultFuture = isolate.evaluateJavaScriptAsync(script)
                 val jsonResult = resultFuture.await()
-                    ?: throw IllegalStateException("Result Future is null")
+                if (jsonResult.isNullOrEmpty()) {
+                    throw IllegalStateException("JS engine returned empty result - expression may have evaluated to a non-string type")
+                }
 
                 val root = JSONObject(jsonResult)
                 if (root.has("errorCode")) {
@@ -613,7 +620,10 @@ class Jp2kDecoder(
         try {
             return withContext(coroutineDispatcher) {
                 val resultFuture = isolate.evaluateJavaScriptAsync("globalThis.getMemoryUsage()")
-                val jsonResult = resultFuture.await() ?: throw IllegalStateException("Result Future is null")
+                val jsonResult = resultFuture.await()
+                if (jsonResult.isNullOrEmpty()) {
+                    throw IllegalStateException("JS engine returned empty result - expression may have evaluated to a non-string type")
+                }
                 val root = JSONObject(jsonResult)
 
                 MemoryUsage(
