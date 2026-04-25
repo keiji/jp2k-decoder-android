@@ -163,6 +163,9 @@ class Jp2kDecoderAsync(
 
         try {
             val result = resultFuture.get()
+            if (result.isNullOrBlank()) {
+                throw IllegalStateException("JavaScriptEngine returned empty result - expected Success indicator")
+            }
             if (result != INTERNAL_RESULT_SUCCESS) {
                 throw IllegalStateException("WASM instantiation failed.")
             }
@@ -214,6 +217,10 @@ class Jp2kDecoderAsync(
 
                     val resultFuture = isolate.evaluateJavaScriptAsync(script)
                     val result = resultFuture.get()
+
+                    if (result.isNullOrBlank()) {
+                        throw IllegalStateException("JavaScriptEngine returned empty result - expected Success indicator or JSON error")
+                    }
 
                     if (result != INTERNAL_RESULT_SUCCESS) {
                         val root = JSONObject(result)
@@ -301,8 +308,11 @@ class Jp2kDecoderAsync(
                     val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
 
                     val resultFuture = isolate.evaluateJavaScriptAsync(script)
-                    val jsonResult =
-                        resultFuture.get() ?: throw IllegalStateException("Result Future is null")
+                    val jsonResult = resultFuture.get()
+
+                    if (jsonResult.isNullOrBlank()) {
+                        throw IllegalStateException("JavaScriptEngine returned empty result - expected JSON")
+                    }
 
                     val root = JSONObject(jsonResult)
                     if (root.has("errorCode")) {
@@ -766,8 +776,11 @@ class Jp2kDecoderAsync(
                     val resultFuture = isolate.evaluateJavaScriptAsync(script)
 
                     // Block and wait for result on background thread
-                    val jsonResult =
-                        resultFuture.get() ?: throw IllegalStateException("Result Future is null")
+                    val jsonResult = resultFuture.get()
+
+                    if (jsonResult.isNullOrBlank()) {
+                        throw IllegalStateException("JavaScriptEngine returned empty result - expected JSON")
+                    }
 
                     val root = JSONObject(jsonResult)
                     if (root.has("errorCode")) {
@@ -911,8 +924,12 @@ class Jp2kDecoderAsync(
                     val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
                     val resultFuture = isolate.evaluateJavaScriptAsync("globalThis.getMemoryUsage()")
 
-                    val jsonResult =
-                        resultFuture.get() ?: throw IllegalStateException("Result Future is null")
+                    val jsonResult = resultFuture.get()
+
+                    if (jsonResult.isNullOrBlank()) {
+                        throw IllegalStateException("JavaScriptEngine returned empty result - expected JSON")
+                    }
+
                     val root = JSONObject(jsonResult)
 
                     val usage = MemoryUsage(

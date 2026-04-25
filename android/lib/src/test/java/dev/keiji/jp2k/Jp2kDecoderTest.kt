@@ -741,4 +741,92 @@ class Jp2kDecoderTest {
         }
     }
 
+    @Test
+    fun testLoadWasm_EmptyResult() = runTest {
+        doAnswer { invocation ->
+            TestListenableFuture("") // Empty result
+        }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
+
+        val decoder = Jp2kDecoder(coroutineDispatcher = testDispatcher)
+        try {
+            decoder.init(context)
+            fail("Should throw IllegalStateException")
+        } catch (e: IllegalStateException) {
+            assertEquals("JavaScriptEngine returned empty result - expected Success indicator", e.message)
+        }
+    }
+
+    @Test
+    fun testPrecache_EmptyResult() = runTest {
+        val decoder = createInitializedDecoder { script ->
+            if (script.startsWith("globalThis.setData")) {
+                TestListenableFuture("") // Empty result
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        try {
+            decoder.precache(ByteArray(10))
+            fail("Should throw IllegalStateException")
+        } catch (e: IllegalStateException) {
+            assertEquals("JavaScriptEngine returned empty result - expected Success indicator or JSON error", e.message)
+        }
+    }
+
+    @Test
+    fun testGetSize_EmptyResult() = runTest {
+        val decoder = createInitializedDecoder { script ->
+            if (script.startsWith("globalThis.getSizeWithCache")) {
+                TestListenableFuture("") // Empty result
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+        decoder.precache(ByteArray(10))
+
+        try {
+            decoder.getSize()
+            fail("Should throw IllegalStateException")
+        } catch (e: IllegalStateException) {
+            assertEquals("JavaScriptEngine returned empty result - expected JSON", e.message)
+        }
+    }
+
+    @Test
+    fun testDecodeImage_EmptyResult() = runTest {
+        val decoder = createInitializedDecoder { script ->
+            if (script.contains("decodeJ2K(")) {
+                TestListenableFuture("") // Empty result
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        val data = ByteArray(20)
+        try {
+            decoder.decodeImage(data)
+            fail("Should throw IllegalStateException")
+        } catch (e: IllegalStateException) {
+            assertEquals("JavaScriptEngine returned empty result - expected JSON", e.message)
+        }
+    }
+
+    @Test
+    fun testGetMemoryUsage_EmptyResult() = runTest {
+        val decoder = createInitializedDecoder { script ->
+            if (script.contains("getMemoryUsage()")) {
+                TestListenableFuture("") // Empty result
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        try {
+            decoder.getMemoryUsage()
+            fail("Should throw IllegalStateException")
+        } catch (e: IllegalStateException) {
+            assertEquals("JavaScriptEngine returned empty result - expected JSON", e.message)
+        }
+    }
 }
