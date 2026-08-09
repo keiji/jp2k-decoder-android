@@ -52,6 +52,7 @@ class Jp2kDecoder(
         get() = _state
 
     private var jsIsolate: JavaScriptIsolate? = null
+    private var sandbox: JavaScriptSandbox? = null
 
     private fun log(priority: Int, message: String) {
         if (config.logLevel != null && priority >= config.logLevel) {
@@ -97,8 +98,9 @@ class Jp2kDecoder(
                 throw CancellationException("Jp2kDecoder was released during initialization.")
             }
             jsIsolate = isolate
+            this.sandbox = sandbox
 
-            loadWasm(isolate, assetManager)
+            loadWasm(isolate, assetManager, sandbox)
 
             if (_state == State.Released || _state == State.Releasing) {
                 throw CancellationException("Jp2kDecoder was released during initialization.")
@@ -117,11 +119,15 @@ class Jp2kDecoder(
         }
     }
 
-    private suspend fun loadWasm(isolate: JavaScriptIsolate, assetManager: AssetManager) {
+    private suspend fun loadWasm(isolate: JavaScriptIsolate, assetManager: AssetManager, sandbox: JavaScriptSandbox) {
         withContext(coroutineDispatcher) {
             val wasmBytes = assetManager.open(ASSET_PATH_WASM)
                 .readBytes()
-            isolate.provideNamedData("wasm-module", wasmBytes)
+            if (sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)) {
+                isolate.provideNamedData("wasm-module", wasmBytes)
+            } else {
+                throw IllegalStateException("JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER is not supported")
+            }
 
             val script = """
             $SCRIPT_BYTES_TO_BASE64_CONVERTER_LOCAL
@@ -177,7 +183,12 @@ class Jp2kDecoder(
             val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
             withContext(coroutineDispatcher) {
                 val dataId = UUID.randomUUID().toString()
-                isolate.provideNamedData(dataId, j2kData)
+                val sb = checkNotNull(sandbox) { "Sandbox not initialized" }
+                if (sb.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)) {
+                    isolate.provideNamedData(dataId, j2kData)
+                } else {
+                    throw IllegalStateException("JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER is not supported")
+                }
                 val script = "globalThis.setData(\'$dataId\');"
 
                 val resultFuture = isolate.evaluateJavaScriptAsync(script)
@@ -240,7 +251,12 @@ class Jp2kDecoder(
 
             val result = withContext(coroutineDispatcher) {
                 if (dataId != null && j2kData != null) {
-                    isolate.provideNamedData(dataId, j2kData)
+                    val sb = checkNotNull(sandbox) { "Sandbox not initialized" }
+                    if (sb.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)) {
+                        isolate.provideNamedData(dataId, j2kData)
+                    } else {
+                        throw IllegalStateException("JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER is not supported")
+                    }
                 }
                 val resultFuture = isolate.evaluateJavaScriptAsync(script)
                 val jsonResult = ensureNotEmpty(resultFuture.await(), "JSON")
@@ -521,7 +537,12 @@ class Jp2kDecoder(
 
             val bitmap = withContext(coroutineDispatcher) {
                 if (dataId != null && j2kData != null) {
-                    isolate.provideNamedData(dataId, j2kData)
+                    val sb = checkNotNull(sandbox) { "Sandbox not initialized" }
+                    if (sb.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)) {
+                        isolate.provideNamedData(dataId, j2kData)
+                    } else {
+                        throw IllegalStateException("JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER is not supported")
+                    }
                 }
 
                 val measureTimes = config.logLevel != null
@@ -663,6 +684,7 @@ class Jp2kDecoder(
              _state = State.Releasing
              isolateToClose = jsIsolate
              jsIsolate = null
+             sandbox = null
         }
 
         try {

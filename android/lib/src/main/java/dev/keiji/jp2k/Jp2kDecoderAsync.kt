@@ -46,6 +46,7 @@ class Jp2kDecoderAsync(
         get() = _state
 
     private var jsIsolate: JavaScriptIsolate? = null
+    private var sandbox: JavaScriptSandbox? = null
 
     private fun log(priority: Int, message: String) {
         if (config.logLevel != null && priority >= config.logLevel) {
@@ -104,10 +105,11 @@ class Jp2kDecoderAsync(
                             throw CancellationException("Jp2kDecoderAsync was released during initialization.")
                         }
                         jsIsolate = isolate
+            this.sandbox = sandbox
                     }
 
                     // Load WASM
-                    loadWasm(isolate, assetManager)
+                    loadWasm(isolate, assetManager, sandbox)
 
                     synchronized(lock) {
                         if (_state == State.Released || _state == State.Releasing) {
@@ -133,11 +135,15 @@ class Jp2kDecoderAsync(
         }
     }
 
-    private fun loadWasm(isolate: JavaScriptIsolate, assetManager: AssetManager) {
+    private fun loadWasm(isolate: JavaScriptIsolate, assetManager: AssetManager, sandbox: JavaScriptSandbox) {
         // This runs on backgroundExecutor
         val wasmBytes = assetManager.open(ASSET_PATH_WASM)
             .readBytes()
-        isolate.provideNamedData("wasm-module", wasmBytes)
+        if (sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)) {
+                isolate.provideNamedData("wasm-module", wasmBytes)
+            } else {
+                throw IllegalStateException("JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER is not supported")
+            }
 
         val script = """
         $SCRIPT_BYTES_TO_BASE64_CONVERTER
@@ -212,7 +218,12 @@ class Jp2kDecoderAsync(
                     val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
 
                     val dataId = UUID.randomUUID().toString()
-                    isolate.provideNamedData(dataId, j2kData)
+                    val sb = checkNotNull(sandbox) { "Sandbox not initialized" }
+                    if (sb.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)) {
+                        isolate.provideNamedData(dataId, j2kData)
+                    } else {
+                        throw IllegalStateException("JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER is not supported")
+                    }
                     val script = "globalThis.setData(\'$dataId\');"
 
                     val resultFuture = isolate.evaluateJavaScriptAsync(script)
@@ -306,7 +317,12 @@ class Jp2kDecoderAsync(
                     val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
 
                     if (dataId != null && j2kData != null) {
-                        isolate.provideNamedData(dataId, j2kData)
+                        val sb = checkNotNull(sandbox) { "Sandbox not initialized" }
+                        if (sb.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)) {
+                            isolate.provideNamedData(dataId, j2kData)
+                        } else {
+                            throw IllegalStateException("JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER is not supported")
+                        }
                     }
 
                     val resultFuture = isolate.evaluateJavaScriptAsync(script)
@@ -772,7 +788,12 @@ class Jp2kDecoderAsync(
                     val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
 
                     if (dataId != null && j2kData != null) {
-                        isolate.provideNamedData(dataId, j2kData)
+                        val sb = checkNotNull(sandbox) { "Sandbox not initialized" }
+                        if (sb.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)) {
+                            isolate.provideNamedData(dataId, j2kData)
+                        } else {
+                            throw IllegalStateException("JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER is not supported")
+                        }
                     }
 
                     val measureTimes = config.logLevel != null
@@ -963,6 +984,7 @@ class Jp2kDecoderAsync(
             _state = State.Releasing
             isolateToClose = jsIsolate
             jsIsolate = null
+             sandbox = null
         }
 
         try {
