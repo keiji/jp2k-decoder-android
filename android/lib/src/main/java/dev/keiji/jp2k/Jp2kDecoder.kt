@@ -123,7 +123,7 @@ class Jp2kDecoder(
 
     private suspend fun loadWasm(isolate: JavaScriptIsolate, assetManager: AssetManager, sandbox: JavaScriptSandbox) {
         withContext(coroutineDispatcher) {
-                        val wasmBytes = assetManager.open(ASSET_PATH_WASM)
+            val wasmBytes = assetManager.open(ASSET_PATH_WASM)
                 .readBytes()
             val isSupportNamedData = sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)
             val wasmBase64String = if (isSupportNamedData) {
@@ -195,16 +195,15 @@ class Jp2kDecoder(
         try {
             val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
             withContext(coroutineDispatcher) {
-
                 val isSupportNamedData = sandbox?.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER) == true
                 val script = if (isSupportNamedData) {
-                        val dataId = UUID.randomUUID().toString()
-                        isolate.provideNamedData(dataId, j2kData)
-                        "globalThis.setDataWithNamedData('$dataId');"
-                    } else {
-                        val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
-                        "globalThis.setData('$dataBase64String');"
-                    }
+                    val dataId = UUID.randomUUID().toString()
+                    isolate.provideNamedData(dataId, j2kData)
+                    "globalThis.setDataWithNamedData('$dataId');"
+                } else {
+                    val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
+                    "globalThis.setData('$dataBase64String');"
+                }
 
                 val resultFuture = isolate.evaluateJavaScriptAsync(script)
                 val result = resultFuture.await()
