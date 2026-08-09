@@ -8,10 +8,11 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.util.Log
 import androidx.core.content.ContextCompat
+import java.util.Base64
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
 import org.json.JSONObject
-import java.util.Base64
+import java.util.UUID
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executor
@@ -136,18 +137,18 @@ class Jp2kDecoderAsync(
         // This runs on backgroundExecutor
         val wasmBytes = assetManager.open(ASSET_PATH_WASM)
             .readBytes()
-        val wasmBase64String = Base64.getEncoder().encodeToString(wasmBytes)
+        isolate.provideNamedData("wasm-module", wasmBytes)
 
         val script = """
-        $SCRIPT_BYTES_BASE64_CONVERTER
+        $SCRIPT_BYTES_TO_BASE64_CONVERTER
         $SCRIPT_DEFINE_SET_DATA
 
         var wasmInstance;
-        const wasmBuffer = globalThis.base64ToBytes('$wasmBase64String');
-
         $SCRIPT_IMPORT_OBJECT
-
-        WebAssembly.instantiate(wasmBuffer, importObject).then(res => {
+            android.consumeNamedDataAsArrayBuffer("wasm-module").then(buffer => {
+                const wasmBuffer = new Uint8Array(buffer);
+                return WebAssembly.instantiate(wasmBuffer, importObject);
+            }).then(res => {
             wasmInstance = res.instance;
 
             $SCRIPT_DEFINE_DECODE_J2K
@@ -210,8 +211,9 @@ class Jp2kDecoderAsync(
                 try {
                     val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
 
-                    val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
-                    val script = "globalThis.setData('$dataBase64String');"
+                    val dataId = UUID.randomUUID().toString()
+                    isolate.provideNamedData(dataId, j2kData)
+                    val script = "globalThis.setData(\'$dataId\');"
 
                     val resultFuture = isolate.evaluateJavaScriptAsync(script)
                     val result = resultFuture.get()
@@ -269,12 +271,12 @@ class Jp2kDecoderAsync(
      * @param callback The callback to receive the [Size] or error.
      */
     fun getSize(j2kData: ByteArray, callback: Callback<Size>) {
-        val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
-        val script = "globalThis.getSize('$dataBase64String');"
-        executeGetSize(script, callback)
+        val dataId = UUID.randomUUID().toString()
+        val script = "globalThis.getSize('$dataId');"
+        executeGetSize(script, callback, dataId, j2kData)
     }
 
-    private fun executeGetSize(script: String, callback: Callback<Size>) {
+    private fun executeGetSize(script: String, callback: Callback<Size>, dataId: String? = null, j2kData: ByteArray? = null) {
         synchronized(lock) {
             if (_state == State.Released || _state == State.Releasing) {
                 callback.onError(CancellationException("Decoder was released."))
@@ -302,6 +304,10 @@ class Jp2kDecoderAsync(
 
                 try {
                     val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
+
+                    if (dataId != null && j2kData != null) {
+                        isolate.provideNamedData(dataId, j2kData)
+                    }
 
                     val resultFuture = isolate.evaluateJavaScriptAsync(script)
                     val jsonResult = ensureNotEmpty(resultFuture.get(), "JSON")
@@ -525,11 +531,11 @@ class Jp2kDecoderAsync(
         }
 
         val measureTimes = config.logLevel != null
-        val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
+        val dataId = UUID.randomUUID().toString()
         val script =
-            "globalThis.decodeJ2K('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, 0, 0, 0, 0);"
+            "globalThis.decodeJ2K('$dataId', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, 0, 0, 0, 0);"
 
-        executeDecodeImage(script, colorFormat, callback)
+        executeDecodeImage(script, colorFormat, callback, dataId, j2kData)
     }
 
     /**
@@ -560,11 +566,11 @@ class Jp2kDecoderAsync(
         }
 
         val measureTimes = config.logLevel != null
-        val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
+        val dataId = UUID.randomUUID().toString()
         val script =
-            "globalThis.decodeJ2K('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
+            "globalThis.decodeJ2K('$dataId', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
 
-        executeDecodeImage(script, colorFormat, callback)
+        executeDecodeImage(script, colorFormat, callback, dataId, j2kData)
     }
 
     /**
@@ -683,11 +689,11 @@ class Jp2kDecoderAsync(
         }
 
         val measureTimes = config.logLevel != null
-        val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
+        val dataId = UUID.randomUUID().toString()
         val script =
-            "globalThis.decodeJ2KRatio('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
+            "globalThis.decodeJ2KRatio('$dataId', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
 
-        executeDecodeImage(script, colorFormat, callback)
+        executeDecodeImage(script, colorFormat, callback, dataId, j2kData)
     }
 
     /**
@@ -730,7 +736,9 @@ class Jp2kDecoderAsync(
     private fun executeDecodeImage(
         script: String,
         colorFormat: ColorFormat,
-        callback: Callback<Bitmap>
+        callback: Callback<Bitmap>,
+        dataId: String? = null,
+        j2kData: ByteArray? = null
     ) {
         synchronized(lock) {
             // Allow if Initialized OR Processing (queueing up)
@@ -762,6 +770,10 @@ class Jp2kDecoderAsync(
 
                 try {
                     val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
+
+                    if (dataId != null && j2kData != null) {
+                        isolate.provideNamedData(dataId, j2kData)
+                    }
 
                     val measureTimes = config.logLevel != null
 

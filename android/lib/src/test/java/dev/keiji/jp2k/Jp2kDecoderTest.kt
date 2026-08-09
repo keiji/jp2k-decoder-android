@@ -132,7 +132,7 @@ class Jp2kDecoderTest {
 
         doAnswer { invocation ->
             val script = invocation.arguments[0] as String
-            if (script.contains("base64ToBytes")) {
+            if (script.contains("importObject")) {
                 TestListenableFuture(INTERNAL_RESULT_SUCCESS) // WASM load
             } else if (script.contains("setData")) {
                 TestListenableFuture(INTERNAL_RESULT_SUCCESS) // setData
@@ -159,7 +159,7 @@ class Jp2kDecoderTest {
 
         doAnswer { invocation ->
             val script = invocation.arguments[0] as String
-            if (script.contains("base64ToBytes")) {
+            if (script.contains("importObject")) {
                 TestListenableFuture(INTERNAL_RESULT_SUCCESS) // WASM load
             } else if (script.contains("getSizeWithCache")) {
                 TestListenableFuture(jsonError) // getSizeWithCache

@@ -28,45 +28,59 @@ const wasiSnapshotPreview = {
         const view = new DataView(wasmInstance.exports.memory.buffer);
         view.setUint32(p_environ_count, 0, true);
         view.setUint32(p_environ_buf_size, 0, true);
-        return 0;
+        return 0; // SUCCESS
     },
-    // 環境変数の実データを書き込む
-    environ_get: (p_environ, p_environ_buf) => 0,
-
-    // 標準出力・エラー出力
-    fd_write: (fd, iovs, iovs_len, p_nwritten) => {
+    // 環境変数の内容
+    environ_get: (p_environ, p_environ_buf) => {
+        return 0; // SUCCESS
+    },
+    // クロック・時刻
+    clock_time_get: (id, precision, p_time) => {
         const view = new DataView(wasmInstance.exports.memory.buffer);
-        let total = 0;
-        // iovsから書き込みデータの合計サイズを計算します。
-        // これを行わず0バイト書き込みとして返すと、呼び出し元（libc）が未完了とみなして
-        // 無限ループ（再試行）に陥る可能性があるため、データは捨てつつ「全て書き込んだ」ように振る舞います。
-        for (let i = 0; i < iovs_len; i++) {
-            const len = view.getUint32(iovs + i * 8 + 4, true);
-            total += len;
-        }
-        view.setUint32(p_nwritten, total, true);
-        return 0;
+        // FIXME とりあえず現在時刻のモック(ゼロ)を返す
+        view.setBigUint64(p_time, 0n, true);
+        return 0; // SUCCESS
     },
-    fd_close: (fd) => 0,
-    fd_seek: (fd, offset_low, offset_high, whence, p_new_offset) => 0,
+    // プロセスの終了
+    proc_exit: (rval) => {
+        throw new Error(`WASI exit: ${'$'}{rval}`);
+    },
+    // ファイルディスクリプタへの書き込み (stdout/stderrのモック)
+    fd_write: (fd, iovs_ptr, iovs_len, nwritten_ptr) => {
+        const memory = new Uint8Array(wasmInstance.exports.memory.buffer);
+        const view = new DataView(wasmInstance.exports.memory.buffer);
 
-    // プログラム終了
-    proc_exit: (code) => {
-        console.log("WASM exited with code: " + code);
-    }
+        let bytesWritten = 0;
+
+        for (let i = 0; i < iovs_len; i++) {
+            const ptr = view.getUint32(iovs_ptr + i * 8, true);
+            const len = view.getUint32(iovs_ptr + i * 8 + 4, true);
+
+            // FIXME とりあえず出力は無視する
+            // const str = new TextDecoder("utf-8").decode(new Uint8Array(memory.buffer, ptr, len));
+            // console.log(`fd_write(${'$'}{fd}): ${'$'}{str}`);
+
+            bytesWritten += len;
+        }
+
+        view.setUint32(nwritten_ptr, bytesWritten, true);
+        return 0; // SUCCESS
+    },
+    fd_close: (fd) => { return 0; },
+    fd_seek: (fd, offset, whence, newoffset_ptr) => { return 0; }
 };
-const env = {
-    emscripten_notify_memory_growth: (index) => {
-        // DO NOTHING
-    }
-};
+
 const importObject = {
     wasi_snapshot_preview1: wasiSnapshotPreview,
-    env: env,
+    env: {
+        emscripten_notify_memory_growth: (index) => {
+            // No-op
+        }
+    }
 };
 """
 
-internal const val SCRIPT_BYTES_BASE64_CONVERTER = """
+internal const val SCRIPT_BYTES_TO_BASE64_CONVERTER = """
             globalThis.bytesToBase64 = function(bytes) {
                 const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
                 let output = "";
@@ -94,47 +108,14 @@ internal const val SCRIPT_BYTES_BASE64_CONVERTER = """
                 }
                 return output;
             };
-
-            globalThis.base64ToBytes = function(base64) {
-                const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-                const lookup = new Uint8Array(256);
-                for (let i = 0; i < chars.length; i++) {
-                    lookup[chars.charCodeAt(i)] = i;
-                }
-
-                let bufferLength = base64.length * 0.75;
-                let len = base64.length;
-                let i, p = 0, encoded1, encoded2, encoded3, encoded4;
-
-                if (base64[base64.length - 1] === "=") {
-                    bufferLength--;
-                    if (base64[base64.length - 2] === "=") {
-                        bufferLength--;
-                    }
-                }
-
-                const bytes = new Uint8Array(bufferLength);
-
-                for (i = 0; i < len; i += 4) {
-                    encoded1 = lookup[base64.charCodeAt(i)];
-                    encoded2 = lookup[base64.charCodeAt(i + 1)];
-                    encoded3 = lookup[base64.charCodeAt(i + 2)];
-                    encoded4 = lookup[base64.charCodeAt(i + 3)];
-
-                    bytes[p++] = (encoded1 << 2) | (encoded2 >> 4);
-                    if (p < bufferLength) bytes[p++] = ((encoded2 & 15) << 4) | (encoded3 >> 2);
-                    if (p < bufferLength) bytes[p++] = ((encoded3 & 3) << 6) | (encoded4 & 63);
-                }
-
-                return bytes;
-            };
 """
 
 internal val SCRIPT_DEFINE_SET_DATA = """
             globalThis.j2kData = null;
-            globalThis.setData = function(dataBase64String) {
+            globalThis.setData = async function(dataId) {
                 try {
-                    globalThis.j2kData = globalThis.base64ToBytes(dataBase64String);
+                    const buffer = await android.consumeNamedDataAsArrayBuffer(dataId);
+                    globalThis.j2kData = new Uint8Array(buffer);
                     return "$INTERNAL_RESULT_SUCCESS";
                 } catch (e) {
                     return JSON.stringify({ errorCode: ${Jp2kError.Unknown.code}, errorMessage: e.toString() });
@@ -214,9 +195,10 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
                 return globalThis.commonDecodeJ2K('decodeToBmp', encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1);
             };
 
-            globalThis.decodeJ2K = function(dataBase64String, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1) {
+            globalThis.decodeJ2K = async function(dataId, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1) {
                 try {
-                    const encodedBuffer = globalThis.base64ToBytes(dataBase64String);
+                    const buffer = await android.consumeNamedDataAsArrayBuffer(dataId);
+                    const encodedBuffer = new Uint8Array(buffer);
                     return globalThis.internalDecodeJ2K(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1);
                 } catch (e) {
                     return JSON.stringify({ errorCode: ${Jp2kError.Unknown.code}, errorMessage: e.toString() });
@@ -234,9 +216,10 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
                 return globalThis.commonDecodeJ2K('decodeToBmpWithRatio', encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1);
             };
 
-            globalThis.decodeJ2KRatio = function(dataBase64String, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1) {
+            globalThis.decodeJ2KRatio = async function(dataId, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1) {
                 try {
-                    const encodedBuffer = globalThis.base64ToBytes(dataBase64String);
+                    const buffer = await android.consumeNamedDataAsArrayBuffer(dataId);
+                    const encodedBuffer = new Uint8Array(buffer);
                     return globalThis.internalDecodeJ2KRatio(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1);
                 } catch (e) {
                     return JSON.stringify({ errorCode: ${Jp2kError.Unknown.code}, errorMessage: e.toString() });
@@ -302,9 +285,10 @@ internal val SCRIPT_DEFINE_GET_SIZE = """
                 }
             };
 
-            globalThis.getSize = function(dataBase64String) {
+            globalThis.getSize = async function(dataId) {
                 try {
-                    const encodedBuffer = globalThis.base64ToBytes(dataBase64String);
+                    const buffer = await android.consumeNamedDataAsArrayBuffer(dataId);
+                    const encodedBuffer = new Uint8Array(buffer);
                     return globalThis.internalGetSize(encodedBuffer);
                 } catch (e) {
                     return JSON.stringify({ errorCode: ${Jp2kError.Unknown.code}, errorMessage: e.toString() });
