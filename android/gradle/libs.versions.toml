@@ -11,7 +11,7 @@ kotlin = "2.4.0"
 composeBom = "2026.05.00"
 coroutines = "1.11.0"
 dokka = "2.2.0"
-nmcp = "1.5.0"
+nmcp = "1.6.0"
 mockito = "5.2.0"
 json = "20260522"
 
