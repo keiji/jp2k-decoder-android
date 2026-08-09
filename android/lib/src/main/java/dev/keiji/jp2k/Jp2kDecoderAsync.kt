@@ -230,8 +230,8 @@ class Jp2kDecoderAsync(
                     val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
 
 
-                    val isSupportNamedData = sandbox?.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER) == true
-        val script = if (isSupportNamedData) {
+                val isSupportNamedData = sandbox?.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER) == true
+                val script = if (isSupportNamedData) {
                         val dataId = UUID.randomUUID().toString()
                         isolate.provideNamedData(dataId, j2kData)
                         "globalThis.setDataWithNamedData('$dataId');"
