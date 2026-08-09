@@ -35,6 +35,7 @@ import java.util.concurrent.ExecutionException
  * @param coroutineDispatcher The CoroutineDispatcher to use for background tasks. Defaults to [Dispatchers.Default].
  */
 @OptIn(ExperimentalStdlibApi::class)
+@android.annotation.SuppressLint("RequiresFeature")
 class Jp2kDecoder(
     private val config: Config = Config(),
     private val coroutineDispatcher: CoroutineDispatcher = Dispatchers.Default,
@@ -124,8 +125,8 @@ class Jp2kDecoder(
         withContext(coroutineDispatcher) {
                         val wasmBytes = assetManager.open(ASSET_PATH_WASM)
                 .readBytes()
-            val supportNamedData = sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)
-            val wasmBase64String = if (sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)) {
+            val isSupportNamedData = sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)
+            val wasmBase64String = if (isSupportNamedData) {
                 isolate.provideNamedData("wasm-module", wasmBytes)
                 ""
             } else {
@@ -149,7 +150,7 @@ class Jp2kDecoder(
                             });
                         };
 
-                        if (${supportNamedData}) {
+                        if (${isSupportNamedData}) {
                             android.consumeNamedDataAsArrayBuffer("wasm-module").then(buffer => {
                                 return instantiateWasm(new Uint8Array(buffer));
                             });
@@ -195,8 +196,9 @@ class Jp2kDecoder(
             val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
             withContext(coroutineDispatcher) {
 
-                    val script = if (sandbox?.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER) == true) {
-                        val dataId = java.util.UUID.randomUUID().toString()
+                    val isSupportNamedData = sandbox?.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER) == true
+        val script = if (isSupportNamedData) {
+                        val dataId = UUID.randomUUID().toString()
                         isolate.provideNamedData(dataId, j2kData)
                         "globalThis.setDataWithNamedData('$dataId');"
                     } else {
@@ -237,8 +239,9 @@ class Jp2kDecoder(
      * @return The [Size] of the image.
      */
     suspend fun getSize(j2kData: ByteArray): Size {
-        val (script, dataId) = if (sandbox?.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER) == true) {
-            val id = java.util.UUID.randomUUID().toString()
+        val isSupportNamedData = sandbox?.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER) == true
+        val (script, dataId) = if (isSupportNamedData) {
+            val id = UUID.randomUUID().toString()
             "globalThis.getSizeWithNamedData('$id');" to id
         } else {
             val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
@@ -320,8 +323,9 @@ class Jp2kDecoder(
 
         val measureTimes = config.logLevel != null
 
-        val (script, dataId) = if (sandbox?.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER) == true) {
-            val id = java.util.UUID.randomUUID().toString()
+        val isSupportNamedData = sandbox?.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER) == true
+        val (script, dataId) = if (isSupportNamedData) {
+            val id = UUID.randomUUID().toString()
             "globalThis.decodeJ2KWithNamedData('$id', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, 0, 0, 0, 0);" to id
         } else {
             val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
@@ -358,8 +362,9 @@ class Jp2kDecoder(
 
         val measureTimes = config.logLevel != null
 
-        val (script, dataId) = if (sandbox?.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER) == true) {
-            val id = java.util.UUID.randomUUID().toString()
+        val isSupportNamedData = sandbox?.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER) == true
+        val (script, dataId) = if (isSupportNamedData) {
+            val id = UUID.randomUUID().toString()
             "globalThis.decodeJ2KWithNamedData('$id', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);" to id
         } else {
             val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
@@ -429,8 +434,9 @@ class Jp2kDecoder(
 
         val measureTimes = config.logLevel != null
 
-        val (script, dataId) = if (sandbox?.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER) == true) {
-            val id = java.util.UUID.randomUUID().toString()
+        val isSupportNamedData = sandbox?.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER) == true
+        val (script, dataId) = if (isSupportNamedData) {
+            val id = UUID.randomUUID().toString()
             "globalThis.decodeJ2KRatioWithNamedData('$id', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);" to id
         } else {
             val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
