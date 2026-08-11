@@ -320,7 +320,7 @@ class Jp2kDecoderTest {
         val jsonBmp = """{"bmp": "AQID", "timePreProcess": 0, "timeWasm": 0, "timePostProcess": 0}"""
 
         val decoder = createInitializedDecoder { script ->
-            if (script.contains("decodeJ2K(")) {
+            if (script.contains("internalDecodeJ2K(data") || script.contains("decodeJ2K(")) {
                 TestListenableFuture(jsonBmp)
             } else {
                 TestListenableFuture(INTERNAL_RESULT_SUCCESS)
@@ -330,7 +330,7 @@ class Jp2kDecoderTest {
         val data = ByteArray(20)
         decoder.decodeImage(data)
 
-        verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2K("))
+        verify(isolate).evaluateJavaScriptAsync(org.mockito.kotlin.argThat<String> { contains("internalDecodeJ2K(data") || contains("decodeJ2K(") })
     }
 
     @Test
@@ -468,7 +468,7 @@ class Jp2kDecoderTest {
         val jsonBmp = """{"bmp": "AQID", "timePreProcess": 0, "timeWasm": 0, "timePostProcess": 0}"""
 
         val decoder = createInitializedDecoder { script ->
-            if (script.contains("decodeJ2KRatio(")) {
+            if (script.contains("internalDecodeJ2KRatio(data") || script.contains("decodeJ2KRatio(")) {
                 TestListenableFuture(jsonBmp)
             } else {
                 TestListenableFuture(INTERNAL_RESULT_SUCCESS)
@@ -478,7 +478,7 @@ class Jp2kDecoderTest {
         val data = ByteArray(20)
         decoder.decodeImage(data, 0.0f, 0.0f, 0.5f, 0.5f)
 
-        verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2KRatio("))
+        verify(isolate).evaluateJavaScriptAsync(org.mockito.kotlin.argThat<String> { contains("internalDecodeJ2KRatio(data") || contains("decodeJ2KRatio(") })
     }
 
     @Test
@@ -486,7 +486,7 @@ class Jp2kDecoderTest {
         val jsonBmp = """{"bmp": "AQID", "timePreProcess": 0, "timeWasm": 0, "timePostProcess": 0}"""
 
         val decoder = createInitializedDecoder { script ->
-            if (script.contains("decodeJ2K(")) {
+            if (script.contains("internalDecodeJ2K(data") || script.contains("decodeJ2K(")) {
                 TestListenableFuture(jsonBmp)
             } else {
                 TestListenableFuture(INTERNAL_RESULT_SUCCESS)
@@ -497,7 +497,7 @@ class Jp2kDecoderTest {
         val rect = android.graphics.Rect(0, 0, 100, 100)
         decoder.decodeImage(data, rect)
 
-        verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2K("))
+        verify(isolate).evaluateJavaScriptAsync(org.mockito.kotlin.argThat<String> { contains("internalDecodeJ2K(data") || contains("decodeJ2K(") })
     }
 
     @Test
@@ -525,7 +525,7 @@ class Jp2kDecoderTest {
         val jsonBmp = """{"bmp": "AQID", "timePreProcess": 0, "timeWasm": 0, "timePostProcess": 0}"""
 
         val decoder = createInitializedDecoder { script ->
-            if (script.contains("decodeJ2KRatio(")) {
+            if (script.contains("internalDecodeJ2KRatio(data") || script.contains("decodeJ2KRatio(")) {
                 TestListenableFuture(jsonBmp)
             } else {
                 TestListenableFuture(INTERNAL_RESULT_SUCCESS)
@@ -536,7 +536,7 @@ class Jp2kDecoderTest {
         val rectF = RectF(0.0f, 0.0f, 0.5f, 0.5f)
         decoder.decodeImage(data, rectF)
 
-        verify(isolate).evaluateJavaScriptAsync(contains("decodeJ2KRatio("))
+        verify(isolate).evaluateJavaScriptAsync(org.mockito.kotlin.argThat<String> { contains("internalDecodeJ2KRatio(data") || contains("decodeJ2KRatio(") })
     }
 
     @Test
@@ -618,7 +618,7 @@ class Jp2kDecoderTest {
         val jsonBmp = """{"bmp": "AQID"}"""
 
         val decoder = createInitializedDecoder { script ->
-            if (script.contains("decodeJ2K(")) {
+            if (script.contains("internalDecodeJ2K(data") || script.contains("decodeJ2K(")) {
                 TestListenableFuture(jsonBmp)
             } else {
                 TestListenableFuture(INTERNAL_RESULT_SUCCESS)
@@ -645,7 +645,7 @@ class Jp2kDecoderTest {
         val jsonBmp = """{"bmp": "AQID", "timePreProcess": 10, "timeWasm": 20, "timePostProcess": 30}"""
 
         val decoder = createInitializedDecoder(config = config) { script ->
-            if (script.contains("decodeJ2K(")) {
+            if (script.contains("internalDecodeJ2K(data") || script.contains("decodeJ2K(")) {
                 TestListenableFuture(jsonBmp)
             } else {
                 TestListenableFuture(INTERNAL_RESULT_SUCCESS)
@@ -795,7 +795,7 @@ class Jp2kDecoderTest {
     @Test
     fun testDecodeImage_EmptyResult() = runTest {
         val decoder = createInitializedDecoder { script ->
-            if (script.contains("decodeJ2K(")) {
+            if (script.contains("internalDecodeJ2K(data") || script.contains("decodeJ2K(")) {
                 TestListenableFuture("") // Empty result
             } else {
                 TestListenableFuture(INTERNAL_RESULT_SUCCESS)

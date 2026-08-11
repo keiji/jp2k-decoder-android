@@ -66,6 +66,55 @@ internal interface JSDataChannel {
      * Name of the JS function used to decode string payload to byte arrays.
      */
     val jsDecodeFunctionName: String
+
+    /**
+     * Returns a JS expression that executes getSize for the provided [j2kData].
+     */
+    fun getGetSizeExpression(
+        isolate: JavaScriptIsolate,
+        j2kData: ByteArray,
+    ): String {
+        val encoded = encodePayload(j2kData)
+        return "globalThis.getSize('$encoded');"
+    }
+
+    /**
+     * Returns a JS expression that executes decodeJ2K for the provided [j2kData].
+     */
+    fun getDecodeJ2KExpression(
+        isolate: JavaScriptIsolate,
+        j2kData: ByteArray,
+        maxPixels: Int,
+        maxHeapSizeBytes: Long,
+        colorFormatId: Int,
+        measureTimes: Boolean,
+        left: Int = 0,
+        top: Int = 0,
+        right: Int = 0,
+        bottom: Int = 0,
+    ): String {
+        val encoded = encodePayload(j2kData)
+        return "globalThis.decodeJ2K('$encoded', $maxPixels, $maxHeapSizeBytes, $colorFormatId, $measureTimes, $left, $top, $right, $bottom);"
+    }
+
+    /**
+     * Returns a JS expression that executes decodeJ2KRatio for the provided [j2kData].
+     */
+    fun getDecodeJ2KRatioExpression(
+        isolate: JavaScriptIsolate,
+        j2kData: ByteArray,
+        maxPixels: Int,
+        maxHeapSizeBytes: Long,
+        colorFormatId: Int,
+        measureTimes: Boolean,
+        leftRatio: Float = 0f,
+        topRatio: Float = 0f,
+        rightRatio: Float = 0f,
+        bottomRatio: Float = 0f,
+    ): String {
+        val encoded = encodePayload(j2kData)
+        return "globalThis.decodeJ2KRatio('$encoded', $maxPixels, $maxHeapSizeBytes, $colorFormatId, $measureTimes, $leftRatio, $topRatio, $rightRatio, $bottomRatio);"
+    }
 }
 
 /**

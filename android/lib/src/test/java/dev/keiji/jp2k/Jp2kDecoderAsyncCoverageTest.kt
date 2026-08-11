@@ -614,7 +614,7 @@ class Jp2kDecoderAsyncCoverageTest {
         val jsonBmp = """{"bmp": "AQID"}"""
         doAnswer {
             TestListenableFuture(jsonBmp)
-        }.whenever(isolate).evaluateJavaScriptAsync(org.mockito.ArgumentMatchers.contains("decodeJ2K"))
+        }.whenever(isolate).evaluateJavaScriptAsync(org.mockito.kotlin.argThat<String> { contains("decodeJ2K") || contains("internalDecodeJ2K") })
 
         // Mock BitmapFactory to return null
         mockBitmapFactory.`when`<Bitmap> {
