@@ -9,7 +9,6 @@ import android.graphics.RectF
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.javascriptengine.JavaScriptIsolate
-import androidx.javascriptengine.JavaScriptSandbox
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -20,7 +19,6 @@ import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import java.util.Base64
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
 
@@ -57,7 +55,7 @@ class Jp2kDecoder(
      *
      * Created during [init] based on feature support and never changed.
      */
-    private lateinit var dataChannel: JSDataChannel
+    private var dataChannel: JSDataChannel = Base64DataChannel()
 
     private fun log(priority: Int, message: String) {
         if (config.logLevel != null && priority >= config.logLevel) {
@@ -133,7 +131,7 @@ class Jp2kDecoder(
             val wasmExpression = dataChannel.getWasmExpression(isolate, wasmBytes)
 
             val script = """
-                $SCRIPT_BYTES_BASE64_CONVERTER_LOCAL
+                ${dataChannel.jsConverterScript}
                 $SCRIPT_TRANSFER_FROM_PROVIDED_NAMED_DATA_LOCAL
                 $SCRIPT_DEFINE_SET_DATA_LOCAL
 
@@ -223,8 +221,8 @@ class Jp2kDecoder(
      * @return The [Size] of the image.
      */
     suspend fun getSize(j2kData: ByteArray): Size {
-        val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
-        return executeGetSize("globalThis.getSize('$dataBase64String');")
+        val encoded = dataChannel.encodePayload(j2kData)
+        return executeGetSize("globalThis.getSize('$encoded');")
     }
 
     /**
@@ -299,9 +297,9 @@ class Jp2kDecoder(
         }
 
         val measureTimes = config.logLevel != null
-        val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
+        val encoded = dataChannel.encodePayload(j2kData)
         val script =
-            "globalThis.decodeJ2K('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, 0, 0, 0, 0);"
+            "globalThis.decodeJ2K('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, 0, 0, 0, 0);"
 
         return executeDecodeImage(script, colorFormat, j2kData.size.toLong())
     }
@@ -332,9 +330,9 @@ class Jp2kDecoder(
         }
 
         val measureTimes = config.logLevel != null
-        val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
+        val encoded = dataChannel.encodePayload(j2kData)
         val script =
-            "globalThis.decodeJ2K('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
+            "globalThis.decodeJ2K('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
 
         return executeDecodeImage(script, colorFormat, j2kData.size.toLong())
     }
@@ -398,9 +396,9 @@ class Jp2kDecoder(
         validateRatio(left, top, right, bottom)
 
         val measureTimes = config.logLevel != null
-        val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
+        val encoded = dataChannel.encodePayload(j2kData)
         val script =
-            "globalThis.decodeJ2KRatio('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
+            "globalThis.decodeJ2KRatio('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
 
         return executeDecodeImage(script, colorFormat, j2kData.size.toLong())
     }
@@ -556,7 +554,7 @@ class Jp2kDecoder(
                 }
 
                 val bmpBase64 = root.getString("bmp")
-                val bmpBytes = Base64.getDecoder().decode(bmpBase64)
+                val bmpBytes = dataChannel.decodePayload(bmpBase64)
 
                 log(Log.INFO, "Output data length: ${bmpBytes.size}")
 
@@ -735,7 +733,6 @@ class Jp2kDecoder(
         private const val MIN_INPUT_SIZE = 12 // Signature box length
         private const val ASSET_PATH_WASM = "openjpeg_core.wasm"
 
-        private const val SCRIPT_BYTES_BASE64_CONVERTER_LOCAL = SCRIPT_BYTES_BASE64_CONVERTER
         private val SCRIPT_DEFINE_SET_DATA_LOCAL = SCRIPT_DEFINE_SET_DATA
         private const val SCRIPT_IMPORT_OBJECT_LOCAL = SCRIPT_IMPORT_OBJECT
         private val SCRIPT_DEFINE_DECODE_J2K_LOCAL = SCRIPT_DEFINE_DECODE_J2K

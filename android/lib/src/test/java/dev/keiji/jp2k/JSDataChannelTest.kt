@@ -2,9 +2,11 @@ package dev.keiji.jp2k
 
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify
@@ -84,6 +86,20 @@ class JSDataChannelTest {
     }
 
     @Test
+    fun providedNamedDataChannel_fallbackPayloadMethods() {
+        val channel = ProvidedNamedDataChannel()
+        val bytes = byteArrayOf(0x1, 0x2, 0x3)
+        val encoded = channel.encodePayload(bytes)
+        assertNotNull(encoded)
+        val decoded = channel.decodePayload(encoded)
+        assertArrayEquals(bytes, decoded)
+
+        assertEquals("bytesToBase64", channel.jsEncodeFunctionName)
+        assertEquals("base64ToBytes", channel.jsDecodeFunctionName)
+        assertTrue(channel.jsConverterScript.contains("bytesToBase64"))
+    }
+
+    @Test
     fun base64DataChannel_init_noop() {
         val sandbox = mock<JavaScriptSandbox>()
         val channel = Base64DataChannel()
@@ -114,11 +130,82 @@ class JSDataChannelTest {
     }
 
     @Test
+    fun base64DataChannel_encodeAndDecodePayload() {
+        val channel = Base64DataChannel()
+        val bytes = byteArrayOf(0x00, 0x01, 0x02, 0xFF.toByte())
+        val encoded = channel.encodePayload(bytes)
+        assertEquals("AAEC/w==", encoded)
+        val decoded = channel.decodePayload(encoded)
+        assertArrayEquals(bytes, decoded)
+
+        assertEquals("bytesToBase64", channel.jsEncodeFunctionName)
+        assertEquals("base64ToBytes", channel.jsDecodeFunctionName)
+        assertTrue(channel.jsConverterScript.contains("bytesToBase64"))
+    }
+
+    @Test
     fun base64DataChannel_getWasmExpression_emptyBytes() {
         val isolate = mock<JavaScriptIsolate>()
         val channel = Base64DataChannel()
         val expr = channel.getWasmExpression(isolate, ByteArray(0))
         assertEquals("base64ToBytes('')", expr)
+    }
+
+    @Test
+    fun hexDataChannel_encodeAndDecodePayload() {
+        val sandbox = mock<JavaScriptSandbox>()
+        val isolate = mock<JavaScriptIsolate>()
+        val channel = HexDataChannel()
+        channel.init(sandbox)
+
+        val bytes = byteArrayOf(0x00, 0x0F, 0x10, 0xFF.toByte())
+        val encoded = channel.encodePayload(bytes)
+        assertEquals("000f10ff", encoded)
+        val decoded = channel.decodePayload(encoded)
+        assertArrayEquals(bytes, decoded)
+
+        assertEquals("bytesToHex", channel.jsEncodeFunctionName)
+        assertEquals("hexToBytes", channel.jsDecodeFunctionName)
+        assertTrue(channel.jsConverterScript.contains("bytesToHex"))
+
+        val wasmExpr = channel.getWasmExpression(isolate, bytes)
+        assertEquals("hexToBytes('000f10ff')", wasmExpr)
+
+        val j2kExpr = channel.getJ2KExpression(isolate, bytes)
+        assertEquals("(async () => { globalThis.j2kData = globalThis.hexToBytes('000f10ff'); return '$INTERNAL_RESULT_SUCCESS'; })()", j2kExpr)
+    }
+
+    @Test
+    fun jsArrayDataChannel_encodeAndDecodePayload() {
+        val sandbox = mock<JavaScriptSandbox>()
+        val isolate = mock<JavaScriptIsolate>()
+        val channel = JsArrayDataChannel()
+        channel.init(sandbox)
+
+        val bytes = byteArrayOf(0x00, 0x01, 0x02, 0xFF.toByte())
+        val encoded = channel.encodePayload(bytes)
+        assertEquals("[0,1,2,255]", encoded)
+        val decoded = channel.decodePayload(encoded)
+        assertArrayEquals(bytes, decoded)
+
+        assertEquals("bytesToArray", channel.jsEncodeFunctionName)
+        assertEquals("arrayToBytes", channel.jsDecodeFunctionName)
+        assertTrue(channel.jsConverterScript.contains("bytesToArray"))
+
+        val wasmExpr = channel.getWasmExpression(isolate, bytes)
+        assertEquals("arrayToBytes('[0,1,2,255]')", wasmExpr)
+
+        val j2kExpr = channel.getJ2KExpression(isolate, bytes)
+        assertEquals("(async () => { globalThis.j2kData = globalThis.arrayToBytes('[0,1,2,255]'); return '$INTERNAL_RESULT_SUCCESS'; })()", j2kExpr)
+    }
+
+    @Test
+    fun jsArrayDataChannel_emptyBytes() {
+        val channel = JsArrayDataChannel()
+        val encoded = channel.encodePayload(ByteArray(0))
+        assertEquals("[]", encoded)
+        val decoded = channel.decodePayload(encoded)
+        assertEquals(0, decoded.size)
     }
 
     @Test
