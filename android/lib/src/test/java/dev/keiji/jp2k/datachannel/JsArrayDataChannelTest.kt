@@ -21,6 +21,7 @@ class JsArrayDataChannelTest {
     @Test
     fun properties_values() {
         val channel = JsArrayDataChannel()
+        assertEquals("JsArrayDataChannel", channel.name)
         assertEquals("bytesToArray", channel.jsEncodeFunctionName)
         assertEquals("arrayToBytes", channel.jsDecodeFunctionName)
         assertTrue(channel.jsConverterScript.contains("bytesToArray"))

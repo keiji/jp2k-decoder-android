@@ -23,6 +23,11 @@ import androidx.javascriptengine.JavaScriptSandbox
 internal interface JSDataChannel {
 
     /**
+     * Human-readable name of the channel.
+     */
+    val name: String
+
+    /**
      * Initializes the channel with the sandbox.
      */
     fun init(sandbox: JavaScriptSandbox)

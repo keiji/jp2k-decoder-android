@@ -121,6 +121,7 @@ private const val SCRIPT_CONVERTER = """
  * @see JSDataChannel
  */
 internal class Base32768DataChannel : JSDataChannel {
+    override val name: String = "Base32768DataChannel"
     override fun init(sandbox: JavaScriptSandbox) {
         // No-op — Base32768 works on all devices
     }

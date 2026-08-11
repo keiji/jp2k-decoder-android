@@ -21,6 +21,7 @@ class HexDataChannelTest {
     @Test
     fun properties_values() {
         val channel = HexDataChannel()
+        assertEquals("HexDataChannel", channel.name)
         assertEquals("bytesToHex", channel.jsEncodeFunctionName)
         assertEquals("hexToBytes", channel.jsDecodeFunctionName)
         assertTrue(channel.jsConverterScript.contains("bytesToHex"))

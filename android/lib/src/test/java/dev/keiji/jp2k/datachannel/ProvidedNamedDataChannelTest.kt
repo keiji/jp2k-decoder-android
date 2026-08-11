@@ -91,6 +91,7 @@ class ProvidedNamedDataChannelTest {
     @Test
     fun fallbackPayloadMethods() {
         val channel = ProvidedNamedDataChannel()
+        assertEquals("ProvidedNamedDataChannel", channel.name)
         val bytes = byteArrayOf(0x1, 0x2, 0x3)
         val encoded = channel.encodePayload(bytes)
         assertNotNull(encoded)
