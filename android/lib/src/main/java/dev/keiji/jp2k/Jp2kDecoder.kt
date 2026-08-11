@@ -10,6 +10,9 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.javascriptengine.JavaScriptIsolate
 import com.google.common.util.concurrent.ListenableFuture
+import dev.keiji.jp2k.datachannel.Base64DataChannel
+import dev.keiji.jp2k.datachannel.JSDataChannel
+import dev.keiji.jp2k.datachannel.createDataChannel
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine

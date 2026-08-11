@@ -2,6 +2,11 @@ package dev.keiji.jp2k
 
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
+import dev.keiji.jp2k.datachannel.Base64DataChannel
+import dev.keiji.jp2k.datachannel.HexDataChannel
+import dev.keiji.jp2k.datachannel.JsArrayDataChannel
+import dev.keiji.jp2k.datachannel.ProvidedNamedDataChannel
+import dev.keiji.jp2k.datachannel.createDataChannel
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
