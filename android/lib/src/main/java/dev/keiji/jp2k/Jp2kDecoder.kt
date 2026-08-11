@@ -10,6 +10,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.javascriptengine.JavaScriptIsolate
 import com.google.common.util.concurrent.ListenableFuture
+import dev.keiji.jp2k.datachannel.Base32768DataChannel
 import dev.keiji.jp2k.datachannel.Base64DataChannel
 import dev.keiji.jp2k.datachannel.JSDataChannel
 import dev.keiji.jp2k.datachannel.createDataChannel
@@ -58,7 +59,7 @@ class Jp2kDecoder(
      *
      * Created during [init] based on feature support and never changed.
      */
-    private var dataChannel: JSDataChannel = Base64DataChannel()
+    private var dataChannel: JSDataChannel = Base32768DataChannel()
 
     private fun log(priority: Int, message: String) {
         if (config.logLevel != null && priority >= config.logLevel) {

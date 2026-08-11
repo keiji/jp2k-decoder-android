@@ -66,6 +66,7 @@ class MainActivity : ComponentActivity() {
                                 }
                                 val config = Config(
                                     logLevel = Log.DEBUG,
+                                    preferDirectBinaryTransfer = false,
                                 )
                                 Jp2kDecoder(
                                     config = config,

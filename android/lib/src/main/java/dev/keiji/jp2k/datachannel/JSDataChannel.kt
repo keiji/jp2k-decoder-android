@@ -83,6 +83,6 @@ internal fun createDataChannel(
     ) {
         ProvidedNamedDataChannel().also { it.init(sandbox) }
     } else {
-        Base64DataChannel().also { it.init(sandbox) }
+        Base32768DataChannel().also { it.init(sandbox) }
     }
 }
