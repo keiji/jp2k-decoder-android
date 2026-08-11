@@ -47,10 +47,11 @@ class Ascii85DataChannelTest {
         assertArrayEquals(bytes, decoded)
 
         val wasmExpr = channel.getWasmExpression(isolate, bytes)
-        assertEquals("ascii85ToBytes('$encoded')", wasmExpr)
+        val expectedEncoded = encoded.replace("\\", "\\\\").replace("'", "\\'")
+        assertEquals("ascii85ToBytes('$expectedEncoded')", wasmExpr)
 
         val j2kExpr = channel.getJ2KExpression(isolate, bytes)
-        assertEquals("(async () => { globalThis.j2kData = globalThis.ascii85ToBytes('$encoded'); return '$INTERNAL_RESULT_SUCCESS'; })()", j2kExpr)
+        assertEquals("(async () => { globalThis.j2kData = globalThis.ascii85ToBytes('$expectedEncoded'); return '$INTERNAL_RESULT_SUCCESS'; })()", j2kExpr)
     }
 
     @Test
@@ -92,5 +93,11 @@ class Ascii85DataChannelTest {
 
         val j2kExpr = channel.getJ2KExpression(isolate, ByteArray(0))
         assertEquals("(async () => { globalThis.j2kData = globalThis.ascii85ToBytes(''); return '$INTERNAL_RESULT_SUCCESS'; })()", j2kExpr)
+    }
+
+    @Test
+    fun escapeJs_escapesSingleQuotesAndBackslashes() {
+        val testStr = "abc'def\\ghi"
+        assertEquals("abc\\'def\\\\ghi", testStr.escapeJs())
     }
 }

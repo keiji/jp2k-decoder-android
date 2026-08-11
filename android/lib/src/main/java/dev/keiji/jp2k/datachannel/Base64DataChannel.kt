@@ -87,7 +87,7 @@ internal class Base64DataChannel : JSDataChannel {
         isolate: JavaScriptIsolate,
         wasmBytes: ByteArray,
     ): String {
-        val encoded = encodePayload(wasmBytes)
+        val encoded = encodePayload(wasmBytes).escapeJs()
         return "base64ToBytes('$encoded')"
     }
 
@@ -95,7 +95,7 @@ internal class Base64DataChannel : JSDataChannel {
         isolate: JavaScriptIsolate,
         j2kData: ByteArray,
     ): String {
-        val encoded = encodePayload(j2kData)
+        val encoded = encodePayload(j2kData).escapeJs()
         return "(async () => { globalThis.j2kData = globalThis.base64ToBytes('$encoded'); return '$INTERNAL_RESULT_SUCCESS'; })()"
     }
 

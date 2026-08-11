@@ -177,8 +177,8 @@ class ProvidedNamedDataChannelTest {
         val decoded = channel.decodePayload(encoded)
         assertArrayEquals(bytes, decoded)
 
-        assertEquals("bytesToBase64", channel.jsEncodeFunctionName)
-        assertEquals("base64ToBytes", channel.jsDecodeFunctionName)
-        assertTrue(channel.jsConverterScript.contains("bytesToBase64"))
+        assertEquals("bytesToAscii85", channel.jsEncodeFunctionName)
+        assertEquals("ascii85ToBytes", channel.jsDecodeFunctionName)
+        assertTrue(channel.jsConverterScript.contains("bytesToAscii85"))
     }
 }
