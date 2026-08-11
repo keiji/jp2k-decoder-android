@@ -8,14 +8,15 @@ import androidx.javascriptengine.JavaScriptSandbox
 /**
  * Default string-based data channel used as fallback or initial channel.
  */
-internal typealias DefaultJsDataChannel = Ascii85DataChannel
+internal typealias DefaultJsDataChannel = Base64UrlDataChannel
 
 /**
  * Abstraction for transferring binary data (WASM, J2K image) to the JavaScript sandbox.
  *
  * Implementations:
  * - [ProvidedNamedDataChannel]: uses [JavaScriptIsolate.provideNamedData] for direct binary transfer
- * - [Base64DataChannel]: Base64-encodes data to a JS string (fallback for unsupported devices)
+ * - [Base64DataChannel]: Base64-encodes data to a JS string
+ * - [Base64UrlDataChannel]: Base64Url-encodes data to a JS string
  * - [HexDataChannel]: Hex-encodes data to a JS string
  * - [JsArrayDataChannel]: Encodes data as a JavaScript Array string
  *
