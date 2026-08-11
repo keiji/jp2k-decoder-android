@@ -25,6 +25,7 @@ private const val SCRIPT_CONVERTER = """
  * @see JSDataChannel
  */
 internal class JsArrayDataChannel : JSDataChannel {
+    override val name: String = "JsArrayDataChannel"
     override fun init(sandbox: JavaScriptSandbox) {
         // No-op — JsArray works on all devices
     }

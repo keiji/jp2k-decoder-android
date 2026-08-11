@@ -21,6 +21,7 @@ class Base85DataChannelTest {
     @Test
     fun properties_values() {
         val channel = Base85DataChannel()
+        assertEquals("Base85DataChannel", channel.name)
         assertEquals("bytesToBase85", channel.jsEncodeFunctionName)
         assertEquals("base85ToBytes", channel.jsDecodeFunctionName)
         assertTrue(channel.jsConverterScript.contains("bytesToBase85"))

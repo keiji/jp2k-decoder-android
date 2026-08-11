@@ -14,6 +14,7 @@ import dev.keiji.jp2k.PROVIDED_WASM_DATA
  * @see JSDataChannel
  */
 internal class ProvidedNamedDataChannel : JSDataChannel {
+    override val name: String = "ProvidedNamedDataChannel"
     @Volatile
     private var sandbox: JavaScriptSandbox? = null
 

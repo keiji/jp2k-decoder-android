@@ -21,6 +21,7 @@ class Ascii85DataChannelTest {
     @Test
     fun properties_values() {
         val channel = Ascii85DataChannel()
+        assertEquals("Ascii85DataChannel", channel.name)
         assertEquals("bytesToAscii85", channel.jsEncodeFunctionName)
         assertEquals("ascii85ToBytes", channel.jsDecodeFunctionName)
         assertTrue(channel.jsConverterScript.contains("bytesToAscii85"))

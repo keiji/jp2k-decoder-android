@@ -98,6 +98,7 @@ class Jp2kDecoderAsync(
                      // Wait for sandbox connection on the background thread
                     val sandbox = sandboxFuture.get()
                     dataChannel = createDataChannel(sandbox, config.preferDirectBinaryTransfer)
+                    log(Log.INFO, "DataChannel: ${dataChannel.name}")
                     val isolate = Jp2kSandbox.createIsolate(
                         sandbox = sandbox,
                         maxHeapSizeBytes = config.maxHeapSizeBytes,
@@ -145,6 +146,7 @@ class Jp2kDecoderAsync(
          // This runs on backgroundExecutor
         val wasmBytes = assetManager.open(ASSET_PATH_WASM)
              .readBytes()
+        log(Log.INFO, "DataChannel: ${dataChannel.name}")
         log(Log.INFO, "Input binary length: ${wasmBytes.size}")
 
         val wasmExpression = dataChannel.getWasmExpression(isolate, wasmBytes)
@@ -223,6 +225,7 @@ class Jp2kDecoderAsync(
 
                 try {
                     val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
+                    log(Log.INFO, "DataChannel: ${dataChannel.name}")
                     log(Log.INFO, "Input binary length: ${j2kData.size}")
 
                     val script = dataChannel.getJ2KExpression(isolate, j2kData)
@@ -283,6 +286,7 @@ class Jp2kDecoderAsync(
       * @param callback The callback to receive the [Size] or error.
       */
     fun getSize(j2kData: ByteArray, callback: Callback<Size>) {
+        log(Log.INFO, "DataChannel: ${dataChannel.name}")
         log(Log.INFO, "Input binary length: ${j2kData.size}")
         val encoded = dataChannel.encodePayload(j2kData)
         log(Log.INFO, "Converted string length: ${encoded.length}")
@@ -534,6 +538,7 @@ class Jp2kDecoderAsync(
         colorFormat: ColorFormat = ColorFormat.ARGB8888,
         callback: Callback<Bitmap>
      ) {
+        log(Log.INFO, "DataChannel: ${dataChannel.name}")
         log(Log.INFO, "Input data length: ${j2kData.size}")
 
         if (j2kData.size < MIN_INPUT_SIZE) {
@@ -571,6 +576,7 @@ class Jp2kDecoderAsync(
         colorFormat: ColorFormat = ColorFormat.ARGB8888,
         callback: Callback<Bitmap>
      ) {
+        log(Log.INFO, "DataChannel: ${dataChannel.name}")
         log(Log.INFO, "Input data length: ${j2kData.size}")
 
         if (j2kData.size < MIN_INPUT_SIZE) {
@@ -693,6 +699,7 @@ class Jp2kDecoderAsync(
         colorFormat: ColorFormat = ColorFormat.ARGB8888,
         callback: Callback<Bitmap>
      ) {
+        log(Log.INFO, "DataChannel: ${dataChannel.name}")
         log(Log.INFO, "Input data length: ${j2kData.size}")
 
         if (j2kData.size < MIN_INPUT_SIZE) {

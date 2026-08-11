@@ -78,6 +78,7 @@ private const val SCRIPT_CONVERTER = """
  * @see JSDataChannel
  */
 internal class Base64DataChannel : JSDataChannel {
+    override val name: String = "Base64DataChannel"
     override fun init(sandbox: JavaScriptSandbox) {
         // No-op — Base64 works on all devices
     }
