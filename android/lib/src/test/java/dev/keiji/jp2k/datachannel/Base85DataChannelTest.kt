@@ -42,10 +42,11 @@ class Base85DataChannelTest {
         assertArrayEquals(bytes, decoded)
 
         val wasmExpr = channel.getWasmExpression(isolate, bytes)
-        assertEquals("base85ToBytes('$encoded')", wasmExpr)
+        val expectedEncoded = encoded.replace("\\", "\\\\").replace("'", "\\'")
+        assertEquals("base85ToBytes('$expectedEncoded')", wasmExpr)
 
         val j2kExpr = channel.getJ2KExpression(isolate, bytes)
-        assertEquals("(async () => { globalThis.j2kData = globalThis.base85ToBytes('$encoded'); return '$INTERNAL_RESULT_SUCCESS'; })()", j2kExpr)
+        assertEquals("(async () => { globalThis.j2kData = globalThis.base85ToBytes('$expectedEncoded'); return '$INTERNAL_RESULT_SUCCESS'; })()", j2kExpr)
     }
 
     @Test

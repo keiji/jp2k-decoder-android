@@ -9,7 +9,7 @@ import android.graphics.RectF
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.javascriptengine.JavaScriptIsolate
-import dev.keiji.jp2k.datachannel.DefaultDataChannel
+import dev.keiji.jp2k.datachannel.DefaultJsDataChannel
 import dev.keiji.jp2k.datachannel.JSDataChannel
 import dev.keiji.jp2k.datachannel.createDataChannel
 import org.json.JSONObject
@@ -52,7 +52,7 @@ class Jp2kDecoderAsync(
       *
       * Created during [init] based on feature support and never changed.
       */
-    private var dataChannel: JSDataChannel = DefaultDataChannel()
+    private var dataChannel: JSDataChannel = DefaultJsDataChannel()
 
     private inline fun log(priority: Int, message: () -> String) {
         if (config.logLevel != null && priority >= config.logLevel) {

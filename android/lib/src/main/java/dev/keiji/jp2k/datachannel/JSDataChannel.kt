@@ -8,7 +8,7 @@ import androidx.javascriptengine.JavaScriptSandbox
 /**
  * Default string-based data channel used as fallback or initial channel.
  */
-internal typealias DefaultDataChannel = Base64DataChannel
+internal typealias DefaultJsDataChannel = Ascii85DataChannel
 
 /**
  * Abstraction for transferring binary data (WASM, J2K image) to the JavaScript sandbox.
@@ -79,7 +79,7 @@ internal interface JSDataChannel {
         isolate: JavaScriptIsolate,
         j2kData: ByteArray,
     ): String {
-        val encoded = encodePayload(j2kData)
+        val encoded = encodePayload(j2kData).escapeJs()
         return "globalThis.getSize('$encoded');"
     }
 
@@ -98,7 +98,7 @@ internal interface JSDataChannel {
         right: Int = 0,
         bottom: Int = 0,
     ): String {
-        val encoded = encodePayload(j2kData)
+        val encoded = encodePayload(j2kData).escapeJs()
         return "globalThis.decodeJ2K('$encoded', $maxPixels, $maxHeapSizeBytes, $colorFormatId, $measureTimes, $left, $top, $right, $bottom);"
     }
 
@@ -117,10 +117,15 @@ internal interface JSDataChannel {
         rightRatio: Float = 0f,
         bottomRatio: Float = 0f,
     ): String {
-        val encoded = encodePayload(j2kData)
+        val encoded = encodePayload(j2kData).escapeJs()
         return "globalThis.decodeJ2KRatio('$encoded', $maxPixels, $maxHeapSizeBytes, $colorFormatId, $measureTimes, $leftRatio, $topRatio, $rightRatio, $bottomRatio);"
     }
 }
+
+/**
+ * Escapes backslashes and single quotes in a string for safe embedding into JS single-quoted string literals.
+ */
+internal fun String.escapeJs(): String = replace("\\", "\\\\").replace("'", "\\'")
 
 /**
  * Creates the appropriate [JSDataChannel] based on feature support.
@@ -130,7 +135,7 @@ internal interface JSDataChannel {
  *
  * @param sandbox The sandbox to check feature support.
  * @param preferDirectBinaryTransfer If true, prefers direct binary transfer when feature is supported; if false, forces Base64.
- * @return [ProvidedNamedDataChannel] if supported and preferred, otherwise [DefaultDataChannel].
+ * @return [ProvidedNamedDataChannel] if supported and preferred, otherwise [Base64DataChannel].
  */
 internal fun createDataChannel(
     sandbox: JavaScriptSandbox,
@@ -142,6 +147,6 @@ internal fun createDataChannel(
     ) {
         ProvidedNamedDataChannel().also { it.init(sandbox) }
     } else {
-        DefaultDataChannel().also { it.init(sandbox) }
+        DefaultJsDataChannel().also { it.init(sandbox) }
     }
 }

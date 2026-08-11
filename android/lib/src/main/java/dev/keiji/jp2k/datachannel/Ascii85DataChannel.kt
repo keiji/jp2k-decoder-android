@@ -105,7 +105,7 @@ internal class Ascii85DataChannel : JSDataChannel {
         isolate: JavaScriptIsolate,
         wasmBytes: ByteArray,
     ): String {
-        val encoded = encodePayload(wasmBytes)
+        val encoded = encodePayload(wasmBytes).escapeJs()
         return "ascii85ToBytes('$encoded')"
     }
 
@@ -113,7 +113,7 @@ internal class Ascii85DataChannel : JSDataChannel {
         isolate: JavaScriptIsolate,
         j2kData: ByteArray,
     ): String {
-        val encoded = encodePayload(j2kData)
+        val encoded = encodePayload(j2kData).escapeJs()
         return "(async () => { globalThis.j2kData = globalThis.ascii85ToBytes('$encoded'); return '$INTERNAL_RESULT_SUCCESS'; })()"
     }
 
