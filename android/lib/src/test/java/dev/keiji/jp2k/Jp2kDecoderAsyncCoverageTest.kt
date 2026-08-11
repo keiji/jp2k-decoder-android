@@ -326,7 +326,7 @@ class Jp2kDecoderAsyncCoverageTest {
         val jsonError = """{"errorCode": -5, "errorMessage": "Setup failed"}"""
         doAnswer {
             TestListenableFuture(jsonError)
-        }.whenever(isolate).evaluateJavaScriptAsync(org.mockito.ArgumentMatchers.contains("setData"))
+        }.whenever(isolate).evaluateJavaScriptAsync(org.mockito.ArgumentMatchers.contains("transferFromProvidedNamedData('$PROVIDED_J2K_DATA')"))
 
         decoder.precache(data, callback)
 
@@ -344,7 +344,7 @@ class Jp2kDecoderAsyncCoverageTest {
 
         doAnswer {
             throw RuntimeException("JS Error")
-        }.whenever(isolate).evaluateJavaScriptAsync(org.mockito.ArgumentMatchers.contains("setData"))
+        }.whenever(isolate).evaluateJavaScriptAsync(org.mockito.ArgumentMatchers.contains("transferFromProvidedNamedData('$PROVIDED_J2K_DATA')"))
 
         decoder.precache(data, callback)
 

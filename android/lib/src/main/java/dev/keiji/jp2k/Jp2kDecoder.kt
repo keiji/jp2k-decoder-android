@@ -52,6 +52,13 @@ class Jp2kDecoder(
 
     private var jsIsolate: JavaScriptIsolate? = null
 
+    /**
+     * The data channel used for binary data transfer.
+     *
+     * Created during [init] based on feature support and never changed.
+     */
+    private lateinit var dataChannel: JSDataChannel
+
     private fun log(priority: Int, message: String) {
         if (config.logLevel != null && priority >= config.logLevel) {
             Log.println(priority, TAG, message)
@@ -83,6 +90,8 @@ class Jp2kDecoder(
         val start = System.currentTimeMillis()
         try {
             val sandbox = sandboxFuture.await()
+            dataChannel = createDataChannel(sandbox)
+
             val isolate = Jp2kSandbox.createIsolate(
                 sandbox = sandbox,
                 maxHeapSizeBytes = config.maxHeapSizeBytes,
@@ -120,25 +129,29 @@ class Jp2kDecoder(
         withContext(coroutineDispatcher) {
             val wasmBytes = assetManager.open(ASSET_PATH_WASM)
                 .readBytes()
-            val wasmBase64String = Base64.getEncoder().encodeToString(wasmBytes)
+
+            val wasmExpression = dataChannel.getWasmExpression(isolate, wasmBytes)
 
             val script = """
-            $SCRIPT_BYTES_BASE64_CONVERTER_LOCAL
-            $SCRIPT_DEFINE_SET_DATA_LOCAL
+                $SCRIPT_BYTES_BASE64_CONVERTER_LOCAL
+                $SCRIPT_TRANSFER_FROM_PROVIDED_NAMED_DATA_LOCAL
+                $SCRIPT_DEFINE_SET_DATA_LOCAL
 
-            var wasmInstance;
-            const wasmBuffer = globalThis.base64ToBytes('$wasmBase64String');
+                var wasmInstance;
 
-            $SCRIPT_IMPORT_OBJECT_LOCAL
+                (async () => {
+                    const wasmBuffer = await $wasmExpression;
 
-            WebAssembly.instantiate(wasmBuffer, importObject).then(res => {
-                wasmInstance = res.instance;
+                    $SCRIPT_IMPORT_OBJECT_LOCAL
 
-                $SCRIPT_DEFINE_DECODE_J2K_LOCAL
-                $SCRIPT_DEFINE_GET_SIZE_LOCAL
+                    const res = await WebAssembly.instantiate(wasmBuffer, importObject);
+                    wasmInstance = res.instance;
 
-                return "1";
-            });
+                    $SCRIPT_DEFINE_DECODE_J2K_LOCAL
+                    $SCRIPT_DEFINE_GET_SIZE_LOCAL
+
+                    return "$INTERNAL_RESULT_SUCCESS";
+                })();
             """.trimIndent()
 
             val resultFuture = isolate.evaluateJavaScriptAsync(script)
@@ -175,8 +188,7 @@ class Jp2kDecoder(
         try {
             val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
             withContext(coroutineDispatcher) {
-                val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
-                val script = "globalThis.setData('$dataBase64String');"
+                val script = dataChannel.getJ2KExpression(isolate, j2kData)
 
                 val resultFuture = isolate.evaluateJavaScriptAsync(script)
                 val result = resultFuture.await()
@@ -497,7 +509,7 @@ class Jp2kDecoder(
 
     private suspend fun executeDecodeImage(
         script: String,
-        colorFormat: ColorFormat
+        colorFormat: ColorFormat,
     ): Bitmap = mutex.withLock {
         if (_state == State.Released || _state == State.Releasing) {
             throw CancellationException("Decoder was released.")
@@ -608,7 +620,7 @@ class Jp2kDecoder(
      */
     suspend fun getMemoryUsage(): MemoryUsage = mutex.withLock {
         if (_state == State.Released || _state == State.Releasing) {
-             throw CancellationException("Decoder was released.")
+            throw CancellationException("Decoder was released.")
         }
         if (_state != State.Initialized) {
             throw IllegalStateException("Cannot getMemoryUsage while in state: $_state")
@@ -646,12 +658,12 @@ class Jp2kDecoder(
         // AutoCloseable.close() is not a suspend function, so we cannot use Mutex here.
         // Instead, we use synchronized block to ensure thread safety.
         synchronized(this) {
-             if (_state == State.Released || _state == State.Releasing) {
-                 return
-             }
-             _state = State.Releasing
-             isolateToClose = jsIsolate
-             jsIsolate = null
+            if (_state == State.Released || _state == State.Releasing) {
+                return
+            }
+            _state = State.Releasing
+            isolateToClose = jsIsolate
+            jsIsolate = null
         }
 
         try {
@@ -694,5 +706,6 @@ class Jp2kDecoder(
         private const val SCRIPT_IMPORT_OBJECT_LOCAL = SCRIPT_IMPORT_OBJECT
         private val SCRIPT_DEFINE_DECODE_J2K_LOCAL = SCRIPT_DEFINE_DECODE_J2K
         private val SCRIPT_DEFINE_GET_SIZE_LOCAL = SCRIPT_DEFINE_GET_SIZE
+        private const val SCRIPT_TRANSFER_FROM_PROVIDED_NAMED_DATA_LOCAL = SCRIPT_TRANSFER_FROM_PROVIDED_NAMED_DATA
     }
 }

@@ -1,5 +1,7 @@
 package dev.keiji.jp2k
 
+import androidx.javascriptengine.JavaScriptSandbox
+
 /**
  * Default maximum heap size in bytes.
  *
@@ -18,6 +20,22 @@ const val DEFAULT_MAX_EVALUATION_RETURN_SIZE_BYTES = 256 * 1024 * 1024
  * Default maximum number of pixels allowed.
  */
 const val DEFAULT_MAX_PIXELS = 16000000
+
+/**
+ * Feature flag constant for direct binary data transfer support.
+ * Checks if `JavaScriptSandbox.isFeatureSupported(JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)` returns true.
+ */
+internal const val JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER = JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER
+
+/**
+ * Named data key for the WASM binary when using provideNamedData.
+ */
+internal const val PROVIDED_WASM_DATA = "wasmBinary"
+
+/**
+ * Named data key for JPEG2000 image data when using provideNamedData.
+ */
+internal const val PROVIDED_J2K_DATA = "j2kData"
 
 internal const val INTERNAL_RESULT_SUCCESS = "1"
 
@@ -311,10 +329,18 @@ internal val SCRIPT_DEFINE_GET_SIZE = """
                 }
             };
 
-            globalThis.getSizeWithCache = function() {
-                if (!globalThis.j2kData) {
-                    return JSON.stringify({ errorCode: ${Jp2kError.CacheDataMissing.code}, errorMessage: "No data cached" });
-                }
-                return globalThis.internalGetSize(globalThis.j2kData);
-            };
-        """
+             globalThis.getSizeWithCache = function() {
+                 if (!globalThis.j2kData) {
+                     return JSON.stringify({ errorCode: ${Jp2kError.CacheDataMissing.code}, errorMessage: "No data cached" });
+                  }
+                 return globalThis.internalGetSize(globalThis.j2kData);
+              };
+          """
+
+internal const val SCRIPT_TRANSFER_FROM_PROVIDED_NAMED_DATA = """
+globalThis.transferFromProvidedNamedData = async function(key) {
+    const provided = await android.consumeNamedDataAsArrayBuffer(key);
+    if (provided === undefined || provided === null) return null;
+    return provided.byteLength > 0 ? new Uint8Array(provided) : new Uint8Array(0);
+};
+"""

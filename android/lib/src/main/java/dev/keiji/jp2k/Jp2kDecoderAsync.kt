@@ -35,50 +35,57 @@ class Jp2kDecoderAsync(
     private val lock = Any()
     private val executionLock = Any()
 
-    @Volatile
+     @Volatile
     private var _state = State.Uninitialized
 
-    /**
-     * The current state of the decoder.
-     */
+     /**
+      * The current state of the decoder.
+      */
     val state: State
         get() = _state
 
     private var jsIsolate: JavaScriptIsolate? = null
 
+     /**
+      * The data channel used for binary data transfer.
+      *
+      * Created during [init] based on feature support and never changed.
+      */
+    private lateinit var dataChannel: JSDataChannel
+
     private fun log(priority: Int, message: String) {
         if (config.logLevel != null && priority >= config.logLevel) {
             Log.println(priority, TAG, message)
-        }
-    }
+         }
+      }
 
-    /**
-     * Initializes the decoder asynchronously.
-     *
-     * This method initializes the JavaScript sandbox and loads the WebAssembly module
-     * on a background thread. The result is reported via the provided callback.
-     *
-     * @param context The Android Context.
-     * @param callback The callback to receive the initialization result.
-     */
+     /**
+      * Initializes the decoder asynchronously.
+      *
+      * This method initializes the JavaScript sandbox and loads the WebAssembly module
+      * on a background thread. The result is reported via the provided callback.
+      *
+      * @param context The Android Context.
+      * @param callback The callback to receive the initialization result.
+      */
     fun init(context: Context, callback: Callback<Unit>) {
         synchronized(lock) {
             if (_state == State.Initialized) {
                 callback.onSuccess(Unit)
                 return
-            }
+             }
             if (_state == State.Released || _state == State.Releasing) {
                 callback.onError(CancellationException("Decoder was released."))
                 return
-            }
+             }
             if (_state != State.Uninitialized) {
                 callback.onError(IllegalStateException("Cannot initialize while in state: $_state"))
                 return
-            }
-            _state = State.Initializing
-        }
+             }
+             _state = State.Initializing
+         }
 
-        // Capture resources needed for initialization from Context
+         // Capture resources needed for initialization from Context
         val assetManager = context.assets
         val mainExecutor = ContextCompat.getMainExecutor(context)
         val sandboxFuture = Jp2kSandbox.get(context)
@@ -87,78 +94,83 @@ class Jp2kDecoderAsync(
         backgroundExecutor.execute {
             synchronized(executionLock) {
                 try {
-                    // Wait for sandbox connection on the background thread
+                     // Wait for sandbox connection on the background thread
                     val sandbox = sandboxFuture.get()
+                    dataChannel = createDataChannel(sandbox)
                     val isolate = Jp2kSandbox.createIsolate(
                         sandbox = sandbox,
                         maxHeapSizeBytes = config.maxHeapSizeBytes,
                         maxEvaluationReturnSizeBytes = config.maxEvaluationReturnSizeBytes,
-                    ).also { isolate ->
+                     ).also { isolate ->
                         Jp2kSandbox.setupConsoleCallback(isolate, sandbox, mainExecutor, TAG)
-                    }
+                     }
 
                     synchronized(lock) {
                         if (_state == State.Released || _state == State.Releasing) {
                             isolate.close()
                             throw CancellationException("Jp2kDecoderAsync was released during initialization.")
-                        }
+                         }
                         jsIsolate = isolate
-                    }
+                     }
 
-                    // Load WASM
+                     // Load WASM
                     loadWasm(isolate, assetManager)
 
                     synchronized(lock) {
                         if (_state == State.Released || _state == State.Releasing) {
                             throw CancellationException("Jp2kDecoderAsync was released during initialization.")
-                        }
-                        _state = State.Initialized
-                    }
+                         }
+                         _state = State.Initialized
+                     }
 
                     val time = System.currentTimeMillis() - start
                     log(Log.INFO, "init() finished in $time msec")
                     callback.onSuccess(Unit)
-                } catch (e: Exception) {
+                 } catch (e: Exception) {
                     synchronized(lock) {
                         if (_state != State.Released && _state != State.Releasing) {
-                            _state = State.Uninitialized
-                        }
-                    }
+                             _state = State.Uninitialized
+                         }
+                     }
                     val time = System.currentTimeMillis() - start
                     log(Log.ERROR, "init() failed in $time msec. Error: ${e.message}")
                     callback.onError(e)
-                }
-            }
-        }
-    }
+                 }
+             }
+         }
+      }
 
     private fun loadWasm(isolate: JavaScriptIsolate, assetManager: AssetManager) {
-        // This runs on backgroundExecutor
+         // This runs on backgroundExecutor
         val wasmBytes = assetManager.open(ASSET_PATH_WASM)
-            .readBytes()
-        val wasmBase64String = Base64.getEncoder().encodeToString(wasmBytes)
+             .readBytes()
+
+        val wasmExpression = dataChannel.getWasmExpression(isolate, wasmBytes)
 
         val script = """
-        $SCRIPT_BYTES_BASE64_CONVERTER
-        $SCRIPT_DEFINE_SET_DATA
+            $SCRIPT_BYTES_BASE64_CONVERTER
+            $SCRIPT_TRANSFER_FROM_PROVIDED_NAMED_DATA
+            $SCRIPT_DEFINE_SET_DATA
 
-        var wasmInstance;
-        const wasmBuffer = globalThis.base64ToBytes('$wasmBase64String');
+            var wasmInstance;
 
-        $SCRIPT_IMPORT_OBJECT
+            (async () => {
+                const wasmBuffer = await $wasmExpression;
 
-        WebAssembly.instantiate(wasmBuffer, importObject).then(res => {
-            wasmInstance = res.instance;
+                $SCRIPT_IMPORT_OBJECT
 
-            $SCRIPT_DEFINE_DECODE_J2K
-            $SCRIPT_DEFINE_GET_SIZE
+                const res = await WebAssembly.instantiate(wasmBuffer, importObject);
+                wasmInstance = res.instance;
 
-            return "1";
-        });
+                $SCRIPT_DEFINE_DECODE_J2K
+                $SCRIPT_DEFINE_GET_SIZE
+
+                return "$INTERNAL_RESULT_SUCCESS";
+            })();
         """.trimIndent()
 
-        // evaluateJavaScriptAsync returns a ListenableFuture.
-        // We must wait for it synchronously on this background thread.
+         // evaluateJavaScriptAsync returns a ListenableFuture.
+         // We must wait for it synchronously on this background thread
         val resultFuture = isolate.evaluateJavaScriptAsync(script)
 
         try {
@@ -166,32 +178,32 @@ class Jp2kDecoderAsync(
             if (result != INTERNAL_RESULT_SUCCESS) {
                 ensureNotEmpty(result, "Success indicator")
                 throw IllegalStateException("WASM instantiation failed.")
-            }
-        } catch (e: ExecutionException) {
+             }
+         } catch (e: ExecutionException) {
             throw e.cause ?: e
-        }
-    }
+         }
+      }
 
-    /**
-     * Precaches the image data in the JavaScript sandbox for subsequent operations.
-     *
-     * This method must be called after [init]. It caches the provided image data
-     * in the sandbox, allowing [getSize] and [decodeImage] to be called without arguments.
-     *
-     * @param j2kData The raw byte array of the JPEG 2000 image.
-     * @param callback The callback to receive the precache result.
-     */
+     /**
+      * Precaches the image data in the JavaScript sandbox for subsequent operations.
+      *
+      * This method must be called after [init]. It caches the provided image data
+      * in the sandbox, allowing [getSize] and [decodeImage] to be called without arguments.
+      *
+      * @param j2kData The raw byte array of the JPEG 2000 image.
+      * @param callback The callback to receive the precache result.
+      */
     fun precache(j2kData: ByteArray, callback: Callback<Unit>) {
         synchronized(lock) {
             if (_state == State.Released || _state == State.Releasing) {
                 callback.onError(CancellationException("Decoder was released."))
                 return
-            }
+             }
             if (_state != State.Initialized && _state != State.Processing) {
                 callback.onError(IllegalStateException("Cannot precache while in state: $_state"))
                 return
-            }
-        }
+             }
+         }
 
         backgroundExecutor.execute {
             synchronized(executionLock) {
@@ -199,19 +211,18 @@ class Jp2kDecoderAsync(
                     if (_state == State.Released || _state == State.Releasing) {
                         callback.onError(CancellationException("Decoder was released."))
                         return@execute
-                    }
+                     }
                     if (_state != State.Initialized && _state != State.Processing) {
                         callback.onError(IllegalStateException("Decoder state invalid before execution: $_state"))
                         return@execute
-                    }
-                    _state = State.Processing
-                }
+                     }
+                     _state = State.Processing
+                 }
 
                 try {
                     val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
 
-                    val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
-                    val script = "globalThis.setData('$dataBase64String');"
+                    val script = dataChannel.getJ2KExpression(isolate, j2kData)
 
                     val resultFuture = isolate.evaluateJavaScriptAsync(script)
                     val result = resultFuture.get()
@@ -226,65 +237,65 @@ class Jp2kDecoderAsync(
                             val errorMessage = if (root.has("errorMessage")) root.getString("errorMessage") else null
                             log(Log.ERROR, "Error: $error, Message: $errorMessage")
                             throw Jp2kException(error, errorMessage)
-                        }
+                         }
                         throw IllegalStateException("Failed to set data: $result")
-                    }
+                     }
 
                     restoreStateAfterDecode()
                     synchronized(lock) {
                         if (_state == State.Released || _state == State.Releasing) {
                             callback.onError(CancellationException("Decoder was released."))
-                        } else {
+                         } else {
                             callback.onSuccess(Unit)
-                        }
-                    }
-                } catch (e: Exception) {
+                         }
+                     }
+                 } catch (e: Exception) {
                     restoreStateAfterDecode()
                     synchronized(lock) {
                         if (_state == State.Released || _state == State.Releasing) {
                             callback.onError(CancellationException("Decoder was released."))
-                        } else {
+                         } else {
                             callback.onError(e)
-                        }
-                    }
-                }
-            }
-        }
-    }
+                         }
+                     }
+                 }
+             }
+         }
+      }
 
-    /**
-     * Retrieves the size of the JPEG 2000 image asynchronously using cached data.
-     *
-     * @param callback The callback to receive the [Size] or error.
-     */
+     /**
+      * Retrieves the size of the JPEG 2000 image asynchronously using cached data.
+      *
+      * @param callback The callback to receive the [Size] or error.
+      */
     fun getSize(callback: Callback<Size>) {
         val script = "globalThis.getSizeWithCache();"
         executeGetSize(script, callback)
-    }
+      }
 
-    /**
-     * Retrieves the size of the JPEG 2000 image asynchronously without fully decoding it.
-     *
-     * @param j2kData The raw byte array of the JPEG 2000 image.
-     * @param callback The callback to receive the [Size] or error.
-     */
+     /**
+      * Retrieves the size of the JPEG 2000 image asynchronously without fully decoding it.
+      *
+      * @param j2kData The raw byte array of the JPEG 2000 image.
+      * @param callback The callback to receive the [Size] or error.
+      */
     fun getSize(j2kData: ByteArray, callback: Callback<Size>) {
         val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
         val script = "globalThis.getSize('$dataBase64String');"
         executeGetSize(script, callback)
-    }
+      }
 
     private fun executeGetSize(script: String, callback: Callback<Size>) {
         synchronized(lock) {
             if (_state == State.Released || _state == State.Releasing) {
                 callback.onError(CancellationException("Decoder was released."))
                 return
-            }
+             }
             if (_state != State.Initialized && _state != State.Processing) {
                 callback.onError(IllegalStateException("Cannot getSize while in state: $_state"))
                 return
-            }
-        }
+             }
+         }
 
         backgroundExecutor.execute {
             synchronized(executionLock) {
@@ -292,13 +303,13 @@ class Jp2kDecoderAsync(
                     if (_state == State.Released || _state == State.Releasing) {
                         callback.onError(CancellationException("Decoder was released."))
                         return@execute
-                    }
+                     }
                     if (_state != State.Initialized && _state != State.Processing) {
                         callback.onError(IllegalStateException("Decoder state invalid before execution: $_state"))
                         return@execute
-                    }
-                    _state = State.Processing
-                }
+                     }
+                     _state = State.Processing
+                 }
 
                 try {
                     val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
@@ -311,13 +322,13 @@ class Jp2kDecoderAsync(
                         val errorCode = root.getInt("errorCode")
                         if (errorCode == Jp2kError.CacheDataMissing.code) {
                             throw IllegalStateException("No data cached")
-                        }
+                         }
                         val error = Jp2kError.fromInt(errorCode)
                         val errorMessage =
                             if (root.has("errorMessage")) root.getString("errorMessage") else null
                         log(Log.ERROR, "Error: $error, Message: $errorMessage")
                         throw Jp2kException(error, errorMessage)
-                    }
+                     }
 
                     val width = root.getInt("width")
                     val height = root.getInt("height")
@@ -327,48 +338,48 @@ class Jp2kDecoderAsync(
                     synchronized(lock) {
                         if (_state == State.Released || _state == State.Releasing) {
                             callback.onError(CancellationException("Decoder was released."))
-                        } else {
+                         } else {
                             callback.onSuccess(size)
-                        }
-                    }
+                         }
+                     }
 
-                } catch (e: Exception) {
+                 } catch (e: Exception) {
                     restoreStateAfterDecode()
                     synchronized(lock) {
                         if (_state == State.Released || _state == State.Releasing) {
                             callback.onError(CancellationException("Decoder was released."))
-                        } else {
+                         } else {
                             callback.onError(e)
-                        }
-                    }
-                }
-            }
-        }
-    }
+                         }
+                     }
+                 }
+             }
+         }
+      }
 
-    /**
-     * Decodes a JPEG 2000 image asynchronously using cached data.
-     *
-     * @param colorFormat The desired output color format.
-     * @param callback The callback to receive the decoded [Bitmap] or error.
-     */
+     /**
+      * Decodes a JPEG 2000 image asynchronously using cached data.
+      *
+      * @param colorFormat The desired output color format.
+      * @param callback The callback to receive the decoded [Bitmap] or error.
+      */
     fun decodeImage(colorFormat: ColorFormat = ColorFormat.ARGB8888, callback: Callback<Bitmap>) {
         val measureTimes = config.logLevel != null
         val script =
-            "globalThis.decodeJ2KWithCache(${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, 0, 0, 0, 0);"
+             "globalThis.decodeJ2KWithCache(${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, 0, 0, 0, 0);"
         executeDecodeImage(script, colorFormat, callback)
-    }
+      }
 
-    /**
-     * Decodes a specific region of a JPEG 2000 image asynchronously using cached data.
-     *
-     * @param left The left coordinate of the region.
-     * @param top The top coordinate of the region.
-     * @param right The right coordinate of the region.
-     * @param bottom The bottom coordinate of the region.
-     * @param colorFormat The desired output color format.
-     * @param callback The callback to receive the decoded [Bitmap] or error.
-     */
+     /**
+      * Decodes a specific region of a JPEG 2000 image asynchronously using cached data.
+      *
+      * @param left The left coordinate of the region.
+      * @param top The top coordinate of the region.
+      * @param right The right coordinate of the region.
+      * @param bottom The bottom coordinate of the region.
+      * @param colorFormat The desired output color format.
+      * @param callback The callback to receive the decoded [Bitmap] or error.
+      */
     fun decodeImage(
         left: Int,
         top: Int,
@@ -376,98 +387,98 @@ class Jp2kDecoderAsync(
         bottom: Int,
         colorFormat: ColorFormat = ColorFormat.ARGB8888,
         callback: Callback<Bitmap>
-    ) {
+     ) {
         val measureTimes = config.logLevel != null
         val script =
-            "globalThis.decodeJ2KWithCache(${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
+             "globalThis.decodeJ2KWithCache(${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
         executeDecodeImage(script, colorFormat, callback)
-    }
+      }
 
-    /**
-     * Decodes a specific region of a JPEG 2000 image asynchronously using cached data with default color format (ARGB 8888).
-     *
-     * @param left The left coordinate of the region.
-     * @param top The top coordinate of the region.
-     * @param right The right coordinate of the region.
-     * @param bottom The bottom coordinate of the region.
-     * @param callback The callback to receive the decoded [Bitmap] or error.
-     */
+     /**
+      * Decodes a specific region of a JPEG 2000 image asynchronously using cached data with default color format (ARGB 8888).
+      *
+      * @param left The left coordinate of the region.
+      * @param top The top coordinate of the region.
+      * @param right The right coordinate of the region.
+      * @param bottom The bottom coordinate of the region.
+      * @param callback The callback to receive the decoded [Bitmap] or error.
+      */
     fun decodeImage(
         left: Int,
         top: Int,
         right: Int,
         bottom: Int,
         callback: Callback<Bitmap>
-    ) {
+     ) {
         decodeImage(left, top, right, bottom, ColorFormat.ARGB8888, callback)
-    }
+      }
 
-    /**
-     * Decodes a specific region of a JPEG 2000 image asynchronously using cached data.
-     *
-     * @param region The region to decode.
-     * @param colorFormat The desired output color format.
-     * @param callback The callback to receive the decoded [Bitmap] or error.
-     */
+     /**
+      * Decodes a specific region of a JPEG 2000 image asynchronously using cached data.
+      *
+      * @param region The region to decode.
+      * @param colorFormat The desired output color format.
+      * @param callback The callback to receive the decoded [Bitmap] or error.
+      */
     fun decodeImage(
         region: Rect,
         colorFormat: ColorFormat = ColorFormat.ARGB8888,
         callback: Callback<Bitmap>
-    ) {
+     ) {
         decodeImage(region.left, region.top, region.right, region.bottom, colorFormat, callback)
-    }
+      }
 
-    /**
-     * Decodes a specific region of a JPEG 2000 image asynchronously using cached data with default color format (ARGB 8888).
-     *
-     * @param region The region to decode.
-     * @param callback The callback to receive the decoded [Bitmap] or error.
-     */
+     /**
+      * Decodes a specific region of a JPEG 2000 image asynchronously using cached data with default color format (ARGB 8888).
+      *
+      * @param region The region to decode.
+      * @param callback The callback to receive the decoded [Bitmap] or error.
+      */
     fun decodeImage(
         region: Rect,
         callback: Callback<Bitmap>
-    ) {
+     ) {
         decodeImage(region, ColorFormat.ARGB8888, callback)
-    }
+      }
 
-    /**
-     * Decodes a specific region of a JPEG 2000 image asynchronously using cached data.
-     *
-     * @param region The region to decode.
-     * @param colorFormat The desired output color format.
-     * @param callback The callback to receive the decoded [Bitmap] or error.
-     */
+     /**
+      * Decodes a specific region of a JPEG 2000 image asynchronously using cached data.
+      *
+      * @param region The region to decode.
+      * @param colorFormat The desired output color format.
+      * @param callback The callback to receive the decoded [Bitmap] or error.
+      */
     fun decodeImage(
         region: RectF,
         colorFormat: ColorFormat = ColorFormat.ARGB8888,
         callback: Callback<Bitmap>
-    ) {
+     ) {
         decodeImage(region.left, region.top, region.right, region.bottom, colorFormat, callback)
-    }
+      }
 
-    /**
-     * Decodes a specific region of a JPEG 2000 image asynchronously using cached data with default color format (ARGB 8888).
-     *
-     * @param region The region to decode.
-     * @param callback The callback to receive the decoded [Bitmap] or error.
-     */
+     /**
+      * Decodes a specific region of a JPEG 2000 image asynchronously using cached data with default color format (ARGB 8888).
+      *
+      * @param region The region to decode.
+      * @param callback The callback to receive the decoded [Bitmap] or error.
+      */
     fun decodeImage(
         region: RectF,
         callback: Callback<Bitmap>
-    ) {
+     ) {
         decodeImage(region, ColorFormat.ARGB8888, callback)
-    }
+      }
 
-    /**
-     * Decodes a specific region of a JPEG 2000 image asynchronously using cached data.
-     *
-     * @param left The left coordinate ratio (0.0 - 1.0).
-     * @param top The top coordinate ratio (0.0 - 1.0).
-     * @param right The right coordinate ratio (0.0 - 1.0).
-     * @param bottom The bottom coordinate ratio (0.0 - 1.0).
-     * @param colorFormat The desired output color format.
-     * @param callback The callback to receive the decoded [Bitmap] or error.
-     */
+     /**
+      * Decodes a specific region of a JPEG 2000 image asynchronously using cached data.
+      *
+      * @param left The left coordinate ratio (0.0 - 1.0).
+      * @param top The top coordinate ratio (0.0 - 1.0).
+      * @param right The right coordinate ratio (0.0 - 1.0).
+      * @param bottom The bottom coordinate ratio (0.0 - 1.0).
+      * @param colorFormat The desired output color format.
+      * @param callback The callback to receive the decoded [Bitmap] or error.
+      */
     fun decodeImage(
         left: Float,
         top: Float,
@@ -475,74 +486,74 @@ class Jp2kDecoderAsync(
         bottom: Float,
         colorFormat: ColorFormat = ColorFormat.ARGB8888,
         callback: Callback<Bitmap>
-    ) {
+     ) {
         if (!validateRatio(left, top, right, bottom, callback)) {
             return
-        }
+         }
 
         val measureTimes = config.logLevel != null
         val script =
-            "globalThis.decodeJ2KWithCacheRatio(${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
+             "globalThis.decodeJ2KWithCacheRatio(${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
         executeDecodeImage(script, colorFormat, callback)
-    }
+      }
 
-    /**
-     * Decodes a specific region of a JPEG 2000 image asynchronously using cached data with default color format (ARGB 8888).
-     *
-     * @param left The left coordinate ratio (0.0 - 1.0).
-     * @param top The top coordinate ratio (0.0 - 1.0).
-     * @param right The right coordinate ratio (0.0 - 1.0).
-     * @param bottom The bottom coordinate ratio (0.0 - 1.0).
-     * @param callback The callback to receive the decoded [Bitmap] or error.
-     */
+     /**
+      * Decodes a specific region of a JPEG 2000 image asynchronously using cached data with default color format (ARGB 8888).
+      *
+      * @param left The left coordinate ratio (0.0 - 1.0).
+      * @param top The top coordinate ratio (0.0 - 1.0).
+      * @param right The right coordinate ratio (0.0 - 1.0).
+      * @param bottom The bottom coordinate ratio (0.0 - 1.0).
+      * @param callback The callback to receive the decoded [Bitmap] or error.
+      */
     fun decodeImage(
         left: Float,
         top: Float,
         right: Float,
         bottom: Float,
         callback: Callback<Bitmap>
-    ) {
+     ) {
         decodeImage(left, top, right, bottom, ColorFormat.ARGB8888, callback)
-    }
+      }
 
-    /**
-     * Decodes a JPEG 2000 image asynchronously.
-     *
-     * @param j2kData The raw byte array of the JPEG 2000 image.
-     * @param colorFormat The desired output color format.
-     * @param callback The callback to receive the decoded [Bitmap] or error.
-     */
+     /**
+      * Decodes a JPEG 2000 image asynchronously.
+      *
+      * @param j2kData The raw byte array of the JPEG 2000 image.
+      * @param colorFormat The desired output color format.
+      * @param callback The callback to receive the decoded [Bitmap] or error.
+      */
     fun decodeImage(
         j2kData: ByteArray,
         colorFormat: ColorFormat = ColorFormat.ARGB8888,
         callback: Callback<Bitmap>
-    ) {
+     ) {
         log(Log.INFO, "Input data length: ${j2kData.size}")
 
         if (j2kData.size < MIN_INPUT_SIZE) {
             callback.onError(IllegalArgumentException("Input data is too short"))
             return
-        }
+         }
 
         val measureTimes = config.logLevel != null
         val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
         val script =
-            "globalThis.decodeJ2K('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, 0, 0, 0, 0);"
+             "globalThis.decodeJ2K('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, 0, 0, 0, 0);"
 
         executeDecodeImage(script, colorFormat, callback)
-    }
+      }
 
-    /**
-     * Decodes a specific region of a JPEG 2000 image asynchronously.
-     *
-     * @param j2kData The raw byte array of the JPEG 2000 image.
-     * @param left The left coordinate of the region.
-     * @param top The top coordinate of the region.
-     * @param right The right coordinate of the region.
-     * @param bottom The bottom coordinate of the region.
-     * @param colorFormat The desired output color format.
-     * @param callback The callback to receive the decoded [Bitmap] or error.
-     */
+     /**
+      * Decodes a specific region of a JPEG 2000 image asynchronously.
+      *
+      * @param j2kData The raw byte array of the JPEG 2000 image.
+      * @param left The left coordinate of the region.
+      * @param top The top coordinate of the region.
+      * @param right The right coordinate of the region.
+      * @param bottom The bottom coordinate of the region.
+      * @param colorFormat The desired output color format.
+      * @param callback The callback to receive the decoded [Bitmap] or error.
+      */
     fun decodeImage(
         j2kData: ByteArray,
         left: Int,
@@ -551,32 +562,32 @@ class Jp2kDecoderAsync(
         bottom: Int,
         colorFormat: ColorFormat = ColorFormat.ARGB8888,
         callback: Callback<Bitmap>
-    ) {
+     ) {
         log(Log.INFO, "Input data length: ${j2kData.size}")
 
         if (j2kData.size < MIN_INPUT_SIZE) {
             callback.onError(IllegalArgumentException("Input data is too short"))
             return
-        }
+         }
 
         val measureTimes = config.logLevel != null
         val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
         val script =
-            "globalThis.decodeJ2K('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
+             "globalThis.decodeJ2K('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
 
         executeDecodeImage(script, colorFormat, callback)
-    }
+      }
 
-    /**
-     * Decodes a specific region of a JPEG 2000 image asynchronously with default color format (ARGB 8888).
-     *
-     * @param j2kData The raw byte array of the JPEG 2000 image.
-     * @param left The left coordinate of the region.
-     * @param top The top coordinate of the region.
-     * @param right The right coordinate of the region.
-     * @param bottom The bottom coordinate of the region.
-     * @param callback The callback to receive the decoded [Bitmap] or error.
-     */
+     /**
+      * Decodes a specific region of a JPEG 2000 image asynchronously with default color format (ARGB 8888).
+      *
+      * @param j2kData The raw byte array of the JPEG 2000 image.
+      * @param left The left coordinate of the region.
+      * @param top The top coordinate of the region.
+      * @param right The right coordinate of the region.
+      * @param bottom The bottom coordinate of the region.
+      * @param callback The callback to receive the decoded [Bitmap] or error.
+      */
     fun decodeImage(
         j2kData: ByteArray,
         left: Int,
@@ -584,85 +595,85 @@ class Jp2kDecoderAsync(
         right: Int,
         bottom: Int,
         callback: Callback<Bitmap>
-    ) {
+     ) {
         decodeImage(j2kData, left, top, right, bottom, ColorFormat.ARGB8888, callback)
-    }
+      }
 
-    /**
-     * Decodes a specific region of a JPEG 2000 image asynchronously.
-     *
-     * @param j2kData The raw byte array of the JPEG 2000 image.
-     * @param region The region to decode.
-     * @param colorFormat The desired output color format.
-     * @param callback The callback to receive the decoded [Bitmap] or error.
-     */
+     /**
+      * Decodes a specific region of a JPEG 2000 image asynchronously.
+      *
+      * @param j2kData The raw byte array of the JPEG 2000 image.
+      * @param region The region to decode.
+      * @param colorFormat The desired output color format.
+      * @param callback The callback to receive the decoded [Bitmap] or error.
+      */
     fun decodeImage(
         j2kData: ByteArray,
         region: Rect,
         colorFormat: ColorFormat = ColorFormat.ARGB8888,
         callback: Callback<Bitmap>
-    ) {
+     ) {
         decodeImage(j2kData, region.left, region.top, region.right, region.bottom, colorFormat, callback)
-    }
+      }
 
-    /**
-     * Decodes a specific region of a JPEG 2000 image asynchronously with default color format (ARGB 8888).
-     *
-     * @param j2kData The raw byte array of the JPEG 2000 image.
-     * @param region The region to decode.
-     * @param callback The callback to receive the decoded [Bitmap] or error.
-     */
+     /**
+      * Decodes a specific region of a JPEG 2000 image asynchronously with default color format (ARGB 8888).
+      *
+      * @param j2kData The raw byte array of the JPEG 2000 image.
+      * @param region The region to decode.
+      * @param callback The callback to receive the decoded [Bitmap] or error.
+      */
     fun decodeImage(
         j2kData: ByteArray,
         region: Rect,
         callback: Callback<Bitmap>
-    ) {
+     ) {
         decodeImage(j2kData, region, ColorFormat.ARGB8888, callback)
-    }
+      }
 
-    /**
-     * Decodes a specific region of a JPEG 2000 image asynchronously.
-     *
-     * @param j2kData The raw byte array of the JPEG 2000 image.
-     * @param region The region to decode.
-     * @param colorFormat The desired output color format.
-     * @param callback The callback to receive the decoded [Bitmap] or error.
-     */
+     /**
+      * Decodes a specific region of a JPEG 2000 image asynchronously.
+      *
+      * @param j2kData The raw byte array of the JPEG 2000 image.
+      * @param region The region to decode.
+      * @param colorFormat The desired output color format.
+      * @param callback The callback to receive the decoded [Bitmap] or error.
+      */
     fun decodeImage(
         j2kData: ByteArray,
         region: RectF,
         colorFormat: ColorFormat = ColorFormat.ARGB8888,
         callback: Callback<Bitmap>
-    ) {
+     ) {
         decodeImage(j2kData, region.left, region.top, region.right, region.bottom, colorFormat, callback)
-    }
+      }
 
-    /**
-     * Decodes a specific region of a JPEG 2000 image asynchronously with default color format (ARGB 8888).
-     *
-     * @param j2kData The raw byte array of the JPEG 2000 image.
-     * @param region The region to decode.
-     * @param callback The callback to receive the decoded [Bitmap] or error.
-     */
+     /**
+      * Decodes a specific region of a JPEG 2000 image asynchronously with default color format (ARGB 8888).
+      *
+      * @param j2kData The raw byte array of the JPEG 2000 image.
+      * @param region The region to decode.
+      * @param callback The callback to receive the decoded [Bitmap] or error.
+      */
     fun decodeImage(
         j2kData: ByteArray,
         region: RectF,
         callback: Callback<Bitmap>
-    ) {
+     ) {
         decodeImage(j2kData, region, ColorFormat.ARGB8888, callback)
-    }
+      }
 
-    /**
-     * Decodes a specific region of a JPEG 2000 image asynchronously.
-     *
-     * @param j2kData The raw byte array of the JPEG 2000 image.
-     * @param left The left coordinate ratio (0.0 - 1.0).
-     * @param top The top coordinate ratio (0.0 - 1.0).
-     * @param right The right coordinate ratio (0.0 - 1.0).
-     * @param bottom The bottom coordinate ratio (0.0 - 1.0).
-     * @param colorFormat The desired output color format.
-     * @param callback The callback to receive the decoded [Bitmap] or error.
-     */
+     /**
+      * Decodes a specific region of a JPEG 2000 image asynchronously.
+      *
+      * @param j2kData The raw byte array of the JPEG 2000 image.
+      * @param left The left coordinate ratio (0.0 - 1.0).
+      * @param top The top coordinate ratio (0.0 - 1.0).
+      * @param right The right coordinate ratio (0.0 - 1.0).
+      * @param bottom The bottom coordinate ratio (0.0 - 1.0).
+      * @param colorFormat The desired output color format.
+      * @param callback The callback to receive the decoded [Bitmap] or error.
+      */
     fun decodeImage(
         j2kData: ByteArray,
         left: Float,
@@ -671,35 +682,35 @@ class Jp2kDecoderAsync(
         bottom: Float,
         colorFormat: ColorFormat = ColorFormat.ARGB8888,
         callback: Callback<Bitmap>
-    ) {
+     ) {
         log(Log.INFO, "Input data length: ${j2kData.size}")
 
         if (j2kData.size < MIN_INPUT_SIZE) {
             callback.onError(IllegalArgumentException("Input data is too short"))
             return
-        }
+         }
         if (!validateRatio(left, top, right, bottom, callback)) {
             return
-        }
+         }
 
         val measureTimes = config.logLevel != null
         val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
         val script =
-            "globalThis.decodeJ2KRatio('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
+             "globalThis.decodeJ2KRatio('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
 
         executeDecodeImage(script, colorFormat, callback)
-    }
+      }
 
-    /**
-     * Decodes a specific region of a JPEG 2000 image asynchronously with default color format (ARGB 8888).
-     *
-     * @param j2kData The raw byte array of the JPEG 2000 image.
-     * @param left The left coordinate ratio (0.0 - 1.0).
-     * @param top The top coordinate ratio (0.0 - 1.0).
-     * @param right The right coordinate ratio (0.0 - 1.0).
-     * @param bottom The bottom coordinate ratio (0.0 - 1.0).
-     * @param callback The callback to receive the decoded [Bitmap] or error.
-     */
+     /**
+      * Decodes a specific region of a JPEG 2000 image asynchronously with default color format (ARGB 8888).
+      *
+      * @param j2kData The raw byte array of the JPEG 2000 image.
+      * @param left The left coordinate ratio (0.0 - 1.0).
+      * @param top The top coordinate ratio (0.0 - 1.0).
+      * @param right The right coordinate ratio (0.0 - 1.0).
+      * @param bottom The bottom coordinate ratio (0.0 - 1.0).
+      * @param callback The callback to receive the decoded [Bitmap] or error.
+      */
     fun decodeImage(
         j2kData: ByteArray,
         left: Float,
@@ -707,9 +718,9 @@ class Jp2kDecoderAsync(
         right: Float,
         bottom: Float,
         callback: Callback<Bitmap>
-    ) {
+     ) {
         decodeImage(j2kData, left, top, right, bottom, ColorFormat.ARGB8888, callback)
-    }
+      }
 
     private fun validateRatio(
         left: Float,
@@ -717,46 +728,46 @@ class Jp2kDecoderAsync(
         right: Float,
         bottom: Float,
         callback: Callback<Bitmap>
-    ): Boolean {
+     ): Boolean {
         if (left < 0.0f || left > 1.0f || top < 0.0f || top > 1.0f ||
             right < 0.0f || right > 1.0f || bottom < 0.0f || bottom > 1.0f
-        ) {
+         ) {
             callback.onError(IllegalArgumentException("Ratio must be 0.0 - 1.0"))
             return false
-        }
+         }
         return true
-    }
+      }
 
     private fun executeDecodeImage(
         script: String,
         colorFormat: ColorFormat,
         callback: Callback<Bitmap>
-    ) {
+     ) {
         synchronized(lock) {
-            // Allow if Initialized OR Processing (queueing up)
+             // Allow if Initialized OR Processing (queueing up)
             if (_state != State.Initialized && _state != State.Processing) {
                 callback.onError(IllegalStateException("Cannot decodeImage while in state: $_state"))
                 return
-            }
-            // Do NOT set state to Processing here. Wait until execution starts.
-        }
+             }
+             // Do NOT set state to Processing here. Wait until execution starts.
+         }
 
         backgroundExecutor.execute {
-            // Serialize execution
+             // Serialize execution
             synchronized(executionLock) {
-                // Check state again inside the serial lock
+                 // Check state again inside the serial lock
                 synchronized(lock) {
                     if (_state == State.Released || _state == State.Releasing) {
                         callback.onError(CancellationException("Decoder was released."))
                         return@execute
-                    }
-                    // It's possible init failed or something else happened while waiting in queue
+                     }
+                     // It's possible init failed or something else happened while waiting in queue
                     if (_state != State.Initialized && _state != State.Processing) {
                         callback.onError(IllegalStateException("Decoder state invalid before execution: $_state"))
                         return@execute
-                    }
-                    _state = State.Processing
-                }
+                     }
+                     _state = State.Processing
+                 }
 
                 val start = System.currentTimeMillis()
 
@@ -767,7 +778,7 @@ class Jp2kDecoderAsync(
 
                     val resultFuture = isolate.evaluateJavaScriptAsync(script)
 
-                    // Block and wait for result on background thread
+                     // Block and wait for result on background thread
                     val jsonResult = ensureNotEmpty(resultFuture.get(), "JSON")
 
                     val root = JSONObject(jsonResult)
@@ -775,7 +786,7 @@ class Jp2kDecoderAsync(
                         val errorCode = root.getInt("errorCode")
                         if (errorCode == Jp2kError.CacheDataMissing.code) {
                             throw IllegalStateException("No data cached")
-                        }
+                         }
                         val error = Jp2kError.fromInt(errorCode)
                         val errorMessage =
                             if (root.has("errorMessage")) root.getString("errorMessage") else null
@@ -783,14 +794,14 @@ class Jp2kDecoderAsync(
 
                         if (error == Jp2kError.RegionOutOfBounds) {
                             throw RegionOutOfBoundsException(errorMessage)
-                        }
+                         }
 
                         throw Jp2kException(error, errorMessage)
-                    } else if (root.has("error")) {
+                     } else if (root.has("error")) {
                         val errorMsg = root.getString("error")
                         log(Log.ERROR, "Error: $errorMsg")
                         throw Jp2kException(Jp2kError.Unknown, errorMsg)
-                    }
+                     }
 
                     if (measureTimes) {
                         val timePreProcess = root.optDouble("timePreProcess", 0.0)
@@ -798,9 +809,9 @@ class Jp2kDecoderAsync(
                         val timePostProcess = root.optDouble("timePostProcess", 0.0)
                         log(
                             Log.INFO,
-                            "Pre-process: $timePreProcess ms, WASM: $timeWasm ms, Post-process: $timePostProcess ms"
-                        )
-                    }
+                             "Pre-process: $timePreProcess ms, WASM: $timeWasm ms, Post-process: $timePostProcess ms"
+                         )
+                     }
 
                     val bmpBase64 = root.getString("bmp")
                     val bmpBytes = Base64.getDecoder().decode(bmpBase64)
@@ -811,88 +822,88 @@ class Jp2kDecoderAsync(
                         inPreferredConfig = when (colorFormat) {
                             ColorFormat.RGB565 -> Bitmap.Config.RGB_565
                             ColorFormat.ARGB8888 -> Bitmap.Config.ARGB_8888
-                        }
-                    }
+                         }
+                     }
 
                     val bitmap =
                         BitmapFactory.decodeByteArray(bmpBytes, 0, bmpBytes.size, options)
 
                     if (bitmap == null) {
                         throw IllegalStateException("Bitmap decoding failed (returned null).")
-                    }
+                     }
 
                     val time = System.currentTimeMillis() - start
                     log(Log.INFO, "decodeImage() finished in $time msec")
 
                     restoreStateAfterDecode()
-                    // Check if released during decode (unlikely due to lock, but good practice)
+                     // Check if released during decode (unlikely due to lock, but good practice)
                     synchronized(lock) {
                         if (_state == State.Released || _state == State.Releasing) {
                             callback.onError(CancellationException("Decoder was released."))
-                        } else {
+                         } else {
                             callback.onSuccess(bitmap)
-                        }
-                    }
+                         }
+                     }
 
-                } catch (e: Exception) {
+                 } catch (e: Exception) {
                     val time = System.currentTimeMillis() - start
                     log(Log.ERROR, "decodeImage() failed in $time msec. Error: ${e.message}")
                     restoreStateAfterDecode()
                     synchronized(lock) {
                         if (_state == State.Released || _state == State.Releasing) {
                             callback.onError(CancellationException("Decoder was released."))
-                        } else {
+                         } else {
                             callback.onError(e)
-                        }
-                    }
-                }
-            }
-        }
-    }
+                         }
+                     }
+                 }
+             }
+         }
+      }
 
     private fun restoreStateAfterDecode() {
         synchronized(lock) {
             if (_state == State.Processing) {
-                _state = State.Initialized
-            }
-        }
-    }
+                 _state = State.Initialized
+             }
+         }
+      }
 
-    /**
-     * Decodes a JPEG 2000 image asynchronously with default color format (ARGB 8888).
-     *
-     * @param j2kData The raw byte array of the JPEG 2000 image.
-     * @param callback The callback to receive the decoded [Bitmap] or error.
-     */
+     /**
+      * Decodes a JPEG 2000 image asynchronously with default color format (ARGB 8888).
+      *
+      * @param j2kData The raw byte array of the JPEG 2000 image.
+      * @param callback The callback to receive the decoded [Bitmap] or error.
+      */
     fun decodeImage(j2kData: ByteArray, callback: Callback<Bitmap>) {
         decodeImage(j2kData, ColorFormat.ARGB8888, callback)
-    }
+      }
 
-    /**
-     * Decodes a JPEG 2000 image asynchronously using cached data with default color format (ARGB 8888).
-     *
-     * @param callback The callback to receive the decoded [Bitmap] or error.
-     */
+     /**
+      * Decodes a JPEG 2000 image asynchronously using cached data with default color format (ARGB 8888).
+      *
+      * @param callback The callback to receive the decoded [Bitmap] or error.
+      */
     fun decodeImage(callback: Callback<Bitmap>) {
         decodeImage(ColorFormat.ARGB8888, callback)
-    }
+      }
 
-    /**
-     * Retrieves memory usage statistics from the JS/WASM environment.
-     *
-     * @param callback The callback to receive the [MemoryUsage].
-     */
+     /**
+      * Retrieves memory usage statistics from the JS/WASM environment.
+      *
+      * @param callback The callback to receive the [MemoryUsage].
+      */
     fun getMemoryUsage(callback: Callback<MemoryUsage>) {
         synchronized(lock) {
             if (_state == State.Released || _state == State.Releasing) {
                 callback.onError(CancellationException("Decoder was released."))
                 return
-            }
+             }
             if (_state != State.Initialized && _state != State.Processing) {
                 callback.onError(IllegalStateException("Cannot getMemoryUsage while in state: $_state"))
                 return
-            }
-        }
+             }
+         }
 
         backgroundExecutor.execute {
             synchronized(executionLock) {
@@ -900,13 +911,13 @@ class Jp2kDecoderAsync(
                     if (_state == State.Released || _state == State.Releasing) {
                         callback.onError(CancellationException("Decoder was released."))
                         return@execute
-                    }
+                     }
                     if (_state != State.Initialized && _state != State.Processing) {
                         callback.onError(IllegalStateException("Decoder state invalid before execution: $_state"))
                         return@execute
-                    }
-                    _state = State.Processing
-                }
+                     }
+                     _state = State.Processing
+                 }
 
                 try {
                     val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
@@ -918,63 +929,63 @@ class Jp2kDecoderAsync(
 
                     val usage = MemoryUsage(
                         wasmHeapSizeBytes = root.optLong("wasmHeapSizeBytes", 0),
-                    )
+                     )
                     restoreStateAfterDecode()
                     callback.onSuccess(usage)
-                } catch (e: Exception) {
+                 } catch (e: Exception) {
                     restoreStateAfterDecode()
                     callback.onError(e)
-                }
-            }
-        }
-    }
+                 }
+             }
+         }
+      }
 
     private fun ensureNotEmpty(value: String?, expectedDescription: String): String {
         if (value.isNullOrBlank()) {
             throw IllegalStateException("JavaScriptEngine returned empty result - expected $expectedDescription")
-        }
+         }
         return value
-    }
+      }
 
-    /**
-     * Releases resources held by the decoder.
-     *
-     * This closes the JavaScript isolate and shuts down the background executor.
-     */
+     /**
+      * Releases resources held by the decoder.
+      *
+      * This closes the JavaScript isolate and shuts down the background executor.
+      */
     fun release() {
         var isolateToClose: JavaScriptIsolate? = null
 
         synchronized(lock) {
             if (_state == State.Released || _state == State.Releasing) {
                 return
-            }
-            _state = State.Releasing
+             }
+             _state = State.Releasing
             isolateToClose = jsIsolate
             jsIsolate = null
-        }
+         }
 
         try {
             isolateToClose?.close()
-        } catch (e: Exception) {
+         } catch (e: Exception) {
             log(Log.ERROR, "Error closing isolate: ${e.message}")
-        }
+         }
 
         if (backgroundExecutor is ExecutorService && !backgroundExecutor.isShutdown) {
             backgroundExecutor.shutdown()
-        }
+         }
 
         synchronized(lock) {
-            _state = State.Released
-        }
-    }
+             _state = State.Released
+         }
+      }
 
     override fun close() {
         release()
-    }
+      }
 
     companion object {
         private const val TAG = "Jp2kDecoderAsync"
         private const val MIN_INPUT_SIZE = 12 // Signature box length
         private const val ASSET_PATH_WASM = "openjpeg_core.wasm"
-    }
+      }
 }
