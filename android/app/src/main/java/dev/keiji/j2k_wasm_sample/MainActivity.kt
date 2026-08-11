@@ -2,6 +2,7 @@ package dev.keiji.j2k_wasm_sample
 
 import android.graphics.Bitmap
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -28,6 +29,7 @@ import dev.keiji.jp2k.Jp2kDecoder
 import dev.keiji.jp2k.MemoryUsage
 import dev.keiji.jp2k.Size
 import dev.keiji.j2k_wasm_sample.ui.theme.J2kwasmsampleTheme
+import dev.keiji.jp2k.Config
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -62,7 +64,12 @@ class MainActivity : ComponentActivity() {
                                 val bytes = applicationContext.assets.open(ASSET_PATH_SAMPLE_IMAGE).use {
                                     it.readBytes()
                                 }
-                                Jp2kDecoder().use { decoder ->
+                                val config = Config(
+                                    logLevel = Log.DEBUG,
+                                )
+                                Jp2kDecoder(
+                                    config = config,
+                                ).use { decoder ->
                                     decoder.init(applicationContext)
                                     decoder.precache(bytes)
                                     val usageBefore = decoder.getMemoryUsage()
