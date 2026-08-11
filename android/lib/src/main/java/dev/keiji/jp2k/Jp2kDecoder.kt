@@ -130,6 +130,7 @@ class Jp2kDecoder(
         withContext(coroutineDispatcher) {
             val wasmBytes = assetManager.open(ASSET_PATH_WASM)
                 .readBytes()
+            log(Log.INFO, "Input binary length: ${wasmBytes.size}")
 
             val wasmExpression = dataChannel.getWasmExpression(isolate, wasmBytes)
 
@@ -189,6 +190,7 @@ class Jp2kDecoder(
         try {
             val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
             withContext(coroutineDispatcher) {
+                log(Log.INFO, "Input binary length: ${j2kData.size}")
                 val script = dataChannel.getJ2KExpression(isolate, j2kData)
 
                 val resultFuture = isolate.evaluateJavaScriptAsync(script)
@@ -224,7 +226,10 @@ class Jp2kDecoder(
      * @return The [Size] of the image.
      */
     suspend fun getSize(j2kData: ByteArray): Size {
+        log(Log.INFO, "Input binary length: ${j2kData.size}")
         val encoded = dataChannel.encodePayload(j2kData)
+        log(Log.INFO, "Converted string length: ${encoded.length}")
+        log(Log.INFO, "Converted string: $encoded")
         return executeGetSize("globalThis.getSize('$encoded');")
     }
 
@@ -301,6 +306,8 @@ class Jp2kDecoder(
 
         val measureTimes = config.logLevel != null
         val encoded = dataChannel.encodePayload(j2kData)
+        log(Log.INFO, "Converted string length: ${encoded.length}")
+        log(Log.INFO, "Converted string: $encoded")
         val script =
             "globalThis.decodeJ2K('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, 0, 0, 0, 0);"
 
@@ -334,6 +341,8 @@ class Jp2kDecoder(
 
         val measureTimes = config.logLevel != null
         val encoded = dataChannel.encodePayload(j2kData)
+        log(Log.INFO, "Converted string length: ${encoded.length}")
+        log(Log.INFO, "Converted string: $encoded")
         val script =
             "globalThis.decodeJ2K('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
 
@@ -400,6 +409,8 @@ class Jp2kDecoder(
 
         val measureTimes = config.logLevel != null
         val encoded = dataChannel.encodePayload(j2kData)
+        log(Log.INFO, "Converted string length: ${encoded.length}")
+        log(Log.INFO, "Converted string: $encoded")
         val script =
             "globalThis.decodeJ2KRatio('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
 
