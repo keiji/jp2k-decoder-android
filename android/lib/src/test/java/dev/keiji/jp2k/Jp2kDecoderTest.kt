@@ -77,6 +77,9 @@ class Jp2kDecoderTest {
         // Mock sandbox feature support
         whenever(sandbox.isFeatureSupported(any<String>())).thenReturn(true)
 
+        // Mock provideNamedData for JSDataChannel
+        Mockito.doNothing().whenever(isolate).provideNamedData(any(), any())
+
         mockBitmapFactory = mockStatic(BitmapFactory::class.java)
         mockBitmapFactory.`when`<Bitmap> {
             BitmapFactory.decodeByteArray(any(), any(), any(), any())
@@ -123,7 +126,7 @@ class Jp2kDecoderTest {
         decoder.precache(data)
 
         // Verify setData was called
-        verify(isolate, Mockito.atLeastOnce()).evaluateJavaScriptAsync(contains("setData"))
+        verify(isolate, Mockito.atLeastOnce()).evaluateJavaScriptAsync(contains("transferFromProvidedNamedData('$PROVIDED_J2K_DATA')"))
     }
 
     @Test
@@ -132,14 +135,10 @@ class Jp2kDecoderTest {
 
         doAnswer { invocation ->
             val script = invocation.arguments[0] as String
-            if (script.contains("base64ToBytes")) {
-                TestListenableFuture(INTERNAL_RESULT_SUCCESS) // WASM load
-            } else if (script.contains("setData")) {
-                TestListenableFuture(INTERNAL_RESULT_SUCCESS) // setData
-            } else if (script.contains("getSizeWithCache")) {
+            if (script.startsWith("globalThis.getSizeWithCache")) {
                 TestListenableFuture(jsonSize) // getSizeWithCache
             } else {
-                TestListenableFuture(INTERNAL_RESULT_SUCCESS) // Default
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS) // Default (WASM load, precache)
             }
         }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
 
@@ -668,7 +667,7 @@ class Jp2kDecoderTest {
     @Test
     fun testPrecache_Error() = runTest {
         val decoder = createInitializedDecoder { script ->
-             if (script.startsWith("globalThis.setData")) {
+             if (script.startsWith("(async () => { globalThis.j2kData")) {
                  TestListenableFuture("""{"errorCode": -5, "errorMessage": "Setup failed"}""")
              } else {
                  TestListenableFuture(INTERNAL_RESULT_SUCCESS)
@@ -687,7 +686,7 @@ class Jp2kDecoderTest {
     fun testPrecache_Exception() = runTest {
         val exception = RuntimeException("JS Error")
          val decoder = createInitializedDecoder { script ->
-             if (script.startsWith("globalThis.setData")) {
+             if (script.startsWith("(async () => { globalThis.j2kData")) {
                   FailingListenableFuture(exception)
              } else {
                  TestListenableFuture(INTERNAL_RESULT_SUCCESS)
@@ -759,7 +758,7 @@ class Jp2kDecoderTest {
     @Test
     fun testPrecache_EmptyResult() = runTest {
         val decoder = createInitializedDecoder { script ->
-            if (script.startsWith("globalThis.setData")) {
+            if (script.startsWith("(async () => { globalThis.j2kData")) {
                 TestListenableFuture("") // Empty result
             } else {
                 TestListenableFuture(INTERNAL_RESULT_SUCCESS)

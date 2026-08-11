@@ -84,6 +84,9 @@ class Jp2kDecoderAsyncTest {
         // Mock sandbox feature support
         whenever(sandbox.isFeatureSupported(any<String>())).thenReturn(true)
 
+        // Mock provideNamedData for JSDataChannel
+        Mockito.doNothing().whenever(isolate).provideNamedData(any(), any())
+
         mockBitmapFactory = mockStatic(BitmapFactory::class.java)
         mockBitmapFactory.`when`<Bitmap> {
             BitmapFactory.decodeByteArray(any(), any(), any(), any())
@@ -130,7 +133,7 @@ class Jp2kDecoderAsyncTest {
         val callbackPrecache = org.mockito.kotlin.mock<Callback<Unit>>()
         decoder.precache(data, callbackPrecache)
 
-        verify(isolate, Mockito.atLeastOnce()).evaluateJavaScriptAsync(contains("setData"))
+        verify(isolate, Mockito.atLeastOnce()).evaluateJavaScriptAsync(contains("transferFromProvidedNamedData('$PROVIDED_J2K_DATA')"))
         verify(callbackPrecache).onSuccess(any())
     }
 
@@ -140,11 +143,7 @@ class Jp2kDecoderAsyncTest {
 
         doAnswer { invocation ->
             val script = invocation.arguments[0] as String
-            if (script.contains("base64ToBytes")) {
-                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
-            } else if (script.contains("setData")) {
-                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
-            } else if (script.contains("getSizeWithCache")) {
+            if (script.startsWith("globalThis.getSizeWithCache")) {
                 TestListenableFuture(jsonSize)
             } else {
                 TestListenableFuture(INTERNAL_RESULT_SUCCESS)
@@ -580,7 +579,7 @@ class Jp2kDecoderAsyncTest {
     @Test
     fun testPrecache_EmptyResult() {
         val decoder = createInitializedDecoder { script ->
-            if (script.startsWith("globalThis.setData")) {
+            if (script.startsWith("(async () => { globalThis.j2kData")) {
                 TestListenableFuture("") // Empty result
             } else {
                 TestListenableFuture(INTERNAL_RESULT_SUCCESS)
