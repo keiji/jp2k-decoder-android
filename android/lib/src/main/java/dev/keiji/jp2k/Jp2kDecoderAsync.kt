@@ -54,11 +54,11 @@ class Jp2kDecoderAsync(
       */
     private var dataChannel: JSDataChannel = Base64DataChannel()
 
-    private fun log(priority: Int, message: String) {
+    private inline fun log(priority: Int, message: () -> String) {
         if (config.logLevel != null && priority >= config.logLevel) {
-            Log.println(priority, TAG, message)
-         }
-      }
+            Log.println(priority, TAG, message())
+        }
+    }
 
      /**
       * Initializes the decoder asynchronously.
@@ -98,7 +98,7 @@ class Jp2kDecoderAsync(
                      // Wait for sandbox connection on the background thread
                     val sandbox = sandboxFuture.get()
                     dataChannel = createDataChannel(sandbox, config.preferDirectBinaryTransfer)
-                    log(Log.INFO, "DataChannel: ${dataChannel.name}")
+                    log(Log.INFO) { "DataChannel: ${dataChannel.name}" }
                     val isolate = Jp2kSandbox.createIsolate(
                         sandbox = sandbox,
                         maxHeapSizeBytes = config.maxHeapSizeBytes,
@@ -126,7 +126,7 @@ class Jp2kDecoderAsync(
                      }
 
                     val time = System.currentTimeMillis() - start
-                    log(Log.INFO, "init() finished in $time msec")
+                    log(Log.INFO) { "init() finished in $time msec" }
                     callback.onSuccess(Unit)
                  } catch (e: Exception) {
                     synchronized(lock) {
@@ -135,7 +135,7 @@ class Jp2kDecoderAsync(
                          }
                      }
                     val time = System.currentTimeMillis() - start
-                    log(Log.ERROR, "init() failed in $time msec. Error: ${e.message}")
+                    log(Log.ERROR) { "init() failed in $time msec. Error: ${e.message}" }
                     callback.onError(e)
                  }
              }
@@ -146,11 +146,11 @@ class Jp2kDecoderAsync(
          // This runs on backgroundExecutor
         val wasmBytes = assetManager.open(ASSET_PATH_WASM)
              .readBytes()
-        log(Log.INFO, "DataChannel: ${dataChannel.name}")
-        log(Log.INFO, "Input binary length: ${wasmBytes.size}")
+        log(Log.INFO) { "DataChannel: ${dataChannel.name}" }
+        log(Log.INFO) { "Input binary length: ${wasmBytes.size}" }
 
         val wasmExpression = dataChannel.getWasmExpression(isolate, wasmBytes)
-        log(Log.INFO, "WASM expression: $wasmExpression")
+        log(Log.INFO) { "WASM expression: $wasmExpression" }
 
         val script = """
             ${dataChannel.jsConverterScript}
@@ -226,11 +226,11 @@ class Jp2kDecoderAsync(
 
                 try {
                     val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
-                    log(Log.INFO, "DataChannel: ${dataChannel.name}")
-                    log(Log.INFO, "Input binary length: ${j2kData.size}")
+                    log(Log.INFO) { "DataChannel: ${dataChannel.name}" }
+                    log(Log.INFO) { "Input binary length: ${j2kData.size}" }
 
                     val script = dataChannel.getJ2KExpression(isolate, j2kData)
-                    log(Log.INFO, "J2K expression: $script")
+                    log(Log.INFO) { "J2K expression: $script" }
 
                     val resultFuture = isolate.evaluateJavaScriptAsync(script)
                     val result = resultFuture.get()
@@ -243,7 +243,7 @@ class Jp2kDecoderAsync(
                             val errorCode = root.getInt("errorCode")
                             val error = Jp2kError.fromInt(errorCode)
                             val errorMessage = if (root.has("errorMessage")) root.getString("errorMessage") else null
-                            log(Log.ERROR, "Error: $error, Message: $errorMessage")
+                            log(Log.ERROR) { "Error: $error, Message: $errorMessage" }
                             throw Jp2kException(error, errorMessage)
                          }
                         throw IllegalStateException("Failed to set data: $result")
@@ -258,6 +258,7 @@ class Jp2kDecoderAsync(
                          }
                      }
                  } catch (e: Exception) {
+                    log(Log.ERROR) { "precache() failed. Error: ${e.message}" }
                     restoreStateAfterDecode()
                     synchronized(lock) {
                         if (_state == State.Released || _state == State.Releasing) {
@@ -288,11 +289,11 @@ class Jp2kDecoderAsync(
       * @param callback The callback to receive the [Size] or error.
       */
     fun getSize(j2kData: ByteArray, callback: Callback<Size>) {
-        log(Log.INFO, "DataChannel: ${dataChannel.name}")
-        log(Log.INFO, "Input binary length: ${j2kData.size}")
+        log(Log.INFO) { "DataChannel: ${dataChannel.name}" }
+        log(Log.INFO) { "Input binary length: ${j2kData.size}" }
         val encoded = dataChannel.encodePayload(j2kData)
-        log(Log.INFO, "Converted string length: ${encoded.length}")
-        log(Log.INFO, "Converted string: $encoded")
+        log(Log.INFO) { "Converted string length: ${encoded.length}" }
+        log(Log.INFO) { "Converted string: $encoded" }
         val script = "globalThis.getSize('$encoded');"
         executeGetSize(script, callback)
       }
@@ -338,7 +339,7 @@ class Jp2kDecoderAsync(
                         val error = Jp2kError.fromInt(errorCode)
                         val errorMessage =
                             if (root.has("errorMessage")) root.getString("errorMessage") else null
-                        log(Log.ERROR, "Error: $error, Message: $errorMessage")
+                        log(Log.ERROR) { "Error: $error, Message: $errorMessage" }
                         throw Jp2kException(error, errorMessage)
                      }
 
@@ -540,8 +541,8 @@ class Jp2kDecoderAsync(
         colorFormat: ColorFormat = ColorFormat.ARGB8888,
         callback: Callback<Bitmap>
      ) {
-        log(Log.INFO, "DataChannel: ${dataChannel.name}")
-        log(Log.INFO, "Input data length: ${j2kData.size}")
+        log(Log.INFO) { "DataChannel: ${dataChannel.name}" }
+        log(Log.INFO) { "Input data length: ${j2kData.size}" }
 
         if (j2kData.size < MIN_INPUT_SIZE) {
             callback.onError(IllegalArgumentException("Input data is too short"))
@@ -550,8 +551,8 @@ class Jp2kDecoderAsync(
 
         val measureTimes = config.logLevel != null
         val encoded = dataChannel.encodePayload(j2kData)
-        log(Log.INFO, "Converted string length: ${encoded.length}")
-        log(Log.INFO, "Converted string: $encoded")
+        log(Log.INFO) { "Converted string length: ${encoded.length}" }
+        log(Log.INFO) { "Converted string: $encoded" }
         val script =
              "globalThis.decodeJ2K('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, 0, 0, 0, 0);"
 
@@ -578,8 +579,8 @@ class Jp2kDecoderAsync(
         colorFormat: ColorFormat = ColorFormat.ARGB8888,
         callback: Callback<Bitmap>
      ) {
-        log(Log.INFO, "DataChannel: ${dataChannel.name}")
-        log(Log.INFO, "Input data length: ${j2kData.size}")
+        log(Log.INFO) { "DataChannel: ${dataChannel.name}" }
+        log(Log.INFO) { "Input data length: ${j2kData.size}" }
 
         if (j2kData.size < MIN_INPUT_SIZE) {
             callback.onError(IllegalArgumentException("Input data is too short"))
@@ -588,8 +589,8 @@ class Jp2kDecoderAsync(
 
         val measureTimes = config.logLevel != null
         val encoded = dataChannel.encodePayload(j2kData)
-        log(Log.INFO, "Converted string length: ${encoded.length}")
-        log(Log.INFO, "Converted string: $encoded")
+        log(Log.INFO) { "Converted string length: ${encoded.length}" }
+        log(Log.INFO) { "Converted string: $encoded" }
         val script =
              "globalThis.decodeJ2K('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
 
@@ -701,8 +702,8 @@ class Jp2kDecoderAsync(
         colorFormat: ColorFormat = ColorFormat.ARGB8888,
         callback: Callback<Bitmap>
      ) {
-        log(Log.INFO, "DataChannel: ${dataChannel.name}")
-        log(Log.INFO, "Input data length: ${j2kData.size}")
+        log(Log.INFO) { "DataChannel: ${dataChannel.name}" }
+        log(Log.INFO) { "Input data length: ${j2kData.size}" }
 
         if (j2kData.size < MIN_INPUT_SIZE) {
             callback.onError(IllegalArgumentException("Input data is too short"))
@@ -714,8 +715,8 @@ class Jp2kDecoderAsync(
 
         val measureTimes = config.logLevel != null
         val encoded = dataChannel.encodePayload(j2kData)
-        log(Log.INFO, "Converted string length: ${encoded.length}")
-        log(Log.INFO, "Converted string: $encoded")
+        log(Log.INFO) { "Converted string length: ${encoded.length}" }
+        log(Log.INFO) { "Converted string: $encoded" }
         val script =
              "globalThis.decodeJ2KRatio('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
 
@@ -814,7 +815,7 @@ class Jp2kDecoderAsync(
                         val error = Jp2kError.fromInt(errorCode)
                         val errorMessage =
                             if (root.has("errorMessage")) root.getString("errorMessage") else null
-                        log(Log.ERROR, "Error: $error, Message: $errorMessage")
+                        log(Log.ERROR) { "Error: $error, Message: $errorMessage" }
 
                         if (error == Jp2kError.RegionOutOfBounds) {
                             throw RegionOutOfBoundsException(errorMessage)
@@ -823,54 +824,52 @@ class Jp2kDecoderAsync(
                         throw Jp2kException(error, errorMessage)
                      } else if (root.has("error")) {
                         val errorMsg = root.getString("error")
-                        log(Log.ERROR, "Error: $errorMsg")
+                        log(Log.ERROR) { "Error: $errorMsg" }
                         throw Jp2kException(Jp2kError.Unknown, errorMsg)
                      }
 
                     val bmpBase64 = root.getString("bmp")
                     val bmpBytes = dataChannel.decodePayload(bmpBase64)
 
-                    log(Log.INFO, "Output data length: ${bmpBytes.size}")
+                    log(Log.INFO) { "Output data length: ${bmpBytes.size}" }
 
                     if (measureTimes) {
                         val timePreProcess = root.optDouble("timePreProcess", 0.0)
                         val timeWasm = root.optDouble("timeWasm", 0.0)
                         val timePostProcess = root.optDouble("timePostProcess", 0.0)
-                        val base64TransferTimeMs = (transferEnd - transferStart) / 1_000_000.0
-                        val base64DecodeTimeMs = root.optDouble("timeBase64Decode", 0.0)
-                        val base64EncodeTimeMs = root.optDouble("timeBase64Encode", 0.0)
+                        val dataTransferTimeMs = (transferEnd - transferStart) / 1_000_000.0
+                        val jsDecodeTimeMs = root.optDouble("timeBase64Decode", 0.0)
+                        val jsEncodeTimeMs = root.optDouble("timeBase64Encode", 0.0)
                         val wasmHeapSizeBytes = root.optLong("wasmHeapSizeBytes", 0)
                         val totalMs = (System.currentTimeMillis() - start).toDouble()
 
                         val metrics = PerformanceMetrics(
                             inputDataSizeBytes = inputSize,
-                            base64TransferTimeMs = base64TransferTimeMs,
-                            base64DecodeTimeMs = base64DecodeTimeMs,
+                            dataTransferTimeMs = dataTransferTimeMs,
+                            jsDecodeTimeMs = jsDecodeTimeMs,
                             wasmProcessingTimeMs = timeWasm,
-                            base64EncodeTimeMs = base64EncodeTimeMs,
+                            jsEncodeTimeMs = jsEncodeTimeMs,
                             outputDataSizeBytes = bmpBytes.size.toLong(),
                             wasmHeapSizeBytes = wasmHeapSizeBytes,
                             totalProcessingTimeMs = totalMs,
                         )
 
-                        val inputStr = "%,d".format(metrics.inputDataSizeBytes)
-                        val outputStr = "%,d".format(metrics.outputDataSizeBytes)
+                        val inputStr = "%d".format(metrics.inputDataSizeBytes)
+                        val outputStr = "%d".format(metrics.outputDataSizeBytes)
                         val totalMsStr = "%.0f".format(metrics.totalProcessingTimeMs)
-                        val transferMsStr = "%.0f".format(metrics.base64TransferTimeMs)
-                        val decodeMsStr = "%.0f".format(metrics.base64DecodeTimeMs)
-                        val encodeMsStr = "%.0f".format(metrics.base64EncodeTimeMs)
+                        val transferMsStr = "%.0f".format(metrics.dataTransferTimeMs)
+                        val decodeMsStr = "%.0f".format(metrics.jsDecodeTimeMs)
+                        val encodeMsStr = "%.0f".format(metrics.jsEncodeTimeMs)
                         val wasmHeapMB = metrics.wasmHeapSizeBytes / (1024 * 1024)
 
-                        log(
-                            Log.INFO,
-                            "Performance: input=${inputStr}B total=${totalMsStr}ms\n" +
-                            "    base64Transfer=${transferMsStr}ms decode=${decodeMsStr}ms encode=${encodeMsStr}ms\n" +
-                            "    wasmHeap=${wasmHeapMB}MB output=${outputStr}B"
-                        )
-                        log(
-                            Log.INFO,
+                        log(Log.INFO) {
+                            "Performance: inputSize=${inputStr}B totalTime=${totalMsStr}ms\n" +
+                            "    dataTransferTime=${transferMsStr}ms jsDecodeTime=${decodeMsStr}ms jsEncodeTime=${encodeMsStr}ms\n" +
+                            "    wasmHeapSize=${wasmHeapMB}MB outputImage=${outputStr}B"
+                        }
+                        log(Log.INFO) {
                             "Pre-process: $timePreProcess ms, WASM: $timeWasm ms, Post-process: $timePostProcess ms"
-                        )
+                        }
                      }
 
                     val options = BitmapFactory.Options().apply {
@@ -888,7 +887,7 @@ class Jp2kDecoderAsync(
                      }
 
                     val time = System.currentTimeMillis() - start
-                    log(Log.INFO, "decodeImage() finished in $time msec")
+                    log(Log.INFO) { "decodeImage() finished in $time msec" }
 
                     restoreStateAfterDecode()
                      // Check if released during decode (unlikely due to lock, but good practice)
@@ -902,7 +901,7 @@ class Jp2kDecoderAsync(
 
                  } catch (e: Exception) {
                     val time = System.currentTimeMillis() - start
-                    log(Log.ERROR, "decodeImage() failed in $time msec. Error: ${e.message}")
+                    log(Log.ERROR) { "decodeImage() failed in $time msec. Error: ${e.message}" }
                     restoreStateAfterDecode()
                     synchronized(lock) {
                         if (_state == State.Released || _state == State.Releasing) {
@@ -1022,7 +1021,7 @@ class Jp2kDecoderAsync(
         try {
             isolateToClose?.close()
          } catch (e: Exception) {
-            log(Log.ERROR, "Error closing isolate: ${e.message}")
+            log(Log.ERROR) { "Error closing isolate: ${e.message}" }
          }
 
         if (backgroundExecutor is ExecutorService && !backgroundExecutor.isShutdown) {
