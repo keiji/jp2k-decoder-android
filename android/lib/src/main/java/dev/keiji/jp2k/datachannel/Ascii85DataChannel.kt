@@ -96,6 +96,7 @@ private const val SCRIPT_CONVERTER = """
  * @see JSDataChannel
  */
 internal class Ascii85DataChannel : JSDataChannel {
+    override val name: String = "Ascii85DataChannel"
     override fun init(sandbox: JavaScriptSandbox) {
         // No-op — Ascii85 works on all devices
     }

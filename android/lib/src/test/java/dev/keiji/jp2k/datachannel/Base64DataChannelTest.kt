@@ -22,6 +22,7 @@ class Base64DataChannelTest {
     @Test
     fun properties_values() {
         val channel = Base64DataChannel()
+        assertEquals("Base64DataChannel", channel.name)
         assertEquals("bytesToBase64", channel.jsEncodeFunctionName)
         assertEquals("base64ToBytes", channel.jsDecodeFunctionName)
         assertTrue(channel.jsConverterScript.contains("bytesToBase64"))
