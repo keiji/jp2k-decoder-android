@@ -182,13 +182,22 @@ class Jp2kDecoder(
      * @param j2kData The raw byte array of the JPEG 2000 image.
      * @throws Exception If precaching fails.
      */
+    private fun checkStateAndGetIsolate(actionName: String): JavaScriptIsolate = when (_state) {
+        State.Released, State.Releasing -> throw CancellationException("Decoder was released.")
+        State.Initialized -> checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
+        else -> throw IllegalStateException("Cannot $actionName while in state: $_state")
+    }
+
+    private fun checkState(actionName: String) {
+        when (_state) {
+            State.Released, State.Releasing -> throw CancellationException("Decoder was released.")
+            State.Initialized -> {}
+            else -> throw IllegalStateException("Cannot $actionName while in state: $_state")
+        }
+    }
+
     suspend fun precache(j2kData: ByteArray) = mutex.withLock {
-        if (_state == State.Released || _state == State.Releasing) {
-            throw CancellationException("Decoder was released.")
-        }
-        if (_state != State.Initialized) {
-            throw IllegalStateException("Cannot precache while in state: $_state")
-        }
+        checkState("precache")
         _state = State.Processing
 
         try {
@@ -234,10 +243,9 @@ class Jp2kDecoder(
     suspend fun getSize(j2kData: ByteArray): Size {
         log(Log.INFO) { "DataChannel: ${dataChannel.name}" }
         log(Log.INFO) { "Input binary length: ${j2kData.size}" }
-        val encoded = dataChannel.encodePayload(j2kData)
-        log(Log.INFO) { "Converted string length: ${encoded.length}" }
-        log(Log.INFO) { "Converted string: $encoded" }
-        return executeGetSize("globalThis.getSize('$encoded');")
+        val isolate = checkStateAndGetIsolate("getSize")
+        val script = dataChannel.getGetSizeExpression(isolate, j2kData)
+        return executeGetSize(script)
     }
 
     /**
@@ -250,12 +258,7 @@ class Jp2kDecoder(
     }
 
     private suspend fun executeGetSize(script: String): Size = mutex.withLock {
-        if (_state == State.Released || _state == State.Releasing) {
-            throw CancellationException("Decoder was released.")
-        }
-        if (_state != State.Initialized) {
-            throw IllegalStateException("Cannot getSize while in state: $_state")
-        }
+        checkState("getSize")
         _state = State.Processing
 
         try {
@@ -311,13 +314,21 @@ class Jp2kDecoder(
         if (j2kData.size < MIN_INPUT_SIZE) {
             throw IllegalArgumentException("Input data is too short")
         }
+        val isolate = checkStateAndGetIsolate("decodeImage")
 
         val measureTimes = config.logLevel != null
-        val encoded = dataChannel.encodePayload(j2kData)
-        log(Log.INFO) { "Converted string length: ${encoded.length}" }
-        log(Log.INFO) { "Converted string: $encoded" }
-        val script =
-            "globalThis.decodeJ2K('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, 0, 0, 0, 0);"
+        val script = dataChannel.getDecodeJ2KExpression(
+            isolate,
+            j2kData,
+            config.maxPixels,
+            config.maxHeapSizeBytes,
+            colorFormat.id,
+            measureTimes,
+            0,
+            0,
+            0,
+            0,
+        )
 
         return executeDecodeImage(script, colorFormat, j2kData.size.toLong())
     }
@@ -347,13 +358,21 @@ class Jp2kDecoder(
         if (j2kData.size < MIN_INPUT_SIZE) {
             throw IllegalArgumentException("Input data is too short")
         }
+        val isolate = checkStateAndGetIsolate("decodeImage")
 
         val measureTimes = config.logLevel != null
-        val encoded = dataChannel.encodePayload(j2kData)
-        log(Log.INFO) { "Converted string length: ${encoded.length}" }
-        log(Log.INFO) { "Converted string: $encoded" }
-        val script =
-            "globalThis.decodeJ2K('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
+        val script = dataChannel.getDecodeJ2KExpression(
+            isolate,
+            j2kData,
+            config.maxPixels,
+            config.maxHeapSizeBytes,
+            colorFormat.id,
+            measureTimes,
+            left,
+            top,
+            right,
+            bottom,
+        )
 
         return executeDecodeImage(script, colorFormat, j2kData.size.toLong())
     }
@@ -416,13 +435,21 @@ class Jp2kDecoder(
             throw IllegalArgumentException("Input data is too short")
         }
         validateRatio(left, top, right, bottom)
+        val isolate = checkStateAndGetIsolate("decodeImage")
 
         val measureTimes = config.logLevel != null
-        val encoded = dataChannel.encodePayload(j2kData)
-        log(Log.INFO) { "Converted string length: ${encoded.length}" }
-        log(Log.INFO) { "Converted string: $encoded" }
-        val script =
-            "globalThis.decodeJ2KRatio('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
+        val script = dataChannel.getDecodeJ2KRatioExpression(
+            isolate,
+            j2kData,
+            config.maxPixels,
+            config.maxHeapSizeBytes,
+            colorFormat.id,
+            measureTimes,
+            left,
+            top,
+            right,
+            bottom,
+        )
 
         return executeDecodeImage(script, colorFormat, j2kData.size.toLong())
     }

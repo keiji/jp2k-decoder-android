@@ -97,7 +97,7 @@ class Jp2kOverloadsTest {
 
         // Prepare mock for decode execution
         val jsonBmp = """{"bmp": "AQID"}"""
-        doAnswer { TestListenableFuture(jsonBmp) }.whenever(isolate).evaluateJavaScriptAsync(org.mockito.ArgumentMatchers.contains("decodeJ2K"))
+        doAnswer { TestListenableFuture(jsonBmp) }.whenever(isolate).evaluateJavaScriptAsync(org.mockito.kotlin.argThat<String> { contains("internalDecodeJ2K(data") || contains("internalDecodeJ2KRatio(data") || contains("decodeJ2K(") || contains("decodeJ2KWithCache") || contains("decodeJ2KRatio(") })
 
         // Cached overloads
         decoder.decodeImage(ColorFormat.ARGB8888, callback)
@@ -140,7 +140,7 @@ class Jp2kOverloadsTest {
         val rect = Rect(0, 0, 10, 10)
         val rectF = RectF(0f, 0f, 0.5f, 0.5f)
         val jsonBmp = """{"bmp": "AQID"}"""
-        doAnswer { TestListenableFuture(jsonBmp) }.whenever(isolate).evaluateJavaScriptAsync(org.mockito.ArgumentMatchers.contains("decodeJ2K"))
+        doAnswer { TestListenableFuture(jsonBmp) }.whenever(isolate).evaluateJavaScriptAsync(org.mockito.kotlin.argThat<String> { contains("internalDecodeJ2K(data") || contains("internalDecodeJ2KRatio(data") || contains("decodeJ2K(") || contains("decodeJ2KWithCache") || contains("decodeJ2KRatio(") })
 
         // Cached overloads
         decoder.decodeImage(ColorFormat.ARGB8888)

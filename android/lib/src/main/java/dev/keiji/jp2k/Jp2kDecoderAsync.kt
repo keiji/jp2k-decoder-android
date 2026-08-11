@@ -272,31 +272,49 @@ class Jp2kDecoderAsync(
          }
       }
 
-     /**
-      * Retrieves the size of the JPEG 2000 image asynchronously using cached data.
-      *
-      * @param callback The callback to receive the [Size] or error.
-      */
+    private fun checkStateAndGetIsolate(
+        actionName: String,
+        callback: Callback<*>,
+    ): JavaScriptIsolate? = synchronized(lock) {
+        when (_state) {
+            State.Released, State.Releasing -> {
+                callback.onError(CancellationException("Decoder was released."))
+                null
+            }
+            State.Initialized, State.Processing -> {
+                checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
+            }
+            else -> {
+                callback.onError(IllegalStateException("Cannot $actionName while in state: $_state"))
+                null
+            }
+        }
+    }
+
+    /**
+     * Retrieves the size of the JPEG 2000 image asynchronously using cached data.
+     *
+     * @param callback The callback to receive the [Size] or error.
+     */
     fun getSize(callback: Callback<Size>) {
         val script = "globalThis.getSizeWithCache();"
         executeGetSize(script, callback)
-      }
+    }
 
-     /**
-      * Retrieves the size of the JPEG 2000 image asynchronously without fully decoding it.
-      *
-      * @param j2kData The raw byte array of the JPEG 2000 image.
-      * @param callback The callback to receive the [Size] or error.
-      */
+    /**
+     * Retrieves the size of the JPEG 2000 image asynchronously without fully decoding it.
+     *
+     * @param j2kData The raw byte array of the JPEG 2000 image.
+     * @param callback The callback to receive the [Size] or error.
+     */
     fun getSize(j2kData: ByteArray, callback: Callback<Size>) {
         log(Log.INFO) { "DataChannel: ${dataChannel.name}" }
         log(Log.INFO) { "Input binary length: ${j2kData.size}" }
-        val encoded = dataChannel.encodePayload(j2kData)
-        log(Log.INFO) { "Converted string length: ${encoded.length}" }
-        log(Log.INFO) { "Converted string: $encoded" }
-        val script = "globalThis.getSize('$encoded');"
+
+        val isolate = checkStateAndGetIsolate("getSize", callback) ?: return
+        val script = dataChannel.getGetSizeExpression(isolate, j2kData)
         executeGetSize(script, callback)
-      }
+    }
 
     private fun executeGetSize(script: String, callback: Callback<Size>) {
         synchronized(lock) {
@@ -540,36 +558,34 @@ class Jp2kDecoderAsync(
         j2kData: ByteArray,
         colorFormat: ColorFormat = ColorFormat.ARGB8888,
         callback: Callback<Bitmap>
-     ) {
+    ) {
         log(Log.INFO) { "DataChannel: ${dataChannel.name}" }
         log(Log.INFO) { "Input data length: ${j2kData.size}" }
 
         if (j2kData.size < MIN_INPUT_SIZE) {
             callback.onError(IllegalArgumentException("Input data is too short"))
             return
-         }
+        }
+
+        val isolate = checkStateAndGetIsolate("decodeImage", callback) ?: return
 
         val measureTimes = config.logLevel != null
-        val encoded = dataChannel.encodePayload(j2kData)
-        log(Log.INFO) { "Converted string length: ${encoded.length}" }
-        log(Log.INFO) { "Converted string: $encoded" }
-        val script =
-             "globalThis.decodeJ2K('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, 0, 0, 0, 0);"
+        val script = dataChannel.getDecodeJ2KExpression(
+            isolate,
+            j2kData,
+            config.maxPixels,
+            config.maxHeapSizeBytes,
+            colorFormat.id,
+            measureTimes,
+            0,
+            0,
+            0,
+            0,
+        )
 
         executeDecodeImage(script, colorFormat, callback, j2kData.size.toLong())
-      }
+    }
 
-     /**
-      * Decodes a specific region of a JPEG 2000 image asynchronously.
-      *
-      * @param j2kData The raw byte array of the JPEG 2000 image.
-      * @param left The left coordinate of the region.
-      * @param top The top coordinate of the region.
-      * @param right The right coordinate of the region.
-      * @param bottom The bottom coordinate of the region.
-      * @param colorFormat The desired output color format.
-      * @param callback The callback to receive the decoded [Bitmap] or error.
-      */
     fun decodeImage(
         j2kData: ByteArray,
         left: Int,
@@ -578,24 +594,33 @@ class Jp2kDecoderAsync(
         bottom: Int,
         colorFormat: ColorFormat = ColorFormat.ARGB8888,
         callback: Callback<Bitmap>
-     ) {
+    ) {
         log(Log.INFO) { "DataChannel: ${dataChannel.name}" }
         log(Log.INFO) { "Input data length: ${j2kData.size}" }
 
         if (j2kData.size < MIN_INPUT_SIZE) {
             callback.onError(IllegalArgumentException("Input data is too short"))
             return
-         }
+        }
+
+        val isolate = checkStateAndGetIsolate("decodeImage", callback) ?: return
 
         val measureTimes = config.logLevel != null
-        val encoded = dataChannel.encodePayload(j2kData)
-        log(Log.INFO) { "Converted string length: ${encoded.length}" }
-        log(Log.INFO) { "Converted string: $encoded" }
-        val script =
-             "globalThis.decodeJ2K('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
+        val script = dataChannel.getDecodeJ2KExpression(
+            isolate,
+            j2kData,
+            config.maxPixels,
+            config.maxHeapSizeBytes,
+            colorFormat.id,
+            measureTimes,
+            left,
+            top,
+            right,
+            bottom,
+        )
 
         executeDecodeImage(script, colorFormat, callback, j2kData.size.toLong())
-      }
+    }
 
      /**
       * Decodes a specific region of a JPEG 2000 image asynchronously with default color format (ARGB 8888).
@@ -708,17 +733,26 @@ class Jp2kDecoderAsync(
         if (j2kData.size < MIN_INPUT_SIZE) {
             callback.onError(IllegalArgumentException("Input data is too short"))
             return
-         }
+        }
         if (!validateRatio(left, top, right, bottom, callback)) {
             return
-         }
+        }
+
+        val isolate = checkStateAndGetIsolate("decodeImage", callback) ?: return
 
         val measureTimes = config.logLevel != null
-        val encoded = dataChannel.encodePayload(j2kData)
-        log(Log.INFO) { "Converted string length: ${encoded.length}" }
-        log(Log.INFO) { "Converted string: $encoded" }
-        val script =
-             "globalThis.decodeJ2KRatio('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
+        val script = dataChannel.getDecodeJ2KRatioExpression(
+            isolate,
+            j2kData,
+            config.maxPixels,
+            config.maxHeapSizeBytes,
+            colorFormat.id,
+            measureTimes,
+            left,
+            top,
+            right,
+            bottom,
+        )
 
         executeDecodeImage(script, colorFormat, callback, j2kData.size.toLong())
       }
