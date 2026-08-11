@@ -3,7 +3,21 @@ package dev.keiji.jp2k.datachannel
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
 import dev.keiji.jp2k.INTERNAL_RESULT_SUCCESS
-import dev.keiji.jp2k.SCRIPT_BYTES_ARRAY_CONVERTER
+
+private const val SCRIPT_CONVERTER = """
+            globalThis.bytesToArray = function(bytes) {
+                return "[" + Array.from(bytes).join(",") + "]";
+            };
+
+            globalThis.arrayToBytes = function(arrayString) {
+                if (!arrayString || arrayString.length === 0) return new Uint8Array(0);
+                const arr = JSON.parse(arrayString);
+                return new Uint8Array(arr);
+            };
+
+            globalThis.encodePayload = globalThis.bytesToArray;
+            globalThis.decodePayload = globalThis.arrayToBytes;
+"""
 
 /**
  * Channel that encodes binary data as a JS array string and passes it to JS.
@@ -47,7 +61,7 @@ internal class JsArrayDataChannel : JSDataChannel {
     }
 
     override val jsConverterScript: String
-        get() = SCRIPT_BYTES_ARRAY_CONVERTER
+        get() = SCRIPT_CONVERTER
 
     override val jsEncodeFunctionName: String
         get() = "bytesToArray"

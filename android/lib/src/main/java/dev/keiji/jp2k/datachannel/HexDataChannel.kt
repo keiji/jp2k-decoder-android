@@ -3,7 +3,29 @@ package dev.keiji.jp2k.datachannel
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
 import dev.keiji.jp2k.INTERNAL_RESULT_SUCCESS
-import dev.keiji.jp2k.SCRIPT_BYTES_HEX_CONVERTER
+
+private const val SCRIPT_CONVERTER = """
+            globalThis.bytesToHex = function(bytes) {
+                let hex = "";
+                for (let i = 0; i < bytes.length; i++) {
+                    let h = bytes[i].toString(16);
+                    if (h.length === 1) h = "0" + h;
+                    hex += h;
+                }
+                return hex;
+            };
+
+            globalThis.hexToBytes = function(hex) {
+                const bytes = new Uint8Array(hex.length / 2);
+                for (let i = 0; i < hex.length; i += 2) {
+                    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
+                }
+                return bytes;
+            };
+
+            globalThis.encodePayload = globalThis.bytesToHex;
+            globalThis.decodePayload = globalThis.hexToBytes;
+"""
 
 /**
  * Channel that Hex-encodes binary data and passes it as a JS string.
@@ -53,7 +75,7 @@ internal class HexDataChannel : JSDataChannel {
     }
 
     override val jsConverterScript: String
-        get() = SCRIPT_BYTES_HEX_CONVERTER
+        get() = SCRIPT_CONVERTER
 
     override val jsEncodeFunctionName: String
         get() = "bytesToHex"
