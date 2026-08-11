@@ -135,6 +135,7 @@ class Jp2kDecoder(
             log(Log.INFO, "Input binary length: ${wasmBytes.size}")
 
             val wasmExpression = dataChannel.getWasmExpression(isolate, wasmBytes)
+            log(Log.INFO, "WASM expression: $wasmExpression")
 
             val script = """
                 ${dataChannel.jsConverterScript}
@@ -195,6 +196,7 @@ class Jp2kDecoder(
                 log(Log.INFO, "DataChannel: ${dataChannel.name}")
                 log(Log.INFO, "Input binary length: ${j2kData.size}")
                 val script = dataChannel.getJ2KExpression(isolate, j2kData)
+                log(Log.INFO, "J2K expression: $script")
 
                 val resultFuture = isolate.evaluateJavaScriptAsync(script)
                 val result = resultFuture.await()
