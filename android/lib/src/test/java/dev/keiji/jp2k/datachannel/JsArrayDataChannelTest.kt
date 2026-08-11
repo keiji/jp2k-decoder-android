@@ -12,6 +12,22 @@ import org.mockito.Mockito.mock
 class JsArrayDataChannelTest {
 
     @Test
+    fun init_noop() {
+        val sandbox = mock<JavaScriptSandbox>()
+        val channel = JsArrayDataChannel()
+        channel.init(sandbox)
+    }
+
+    @Test
+    fun properties_values() {
+        val channel = JsArrayDataChannel()
+        assertEquals("bytesToArray", channel.jsEncodeFunctionName)
+        assertEquals("arrayToBytes", channel.jsDecodeFunctionName)
+        assertTrue(channel.jsConverterScript.contains("bytesToArray"))
+        assertTrue(channel.jsConverterScript.contains("arrayToBytes"))
+    }
+
+    @Test
     fun encodeAndDecodePayload() {
         val sandbox = mock<JavaScriptSandbox>()
         val isolate = mock<JavaScriptIsolate>()
@@ -24,10 +40,6 @@ class JsArrayDataChannelTest {
         val decoded = channel.decodePayload(encoded)
         assertArrayEquals(bytes, decoded)
 
-        assertEquals("bytesToArray", channel.jsEncodeFunctionName)
-        assertEquals("arrayToBytes", channel.jsDecodeFunctionName)
-        assertTrue(channel.jsConverterScript.contains("bytesToArray"))
-
         val wasmExpr = channel.getWasmExpression(isolate, bytes)
         assertEquals("arrayToBytes('[0,1,2,255]')", wasmExpr)
 
@@ -37,10 +49,17 @@ class JsArrayDataChannelTest {
 
     @Test
     fun emptyBytes() {
+        val isolate = mock<JavaScriptIsolate>()
         val channel = JsArrayDataChannel()
         val encoded = channel.encodePayload(ByteArray(0))
         assertEquals("[]", encoded)
         val decoded = channel.decodePayload(encoded)
         assertEquals(0, decoded.size)
+
+        val wasmExpr = channel.getWasmExpression(isolate, ByteArray(0))
+        assertEquals("arrayToBytes('[]')", wasmExpr)
+
+        val j2kExpr = channel.getJ2KExpression(isolate, ByteArray(0))
+        assertEquals("(async () => { globalThis.j2kData = globalThis.arrayToBytes('[]'); return '$INTERNAL_RESULT_SUCCESS'; })()", j2kExpr)
     }
 }
