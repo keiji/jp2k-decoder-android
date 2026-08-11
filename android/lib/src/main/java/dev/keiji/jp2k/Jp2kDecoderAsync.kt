@@ -9,6 +9,9 @@ import android.graphics.RectF
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.javascriptengine.JavaScriptIsolate
+import dev.keiji.jp2k.datachannel.Base64DataChannel
+import dev.keiji.jp2k.datachannel.JSDataChannel
+import dev.keiji.jp2k.datachannel.createDataChannel
 import org.json.JSONObject
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
