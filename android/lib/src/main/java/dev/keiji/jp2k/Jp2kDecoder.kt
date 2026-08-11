@@ -90,7 +90,7 @@ class Jp2kDecoder(
         val start = System.currentTimeMillis()
         try {
             val sandbox = sandboxFuture.await()
-            dataChannel = createDataChannel(sandbox)
+            dataChannel = createDataChannel(sandbox, config.preferDirectBinaryTransfer)
 
             val isolate = Jp2kSandbox.createIsolate(
                 sandbox = sandbox,

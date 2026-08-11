@@ -109,10 +109,12 @@ internal class Base64DataChannel : JSDataChannel {
  * Checks [JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER] using the provided sandbox
  * and initializes the channel via its [JSDataChannel.init] method.
  *
- * @return [ProvidedNamedDataChannel] if supported, otherwise [Base64DataChannel].
+ * @param sandbox The sandbox to check feature support.
+ * @param preferDirectBinaryTransfer If true, prefers direct binary transfer when feature is supported; if false, forces Base64.
+ * @return [ProvidedNamedDataChannel] if supported and preferred, otherwise [Base64DataChannel].
  */
-internal fun createDataChannel(sandbox: JavaScriptSandbox): JSDataChannel {
-    return if (sandbox.isFeatureSupported(
+internal fun createDataChannel(sandbox: JavaScriptSandbox, preferDirectBinaryTransfer: Boolean = true): JSDataChannel {
+    return if (preferDirectBinaryTransfer && sandbox.isFeatureSupported(
         JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER
      )) {
         ProvidedNamedDataChannel().also { it.init(sandbox) }
