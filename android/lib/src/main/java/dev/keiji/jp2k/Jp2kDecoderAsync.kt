@@ -9,9 +9,7 @@ import android.graphics.RectF
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.javascriptengine.JavaScriptIsolate
-import androidx.javascriptengine.JavaScriptSandbox
 import org.json.JSONObject
-import java.util.Base64
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executor
@@ -51,7 +49,7 @@ class Jp2kDecoderAsync(
       *
       * Created during [init] based on feature support and never changed.
       */
-    private lateinit var dataChannel: JSDataChannel
+    private var dataChannel: JSDataChannel = Base64DataChannel()
 
     private fun log(priority: Int, message: String) {
         if (config.logLevel != null && priority >= config.logLevel) {
@@ -148,7 +146,7 @@ class Jp2kDecoderAsync(
         val wasmExpression = dataChannel.getWasmExpression(isolate, wasmBytes)
 
         val script = """
-            $SCRIPT_BYTES_BASE64_CONVERTER
+            ${dataChannel.jsConverterScript}
             $SCRIPT_TRANSFER_FROM_PROVIDED_NAMED_DATA
             $SCRIPT_DEFINE_SET_DATA
 
@@ -280,8 +278,8 @@ class Jp2kDecoderAsync(
       * @param callback The callback to receive the [Size] or error.
       */
     fun getSize(j2kData: ByteArray, callback: Callback<Size>) {
-        val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
-        val script = "globalThis.getSize('$dataBase64String');"
+        val encoded = dataChannel.encodePayload(j2kData)
+        val script = "globalThis.getSize('$encoded');"
         executeGetSize(script, callback)
       }
 
@@ -536,9 +534,9 @@ class Jp2kDecoderAsync(
          }
 
         val measureTimes = config.logLevel != null
-        val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
+        val encoded = dataChannel.encodePayload(j2kData)
         val script =
-             "globalThis.decodeJ2K('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, 0, 0, 0, 0);"
+             "globalThis.decodeJ2K('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, 0, 0, 0, 0);"
 
         executeDecodeImage(script, colorFormat, callback, j2kData.size.toLong())
       }
@@ -571,9 +569,9 @@ class Jp2kDecoderAsync(
          }
 
         val measureTimes = config.logLevel != null
-        val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
+        val encoded = dataChannel.encodePayload(j2kData)
         val script =
-             "globalThis.decodeJ2K('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
+             "globalThis.decodeJ2K('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
 
         executeDecodeImage(script, colorFormat, callback, j2kData.size.toLong())
       }
@@ -694,9 +692,9 @@ class Jp2kDecoderAsync(
          }
 
         val measureTimes = config.logLevel != null
-        val dataBase64String = Base64.getEncoder().encodeToString(j2kData)
+        val encoded = dataChannel.encodePayload(j2kData)
         val script =
-             "globalThis.decodeJ2KRatio('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
+             "globalThis.decodeJ2KRatio('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
 
         executeDecodeImage(script, colorFormat, callback, j2kData.size.toLong())
       }
@@ -807,7 +805,7 @@ class Jp2kDecoderAsync(
                      }
 
                     val bmpBase64 = root.getString("bmp")
-                    val bmpBytes = Base64.getDecoder().decode(bmpBase64)
+                    val bmpBytes = dataChannel.decodePayload(bmpBase64)
 
                     log(Log.INFO, "Output data length: ${bmpBytes.size}")
 

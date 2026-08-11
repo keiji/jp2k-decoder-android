@@ -146,13 +146,55 @@ internal const val SCRIPT_BYTES_BASE64_CONVERTER = """
 
                 return bytes;
             };
+
+            globalThis.encodePayload = globalThis.bytesToBase64;
+            globalThis.decodePayload = globalThis.base64ToBytes;
+"""
+
+internal const val SCRIPT_BYTES_HEX_CONVERTER = """
+            globalThis.bytesToHex = function(bytes) {
+                let hex = "";
+                for (let i = 0; i < bytes.length; i++) {
+                    let h = bytes[i].toString(16);
+                    if (h.length === 1) h = "0" + h;
+                    hex += h;
+                }
+                return hex;
+            };
+
+            globalThis.hexToBytes = function(hex) {
+                const bytes = new Uint8Array(hex.length / 2);
+                for (let i = 0; i < hex.length; i += 2) {
+                    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
+                }
+                return bytes;
+            };
+
+            globalThis.encodePayload = globalThis.bytesToHex;
+            globalThis.decodePayload = globalThis.hexToBytes;
+"""
+
+internal const val SCRIPT_BYTES_ARRAY_CONVERTER = """
+            globalThis.bytesToArray = function(bytes) {
+                return "[" + Array.from(bytes).join(",") + "]";
+            };
+
+            globalThis.arrayToBytes = function(arrayString) {
+                if (!arrayString || arrayString.length === 0) return new Uint8Array(0);
+                const arr = JSON.parse(arrayString);
+                return new Uint8Array(arr);
+            };
+
+            globalThis.encodePayload = globalThis.bytesToArray;
+            globalThis.decodePayload = globalThis.arrayToBytes;
 """
 
 internal val SCRIPT_DEFINE_SET_DATA = """
             globalThis.j2kData = null;
-            globalThis.setData = function(dataBase64String) {
+            globalThis.setData = function(dataEncodedString) {
                 try {
-                    globalThis.j2kData = globalThis.base64ToBytes(dataBase64String);
+                    const decodeFn = globalThis.decodePayload || globalThis.base64ToBytes;
+                    globalThis.j2kData = decodeFn(dataEncodedString);
                     return "$INTERNAL_RESULT_SUCCESS";
                 } catch (e) {
                     return JSON.stringify({ errorCode: ${Jp2kError.Unknown.code}, errorMessage: e.toString() });
@@ -203,7 +245,8 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
                     const bmpSize = view.getUint32(bmpPtr + 2, true);
 
                     const bmpBuffer = new Uint8Array(exports.memory.buffer, bmpPtr, bmpSize);
-                    const base64String = globalThis.bytesToBase64(bmpBuffer);
+                    const encodeFn = globalThis.encodePayload || globalThis.bytesToBase64;
+                    const base64String = encodeFn(bmpBuffer);
 
                     exports.free(bmpPtr);
                     exports.free(inputPtr);
@@ -235,18 +278,19 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
                 return globalThis.commonDecodeJ2K('decodeToBmp', encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, base64DecodeTime);
             };
 
-            globalThis.decodeJ2K = function(dataBase64String, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1) {
+            globalThis.decodeJ2K = function(dataEncodedString, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1) {
                 try {
                     const now = function() {
                         return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
                     };
+                    const decodeFn = globalThis.decodePayload || globalThis.base64ToBytes;
                     if (measureTimes) {
                         const b64Start = now();
-                        const encodedBuffer = globalThis.base64ToBytes(dataBase64String);
+                        const encodedBuffer = decodeFn(dataEncodedString);
                         const base64DecodeTime = now() - b64Start;
                         return globalThis.internalDecodeJ2K(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, base64DecodeTime);
                     } else {
-                        const encodedBuffer = globalThis.base64ToBytes(dataBase64String);
+                        const encodedBuffer = decodeFn(dataEncodedString);
                         return globalThis.internalDecodeJ2K(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, 0);
                     }
                 } catch (e) {
@@ -265,18 +309,19 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
                 return globalThis.commonDecodeJ2K('decodeToBmpWithRatio', encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, base64DecodeTime);
             };
 
-            globalThis.decodeJ2KRatio = function(dataBase64String, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1) {
+            globalThis.decodeJ2KRatio = function(dataEncodedString, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1) {
                 try {
                     const now = function() {
                         return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
                     };
+                    const decodeFn = globalThis.decodePayload || globalThis.base64ToBytes;
                     if (measureTimes) {
                         const b64Start = now();
-                        const encodedBuffer = globalThis.base64ToBytes(dataBase64String);
+                        const encodedBuffer = decodeFn(dataEncodedString);
                         const base64DecodeTime = now() - b64Start;
                         return globalThis.internalDecodeJ2KRatio(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, base64DecodeTime);
                     } else {
-                        const encodedBuffer = globalThis.base64ToBytes(dataBase64String);
+                        const encodedBuffer = decodeFn(dataEncodedString);
                         return globalThis.internalDecodeJ2KRatio(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, 0);
                     }
                 } catch (e) {
@@ -343,9 +388,10 @@ internal val SCRIPT_DEFINE_GET_SIZE = """
                 }
             };
 
-            globalThis.getSize = function(dataBase64String) {
+            globalThis.getSize = function(dataEncodedString) {
                 try {
-                    const encodedBuffer = globalThis.base64ToBytes(dataBase64String);
+                    const decodeFn = globalThis.decodePayload || globalThis.base64ToBytes;
+                    const encodedBuffer = decodeFn(dataEncodedString);
                     return globalThis.internalGetSize(encodedBuffer);
                 } catch (e) {
                     return JSON.stringify({ errorCode: ${Jp2kError.Unknown.code}, errorMessage: e.toString() });

@@ -10,7 +10,7 @@ package dev.keiji.jp2k
  * @param maxEvaluationReturnSizeBytes The maximum size of the return value in bytes from JavaScript evaluation.
  *                                     Defaults to [DEFAULT_MAX_EVALUATION_RETURN_SIZE_BYTES].
  * @param logLevel The logging level (e.g., Log.DEBUG, Log.INFO). If null, logging is disabled.
- * @param preferDirectBinaryTransfer Whether to prefer direct binary transfer via `JavaScriptIsolate.provideNamedData` when available. This enables more efficient data transfer; if false, Base64 string transfer is used. Defaults to true.
+ * @param preferDirectBinaryTransfer Whether to prefer direct binary transfer via `JavaScriptIsolate.provideNamedData` when available. This enables more efficient data transfer; if false, string-mediated data transfer is used. Defaults to true.
  */
 data class Config(
     val maxPixels: Int = DEFAULT_MAX_PIXELS,
