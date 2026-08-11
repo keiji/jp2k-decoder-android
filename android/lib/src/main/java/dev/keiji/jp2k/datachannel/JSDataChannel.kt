@@ -6,6 +6,11 @@ import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
 
 /**
+ * Default string-based data channel used as fallback or initial channel.
+ */
+internal typealias DefaultDataChannel = Base64DataChannel
+
+/**
  * Abstraction for transferring binary data (WASM, J2K image) to the JavaScript sandbox.
  *
  * Implementations:
@@ -125,7 +130,7 @@ internal interface JSDataChannel {
  *
  * @param sandbox The sandbox to check feature support.
  * @param preferDirectBinaryTransfer If true, prefers direct binary transfer when feature is supported; if false, forces Base64.
- * @return [ProvidedNamedDataChannel] if supported and preferred, otherwise [Base64DataChannel].
+ * @return [ProvidedNamedDataChannel] if supported and preferred, otherwise [DefaultDataChannel].
  */
 internal fun createDataChannel(
     sandbox: JavaScriptSandbox,
@@ -137,6 +142,6 @@ internal fun createDataChannel(
     ) {
         ProvidedNamedDataChannel().also { it.init(sandbox) }
     } else {
-        Base64DataChannel().also { it.init(sandbox) }
+        DefaultDataChannel().also { it.init(sandbox) }
     }
 }

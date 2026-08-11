@@ -18,7 +18,7 @@ internal class ProvidedNamedDataChannel : JSDataChannel {
     @Volatile
     private var sandbox: JavaScriptSandbox? = null
 
-    private val fallbackChannel = Base64DataChannel()
+    private val fallbackChannel = DefaultDataChannel()
 
     override fun init(sandbox: JavaScriptSandbox) {
         require(
