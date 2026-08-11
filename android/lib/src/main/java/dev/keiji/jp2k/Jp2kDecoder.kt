@@ -303,7 +303,7 @@ class Jp2kDecoder(
         val script =
             "globalThis.decodeJ2K('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, 0, 0, 0, 0);"
 
-        return executeDecodeImage(script, colorFormat)
+        return executeDecodeImage(script, colorFormat, j2kData.size.toLong())
     }
 
     /**
@@ -336,7 +336,7 @@ class Jp2kDecoder(
         val script =
             "globalThis.decodeJ2K('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
 
-        return executeDecodeImage(script, colorFormat)
+        return executeDecodeImage(script, colorFormat, j2kData.size.toLong())
     }
 
     /**
@@ -402,7 +402,7 @@ class Jp2kDecoder(
         val script =
             "globalThis.decodeJ2KRatio('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
 
-        return executeDecodeImage(script, colorFormat)
+        return executeDecodeImage(script, colorFormat, j2kData.size.toLong())
     }
 
     /**
@@ -510,6 +510,7 @@ class Jp2kDecoder(
     private suspend fun executeDecodeImage(
         script: String,
         colorFormat: ColorFormat,
+        inputSize: Long = 0L,
     ): Bitmap = mutex.withLock {
         if (_state == State.Released || _state == State.Releasing) {
             throw CancellationException("Decoder was released.")
@@ -526,9 +527,11 @@ class Jp2kDecoder(
 
             val bitmap = withContext(coroutineDispatcher) {
                 val measureTimes = config.logLevel != null
+                val transferStart = if (measureTimes) System.nanoTime() else 0L
 
                 val resultFuture = isolate.evaluateJavaScriptAsync(script)
                 val jsonResult = ensureNotEmpty(resultFuture.await(), "JSON")
+                val transferEnd = if (measureTimes) System.nanoTime() else 0L
 
                 val root = JSONObject(jsonResult)
                 if (root.has("errorCode")) {
@@ -552,20 +555,51 @@ class Jp2kDecoder(
                     throw Jp2kException(Jp2kError.Unknown, errorMsg)
                 }
 
+                val bmpBase64 = root.getString("bmp")
+                val bmpBytes = Base64.getDecoder().decode(bmpBase64)
+
+                log(Log.INFO, "Output data length: ${bmpBytes.size}")
+
                 if (measureTimes) {
                     val timePreProcess = root.optDouble("timePreProcess", 0.0)
                     val timeWasm = root.optDouble("timeWasm", 0.0)
                     val timePostProcess = root.optDouble("timePostProcess", 0.0)
+                    val base64TransferTimeMs = (transferEnd - transferStart) / 1_000_000.0
+                    val base64DecodeTimeMs = root.optDouble("timeBase64Decode", 0.0)
+                    val base64EncodeTimeMs = root.optDouble("timeBase64Encode", 0.0)
+                    val wasmHeapSizeBytes = root.optLong("wasmHeapSizeBytes", 0)
+                    val totalMs = (System.currentTimeMillis() - start).toDouble()
+
+                    val metrics = PerformanceMetrics(
+                        inputDataSizeBytes = inputSize,
+                        base64TransferTimeMs = base64TransferTimeMs,
+                        base64DecodeTimeMs = base64DecodeTimeMs,
+                        wasmProcessingTimeMs = timeWasm,
+                        base64EncodeTimeMs = base64EncodeTimeMs,
+                        outputDataSizeBytes = bmpBytes.size.toLong(),
+                        wasmHeapSizeBytes = wasmHeapSizeBytes,
+                        totalProcessingTimeMs = totalMs,
+                    )
+
+                    val inputStr = "%,d".format(metrics.inputDataSizeBytes)
+                    val outputStr = "%,d".format(metrics.outputDataSizeBytes)
+                    val totalMsStr = "%.0f".format(metrics.totalProcessingTimeMs)
+                    val transferMsStr = "%.0f".format(metrics.base64TransferTimeMs)
+                    val decodeMsStr = "%.0f".format(metrics.base64DecodeTimeMs)
+                    val encodeMsStr = "%.0f".format(metrics.base64EncodeTimeMs)
+                    val wasmHeapMB = metrics.wasmHeapSizeBytes / (1024 * 1024)
+
+                    log(
+                        Log.INFO,
+                        "Performance: input=${inputStr}B total=${totalMsStr}ms\n" +
+                        "    base64Transfer=${transferMsStr}ms decode=${decodeMsStr}ms encode=${encodeMsStr}ms\n" +
+                        "    wasmHeap=${wasmHeapMB}MB output=${outputStr}B"
+                    )
                     log(
                         Log.INFO,
                         "Pre-process: $timePreProcess ms, WASM: $timeWasm ms, Post-process: $timePostProcess ms"
                     )
                 }
-
-                val bmpBase64 = root.getString("bmp")
-                val bmpBytes = Base64.getDecoder().decode(bmpBase64)
-
-                log(Log.INFO, "Output data length: ${bmpBytes.size}")
 
                 val options = BitmapFactory.Options().apply {
                     inPreferredConfig = when (colorFormat) {

@@ -161,7 +161,7 @@ internal val SCRIPT_DEFINE_SET_DATA = """
 """
 
 internal val SCRIPT_DEFINE_DECODE_J2K = """
-            globalThis.commonDecodeJ2K = function(wasmFunctionName, encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1) {
+            globalThis.commonDecodeJ2K = function(wasmFunctionName, encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, base64DecodeTime) {
                 const now = function() {
                     return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
                 };
@@ -217,9 +217,12 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
                     };
 
                     if (measureTimes) {
+                        result.timeBase64Decode = base64DecodeTime || 0;
                         result.timePreProcess = timeAfterPreProcess - timeStart;
                         result.timeWasm = timeAfterDecode - timeAfterPreProcess;
                         result.timePostProcess = timeAfterPostProcess - timeAfterDecode;
+                        result.timeBase64Encode = timeAfterPostProcess - timeAfterDecode;
+                        result.wasmHeapSizeBytes = (exports && exports.memory && exports.memory.buffer) ? exports.memory.buffer.byteLength : 0;
                     }
 
                     return JSON.stringify(result);
@@ -228,14 +231,24 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
                 }
             };
 
-            globalThis.internalDecodeJ2K = function(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1) {
-                return globalThis.commonDecodeJ2K('decodeToBmp', encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1);
+            globalThis.internalDecodeJ2K = function(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, base64DecodeTime) {
+                return globalThis.commonDecodeJ2K('decodeToBmp', encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, base64DecodeTime);
             };
 
             globalThis.decodeJ2K = function(dataBase64String, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1) {
                 try {
-                    const encodedBuffer = globalThis.base64ToBytes(dataBase64String);
-                    return globalThis.internalDecodeJ2K(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1);
+                    const now = function() {
+                        return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                    };
+                    if (measureTimes) {
+                        const b64Start = now();
+                        const encodedBuffer = globalThis.base64ToBytes(dataBase64String);
+                        const base64DecodeTime = now() - b64Start;
+                        return globalThis.internalDecodeJ2K(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, base64DecodeTime);
+                    } else {
+                        const encodedBuffer = globalThis.base64ToBytes(dataBase64String);
+                        return globalThis.internalDecodeJ2K(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, 0);
+                    }
                 } catch (e) {
                     return JSON.stringify({ errorCode: ${Jp2kError.Unknown.code}, errorMessage: e.toString() });
                 }
@@ -245,17 +258,27 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
                 if (!globalThis.j2kData) {
                     return JSON.stringify({ errorCode: ${Jp2kError.CacheDataMissing.code}, errorMessage: "No data cached" });
                 }
-                return globalThis.internalDecodeJ2K(globalThis.j2kData, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1);
+                return globalThis.internalDecodeJ2K(globalThis.j2kData, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, 0);
             };
 
-            globalThis.internalDecodeJ2KRatio = function(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1) {
-                return globalThis.commonDecodeJ2K('decodeToBmpWithRatio', encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1);
+            globalThis.internalDecodeJ2KRatio = function(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, base64DecodeTime) {
+                return globalThis.commonDecodeJ2K('decodeToBmpWithRatio', encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, base64DecodeTime);
             };
 
             globalThis.decodeJ2KRatio = function(dataBase64String, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1) {
                 try {
-                    const encodedBuffer = globalThis.base64ToBytes(dataBase64String);
-                    return globalThis.internalDecodeJ2KRatio(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1);
+                    const now = function() {
+                        return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                    };
+                    if (measureTimes) {
+                        const b64Start = now();
+                        const encodedBuffer = globalThis.base64ToBytes(dataBase64String);
+                        const base64DecodeTime = now() - b64Start;
+                        return globalThis.internalDecodeJ2KRatio(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, base64DecodeTime);
+                    } else {
+                        const encodedBuffer = globalThis.base64ToBytes(dataBase64String);
+                        return globalThis.internalDecodeJ2KRatio(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, 0);
+                    }
                 } catch (e) {
                     return JSON.stringify({ errorCode: ${Jp2kError.Unknown.code}, errorMessage: e.toString() });
                 }
@@ -265,7 +288,7 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
                 if (!globalThis.j2kData) {
                     return JSON.stringify({ errorCode: ${Jp2kError.CacheDataMissing.code}, errorMessage: "No data cached" });
                 }
-                return globalThis.internalDecodeJ2KRatio(globalThis.j2kData, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1);
+                return globalThis.internalDecodeJ2KRatio(globalThis.j2kData, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, 0);
             };
 
             globalThis.getMemoryUsage = function() {

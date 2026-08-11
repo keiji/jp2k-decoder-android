@@ -540,7 +540,7 @@ class Jp2kDecoderAsync(
         val script =
              "globalThis.decodeJ2K('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, 0, 0, 0, 0);"
 
-        executeDecodeImage(script, colorFormat, callback)
+        executeDecodeImage(script, colorFormat, callback, j2kData.size.toLong())
       }
 
      /**
@@ -575,7 +575,7 @@ class Jp2kDecoderAsync(
         val script =
              "globalThis.decodeJ2K('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
 
-        executeDecodeImage(script, colorFormat, callback)
+        executeDecodeImage(script, colorFormat, callback, j2kData.size.toLong())
       }
 
      /**
@@ -698,7 +698,7 @@ class Jp2kDecoderAsync(
         val script =
              "globalThis.decodeJ2KRatio('$dataBase64String', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
 
-        executeDecodeImage(script, colorFormat, callback)
+        executeDecodeImage(script, colorFormat, callback, j2kData.size.toLong())
       }
 
      /**
@@ -741,7 +741,8 @@ class Jp2kDecoderAsync(
     private fun executeDecodeImage(
         script: String,
         colorFormat: ColorFormat,
-        callback: Callback<Bitmap>
+        callback: Callback<Bitmap>,
+        inputSize: Long = 0L,
      ) {
         synchronized(lock) {
              // Allow if Initialized OR Processing (queueing up)
@@ -775,11 +776,13 @@ class Jp2kDecoderAsync(
                     val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
 
                     val measureTimes = config.logLevel != null
+                    val transferStart = if (measureTimes) System.nanoTime() else 0L
 
                     val resultFuture = isolate.evaluateJavaScriptAsync(script)
 
                      // Block and wait for result on background thread
                     val jsonResult = ensureNotEmpty(resultFuture.get(), "JSON")
+                    val transferEnd = if (measureTimes) System.nanoTime() else 0L
 
                     val root = JSONObject(jsonResult)
                     if (root.has("errorCode")) {
@@ -803,20 +806,51 @@ class Jp2kDecoderAsync(
                         throw Jp2kException(Jp2kError.Unknown, errorMsg)
                      }
 
-                    if (measureTimes) {
-                        val timePreProcess = root.optDouble("timePreProcess", 0.0)
-                        val timeWasm = root.optDouble("timeWasm", 0.0)
-                        val timePostProcess = root.optDouble("timePostProcess", 0.0)
-                        log(
-                            Log.INFO,
-                             "Pre-process: $timePreProcess ms, WASM: $timeWasm ms, Post-process: $timePostProcess ms"
-                         )
-                     }
-
                     val bmpBase64 = root.getString("bmp")
                     val bmpBytes = Base64.getDecoder().decode(bmpBase64)
 
                     log(Log.INFO, "Output data length: ${bmpBytes.size}")
+
+                    if (measureTimes) {
+                        val timePreProcess = root.optDouble("timePreProcess", 0.0)
+                        val timeWasm = root.optDouble("timeWasm", 0.0)
+                        val timePostProcess = root.optDouble("timePostProcess", 0.0)
+                        val base64TransferTimeMs = (transferEnd - transferStart) / 1_000_000.0
+                        val base64DecodeTimeMs = root.optDouble("timeBase64Decode", 0.0)
+                        val base64EncodeTimeMs = root.optDouble("timeBase64Encode", 0.0)
+                        val wasmHeapSizeBytes = root.optLong("wasmHeapSizeBytes", 0)
+                        val totalMs = (System.currentTimeMillis() - start).toDouble()
+
+                        val metrics = PerformanceMetrics(
+                            inputDataSizeBytes = inputSize,
+                            base64TransferTimeMs = base64TransferTimeMs,
+                            base64DecodeTimeMs = base64DecodeTimeMs,
+                            wasmProcessingTimeMs = timeWasm,
+                            base64EncodeTimeMs = base64EncodeTimeMs,
+                            outputDataSizeBytes = bmpBytes.size.toLong(),
+                            wasmHeapSizeBytes = wasmHeapSizeBytes,
+                            totalProcessingTimeMs = totalMs,
+                        )
+
+                        val inputStr = "%,d".format(metrics.inputDataSizeBytes)
+                        val outputStr = "%,d".format(metrics.outputDataSizeBytes)
+                        val totalMsStr = "%.0f".format(metrics.totalProcessingTimeMs)
+                        val transferMsStr = "%.0f".format(metrics.base64TransferTimeMs)
+                        val decodeMsStr = "%.0f".format(metrics.base64DecodeTimeMs)
+                        val encodeMsStr = "%.0f".format(metrics.base64EncodeTimeMs)
+                        val wasmHeapMB = metrics.wasmHeapSizeBytes / (1024 * 1024)
+
+                        log(
+                            Log.INFO,
+                            "Performance: input=${inputStr}B total=${totalMsStr}ms\n" +
+                            "    base64Transfer=${transferMsStr}ms decode=${decodeMsStr}ms encode=${encodeMsStr}ms\n" +
+                            "    wasmHeap=${wasmHeapMB}MB output=${outputStr}B"
+                        )
+                        log(
+                            Log.INFO,
+                            "Pre-process: $timePreProcess ms, WASM: $timeWasm ms, Post-process: $timePostProcess ms"
+                        )
+                     }
 
                     val options = BitmapFactory.Options().apply {
                         inPreferredConfig = when (colorFormat) {
@@ -929,7 +963,7 @@ class Jp2kDecoderAsync(
 
                     val usage = MemoryUsage(
                         wasmHeapSizeBytes = root.optLong("wasmHeapSizeBytes", 0),
-                     )
+                    )
                     restoreStateAfterDecode()
                     callback.onSuccess(usage)
                  } catch (e: Exception) {
