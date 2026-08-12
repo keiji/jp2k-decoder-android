@@ -98,6 +98,9 @@ class Jp2kDecoderAsync(
                 try {
                      // Wait for sandbox connection on the background thread
                     val sandbox = sandboxFuture.get()
+                    Jp2kSandbox.logFeatureFlags(sandbox) { msg ->
+                        log(Log.INFO) { msg }
+                    }
                     dataChannel = createDataChannel(sandbox, config.preferDirectBinaryTransfer)
                     log(Log.INFO) { "DataChannel: ${dataChannel.name}" }
                     val isolate = Jp2kSandbox.createIsolate(

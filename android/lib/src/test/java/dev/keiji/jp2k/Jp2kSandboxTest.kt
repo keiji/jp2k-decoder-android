@@ -164,4 +164,26 @@ class Jp2kSandboxTest {
 
         verify(isolate, Mockito.never()).setConsoleCallback(any(), any())
     }
+
+    @Test
+    fun testLogFeatureFlags() {
+        whenever(sandbox.isFeatureSupported(any())).thenReturn(true)
+        whenever(sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_EVALUATE_FROM_FD)).thenReturn(false)
+
+        val loggedMessages = mutableListOf<String>()
+        Jp2kSandbox.logFeatureFlags(sandbox) { msg ->
+            loggedMessages.add(msg)
+        }
+
+        assertEquals(9, loggedMessages.size)
+        assertEquals("JS_FEATURE_CONSOLE_MESSAGING: true", loggedMessages[0])
+        assertEquals("JS_FEATURE_EVALUATE_FROM_FD: false", loggedMessages[1])
+        assertEquals("JS_FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT: true", loggedMessages[2])
+        assertEquals("JS_FEATURE_ISOLATE_MAX_HEAP_SIZE: true", loggedMessages[3])
+        assertEquals("JS_FEATURE_ISOLATE_TERMINATION: true", loggedMessages[4])
+        assertEquals("JS_FEATURE_MESSAGE_PORTS: true", loggedMessages[5])
+        assertEquals("JS_FEATURE_PROMISE_RETURN: true", loggedMessages[6])
+        assertEquals("JS_FEATURE_WASM_COMPILATION: true", loggedMessages[7])
+        assertEquals("JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER: true", loggedMessages[8])
+    }
 }

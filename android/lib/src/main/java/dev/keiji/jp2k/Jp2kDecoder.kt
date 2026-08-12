@@ -92,6 +92,9 @@ class Jp2kDecoder(
         val start = System.currentTimeMillis()
         try {
             val sandbox = sandboxFuture.await()
+            Jp2kSandbox.logFeatureFlags(sandbox) { msg ->
+                log(Log.INFO) { msg }
+            }
             dataChannel = createDataChannel(sandbox, config.preferDirectBinaryTransfer)
             log(Log.INFO) { "DataChannel: ${dataChannel.name}" }
 

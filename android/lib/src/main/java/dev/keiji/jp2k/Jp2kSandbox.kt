@@ -79,4 +79,30 @@ object Jp2kSandbox {
             }
         }
     }
+
+    private val FEATURE_FLAGS = listOf(
+        JavaScriptSandbox.JS_FEATURE_CONSOLE_MESSAGING,
+        JavaScriptSandbox.JS_FEATURE_EVALUATE_FROM_FD,
+        JavaScriptSandbox.JS_FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT,
+        JavaScriptSandbox.JS_FEATURE_ISOLATE_MAX_HEAP_SIZE,
+        JavaScriptSandbox.JS_FEATURE_ISOLATE_TERMINATION,
+        JavaScriptSandbox.JS_FEATURE_MESSAGE_PORTS,
+        JavaScriptSandbox.JS_FEATURE_PROMISE_RETURN,
+        JavaScriptSandbox.JS_FEATURE_WASM_COMPILATION,
+        JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER,
+    )
+
+    /**
+     * Logs the support status of JavaScriptSandbox feature flags.
+     *
+     * @param sandbox The [JavaScriptSandbox] instance.
+     * @param logger Function used to output each log line.
+     */
+    @JvmStatic
+    fun logFeatureFlags(sandbox: JavaScriptSandbox, logger: (String) -> Unit) {
+        FEATURE_FLAGS.forEach { feature ->
+            val supported = sandbox.isFeatureSupported(feature)
+            logger("$feature: $supported")
+        }
+    }
 }
