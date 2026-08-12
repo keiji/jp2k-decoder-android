@@ -23,7 +23,7 @@ class CreateDataChannelTest {
         whenever(sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)).thenReturn(true)
 
         val channel = createDataChannel(sandbox, preferDirectBinaryTransfer = false)
-        assertEquals(Ascii85DataChannel::class.java, channel.javaClass)
+        assertEquals(DefaultJsDataChannel::class.java, channel.javaClass)
     }
 
     @Test
@@ -32,7 +32,7 @@ class CreateDataChannelTest {
         whenever(sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)).thenReturn(false)
 
         val channel = createDataChannel(sandbox, preferDirectBinaryTransfer = true)
-        assertEquals(Ascii85DataChannel::class.java, channel.javaClass)
+        assertEquals(DefaultJsDataChannel::class.java, channel.javaClass)
     }
 
     @Test

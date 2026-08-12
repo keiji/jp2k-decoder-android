@@ -56,17 +56,18 @@ private const val SCRIPT_CONVERTER = """
                 if (!str || str.length === 0) return new Uint8Array(0);
 
                 let remBytes = 0;
-                let mainStr = str;
+                let mainStrLength = str.length;
 
                 const lastCode = str.charCodeAt(str.length - 1);
                 if (lastCode >= 0x2101 && lastCode <= 0x210E) {
                     remBytes = lastCode - 0x2100;
-                    mainStr = str.substring(0, str.length - 1);
+                    mainStrLength = str.length - 1;
                 }
 
-                const chunks = [];
-                for (let i = 0; i < mainStr.length; i++) {
-                    const code = mainStr.charCodeAt(i);
+                const chunks = new Uint16Array(mainStrLength);
+                let chunkCount = 0;
+                for (let i = 0; i < mainStrLength; i++) {
+                    const code = str.charCodeAt(i);
                     let val15 = -1;
                     if (code >= 0x3400 && code <= 0x4CFF) {
                         val15 = code - 0x3400;
@@ -76,16 +77,16 @@ private const val SCRIPT_CONVERTER = """
                         val15 = (code - 0xAC00) + 0x6B00;
                     }
                     if (val15 >= 0) {
-                        chunks.push(val15);
+                        chunks[chunkCount++] = val15;
                     }
                 }
 
                 let totalBytes;
                 if (remBytes > 0) {
-                    const fullBlocks = Math.floor(chunks.length / 8);
+                    const fullBlocks = Math.floor(chunkCount / 8);
                     totalBytes = fullBlocks * 15 + remBytes;
                 } else {
-                    totalBytes = Math.floor((chunks.length * 15) / 8);
+                    totalBytes = Math.floor((chunkCount * 15) / 8);
                 }
 
                 const out = new Uint8Array(totalBytes);
@@ -93,7 +94,7 @@ private const val SCRIPT_CONVERTER = """
                 let bitCount = 0;
                 let outIdx = 0;
 
-                for (let i = 0; i < chunks.length; i++) {
+                for (let i = 0; i < chunkCount; i++) {
                     bitBuffer = (bitBuffer << 15) | chunks[i];
                     bitCount += 15;
                     while (bitCount >= 8 && outIdx < totalBytes) {
@@ -145,7 +146,7 @@ internal class Base32768DataChannel : JSDataChannel {
     override fun encodePayload(data: ByteArray): String {
         if (data.isEmpty()) return ""
 
-        val sb = StringBuilder()
+        val sb = StringBuilder((data.size * 8) / 15 + 2)
         var bitBuffer = 0
         var bitCount = 0
         val len = data.size
