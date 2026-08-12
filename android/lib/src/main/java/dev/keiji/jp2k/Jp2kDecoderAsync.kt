@@ -106,6 +106,7 @@ class Jp2kDecoderAsync(
                      ).also { isolate ->
                         Jp2kSandbox.setupConsoleCallback(isolate, sandbox, mainExecutor, TAG)
                      }
+                    dataChannel.setupIsolate(isolate, backgroundExecutor)
 
                     synchronized(lock) {
                         if (_state == State.Released || _state == State.Releasing) {
@@ -160,6 +161,14 @@ class Jp2kDecoderAsync(
             var wasmInstance;
 
             (async () => {
+                if (typeof android !== 'undefined' && typeof android.getNamedPort === 'function') {
+                    try {
+                        globalThis.outputMessagePort = await android.getNamedPort('$MESSAGE_PORT_NAME');
+                    } catch (e) {
+                        globalThis.outputMessagePort = null;
+                    }
+                }
+
                 const wasmBuffer = await $wasmExpression;
 
                 $SCRIPT_IMPORT_OBJECT
@@ -797,6 +806,7 @@ class Jp2kDecoderAsync(
                 try {
                     val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
 
+                    dataChannel.prepareForDecode()
                     val measureTimes = config.logLevel != null
                     val transferStart = if (measureTimes) System.nanoTime() else 0L
 
@@ -828,7 +838,7 @@ class Jp2kDecoderAsync(
                         throw Jp2kException(Jp2kError.Unknown, errorMsg)
                      }
 
-                    val bmpBase64 = root.getString("bmp")
+                    val bmpBase64 = root.optString("bmp", "")
                     val bmpBytes = dataChannel.decodePayload(bmpBase64)
 
                     log(Log.INFO) { "Output data length: ${bmpBytes.size}" }

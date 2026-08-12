@@ -37,6 +37,11 @@ internal const val PROVIDED_WASM_DATA = "wasmBinary"
  */
 internal const val PROVIDED_J2K_DATA = "j2kData"
 
+/**
+ * Message port name for direct binary transfer using MessagePort.
+ */
+internal const val MESSAGE_PORT_NAME = "jp2k_binary_port"
+
 internal const val INTERNAL_RESULT_SUCCESS = "1"
 
 internal const val SCRIPT_IMPORT_OBJECT = """
@@ -140,8 +145,17 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
                     const bmpSize = view.getUint32(bmpPtr + 2, true);
 
                     const bmpBuffer = new Uint8Array(exports.memory.buffer, bmpPtr, bmpSize);
-                    const encodeFn = globalThis.encodePayload || globalThis.bytesToBase64;
-                    const base64String = encodeFn(bmpBuffer);
+                    let base64String = "";
+                    let isMessagePortUsed = false;
+
+                    if (globalThis.outputMessagePort && typeof globalThis.outputMessagePort.postMessage === 'function') {
+                        const bufferCopy = bmpBuffer.slice().buffer;
+                        globalThis.outputMessagePort.postMessage(bufferCopy);
+                        isMessagePortUsed = true;
+                    } else {
+                        const encodeFn = globalThis.encodePayload || globalThis.bytesToBase64;
+                        base64String = encodeFn(bmpBuffer);
+                    }
 
                     exports.free(bmpPtr);
                     exports.free(inputPtr);
@@ -159,7 +173,7 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
                         result.timePreProcess = timeAfterPreProcess - timeStart;
                         result.timeWasm = timeAfterDecode - timeAfterPreProcess;
                         result.timePostProcess = timeAfterPostProcess - timeAfterDecode;
-                        result.timeBase64Encode = timeAfterPostProcess - timeAfterDecode;
+                        result.timeBase64Encode = isMessagePortUsed ? 0 : (timeAfterPostProcess - timeAfterDecode);
                         result.wasmHeapSizeBytes = (exports && exports.memory && exports.memory.buffer) ? exports.memory.buffer.byteLength : 0;
                     }
 

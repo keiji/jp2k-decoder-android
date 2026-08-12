@@ -4,6 +4,7 @@ package dev.keiji.jp2k.datachannel
 
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
+import java.util.concurrent.Executor
 
 /**
  * Abstraction for transferring binary data (WASM, J2K image) to the JavaScript sandbox.
@@ -31,6 +32,21 @@ internal interface JSDataChannel {
      * Initializes the channel with the sandbox.
      */
     fun init(sandbox: JavaScriptSandbox)
+
+    /**
+     * Binds the channel to the created [JavaScriptIsolate].
+     *
+     * Optional hook for channels (such as [ProvidedNamedDataChannel]) that use
+     * isolate-level features like [MessagePort].
+     */
+    fun setupIsolate(isolate: JavaScriptIsolate, executor: Executor) {}
+
+    /**
+     * Prepares the channel prior to initiating a decode operation.
+     *
+     * Optional hook for clearing pending queues or resetting state.
+     */
+    fun prepareForDecode() {}
 
     /**
      * Provides WASM binary data and returns a JS expression that retrieves it.
