@@ -80,6 +80,7 @@ private const val SCRIPT_CONVERTER = """
  */
 internal class Base64UrlDataChannel : JSDataChannel {
     override val name: String = "Base64UrlDataChannel"
+    override val isStringMediated: Boolean = true
     override fun init(sandbox: JavaScriptSandbox) {
         // No-op — Base64Url works on all devices
     }
