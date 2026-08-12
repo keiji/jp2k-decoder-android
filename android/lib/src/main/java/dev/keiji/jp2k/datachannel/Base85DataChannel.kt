@@ -257,7 +257,7 @@ internal class Base85DataChannel : JSDataChannel {
     }
 
     override val jsConverterScript: String
-        get() = SCRIPT_CONVERTER
+        get() = SCRIPT_CONVERTER.minifyJs()
 
     override val jsEncodeFunctionName: String
         get() = "bytesToBase85"

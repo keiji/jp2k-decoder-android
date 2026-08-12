@@ -135,6 +135,15 @@ internal interface JSDataChannel {
 internal fun String.escapeJs(): String = replace("\\", "\\\\").replace("'", "\\'")
 
 /**
+ * Minifies JavaScript script string by trimming whitespace, stripping single-line comments,
+ * and filtering empty lines.
+ */
+internal fun String.minifyJs(): String = lines()
+    .map { it.trim() }
+    .filter { line -> line.isNotEmpty() && !line.startsWith("//") }
+    .joinToString("\n")
+
+/**
  * Creates the appropriate [JSDataChannel] based on feature support.
  *
  * Checks [JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER] using the provided sandbox

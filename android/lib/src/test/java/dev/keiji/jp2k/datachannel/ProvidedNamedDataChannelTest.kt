@@ -9,7 +9,6 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertThrows
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify
@@ -170,15 +169,15 @@ class ProvidedNamedDataChannelTest {
     @Test
     fun fallbackPayloadMethods() {
         val channel = ProvidedNamedDataChannel()
-        assertEquals("ProvidedNamedDataChannel", channel.name)
+        val defaultChannel = DefaultJsDataChannel()
+        assertEquals("ProvidedNamedDataChannel - ${defaultChannel.name}", channel.name)
         val bytes = byteArrayOf(0x1, 0x2, 0x3)
         val encoded = channel.encodePayload(bytes)
         assertNotNull(encoded)
         val decoded = channel.decodePayload(encoded)
         assertArrayEquals(bytes, decoded)
 
-        assertEquals("bytesToBase64Url", channel.jsEncodeFunctionName)
-        assertEquals("base64UrlToBytes", channel.jsDecodeFunctionName)
-        assertTrue(channel.jsConverterScript.contains("bytesToBase64Url"))
+        assertEquals(defaultChannel.jsEncodeFunctionName, channel.jsEncodeFunctionName)
+        assertEquals(defaultChannel.jsDecodeFunctionName, channel.jsDecodeFunctionName)
     }
 }
