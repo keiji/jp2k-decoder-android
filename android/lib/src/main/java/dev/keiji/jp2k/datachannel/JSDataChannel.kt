@@ -34,6 +34,12 @@ internal interface JSDataChannel {
     val name: String
 
     /**
+     * Indicates whether data is transferred using string encoding (e.g., Base64, Hex, JS Array)
+     * as opposed to direct binary transfer (e.g., provideNamedData).
+     */
+    val isStringMediated: Boolean
+
+    /**
      * Initializes the channel with the sandbox.
      */
     fun init(sandbox: JavaScriptSandbox)

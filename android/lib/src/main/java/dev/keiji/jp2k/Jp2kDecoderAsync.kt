@@ -56,7 +56,8 @@ class Jp2kDecoderAsync(
 
     private inline fun log(priority: Int, message: () -> String) {
         if (config.logLevel != null && priority >= config.logLevel) {
-            Log.println(priority, TAG, message())
+            val msg = message().trimLines(config.maxLogLines)
+            config.logger.println(priority, TAG, msg)
         }
     }
 
@@ -288,15 +289,25 @@ class Jp2kDecoderAsync(
       * @param j2kData The raw byte array of the JPEG 2000 image.
       * @param callback The callback to receive the [Size] or error.
       */
-    fun getSize(j2kData: ByteArray, callback: Callback<Size>) {
+    private fun logInputDataInfo(j2kData: ByteArray) {
         log(Log.INFO) { "DataChannel: ${dataChannel.name}" }
-        log(Log.INFO) { "Input binary length: ${j2kData.size}" }
+        log(Log.INFO) { "Input data length: ${j2kData.size} bytes" }
+    }
+
+    private fun logEncodedInputInfo(encodedPayload: String) {
+        if (dataChannel.isStringMediated) {
+            log(Log.INFO) { "Input encoded content length: ${encodedPayload.length} chars" }
+            log(Log.INFO) { "Input encoded content (64 chars per line):\n${encodedPayload.chunked64()}" }
+        }
+    }
+
+    fun getSize(j2kData: ByteArray, callback: Callback<Size>) {
+        logInputDataInfo(j2kData)
         val encoded = dataChannel.encodePayload(j2kData)
-        log(Log.INFO) { "Converted string length: ${encoded.length}" }
-        log(Log.INFO) { "Converted string: $encoded" }
+        logEncodedInputInfo(encoded)
         val script = "globalThis.getSize('$encoded');"
         executeGetSize(script, callback)
-      }
+    }
 
     private fun executeGetSize(script: String, callback: Callback<Size>) {
         synchronized(lock) {
@@ -541,35 +552,24 @@ class Jp2kDecoderAsync(
         colorFormat: ColorFormat = ColorFormat.ARGB8888,
         callback: Callback<Bitmap>
      ) {
-        log(Log.INFO) { "DataChannel: ${dataChannel.name}" }
-        log(Log.INFO) { "Input data length: ${j2kData.size}" }
-
         if (j2kData.size < MIN_INPUT_SIZE) {
             callback.onError(IllegalArgumentException("Input data is too short"))
             return
          }
 
+        logInputDataInfo(j2kData)
+
         val measureTimes = config.logLevel != null
         val encoded = dataChannel.encodePayload(j2kData)
-        log(Log.INFO) { "Converted string length: ${encoded.length}" }
-        log(Log.INFO) { "Converted string: $encoded" }
+        logEncodedInputInfo(encoded)
+
+        val kotlinStartTime = System.currentTimeMillis()
         val script =
-             "globalThis.decodeJ2K('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, 0, 0, 0, 0);"
+             "globalThis.decodeJ2K('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, 0, 0, 0, 0, $kotlinStartTime);"
 
         executeDecodeImage(script, colorFormat, callback, j2kData.size.toLong())
       }
 
-     /**
-      * Decodes a specific region of a JPEG 2000 image asynchronously.
-      *
-      * @param j2kData The raw byte array of the JPEG 2000 image.
-      * @param left The left coordinate of the region.
-      * @param top The top coordinate of the region.
-      * @param right The right coordinate of the region.
-      * @param bottom The bottom coordinate of the region.
-      * @param colorFormat The desired output color format.
-      * @param callback The callback to receive the decoded [Bitmap] or error.
-      */
     fun decodeImage(
         j2kData: ByteArray,
         left: Int,
@@ -579,34 +579,24 @@ class Jp2kDecoderAsync(
         colorFormat: ColorFormat = ColorFormat.ARGB8888,
         callback: Callback<Bitmap>
      ) {
-        log(Log.INFO) { "DataChannel: ${dataChannel.name}" }
-        log(Log.INFO) { "Input data length: ${j2kData.size}" }
-
         if (j2kData.size < MIN_INPUT_SIZE) {
             callback.onError(IllegalArgumentException("Input data is too short"))
             return
          }
 
+        logInputDataInfo(j2kData)
+
         val measureTimes = config.logLevel != null
         val encoded = dataChannel.encodePayload(j2kData)
-        log(Log.INFO) { "Converted string length: ${encoded.length}" }
-        log(Log.INFO) { "Converted string: $encoded" }
+        logEncodedInputInfo(encoded)
+
+        val kotlinStartTime = System.currentTimeMillis()
         val script =
-             "globalThis.decodeJ2K('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
+             "globalThis.decodeJ2K('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom, $kotlinStartTime);"
 
         executeDecodeImage(script, colorFormat, callback, j2kData.size.toLong())
       }
 
-     /**
-      * Decodes a specific region of a JPEG 2000 image asynchronously with default color format (ARGB 8888).
-      *
-      * @param j2kData The raw byte array of the JPEG 2000 image.
-      * @param left The left coordinate of the region.
-      * @param top The top coordinate of the region.
-      * @param right The right coordinate of the region.
-      * @param bottom The bottom coordinate of the region.
-      * @param callback The callback to receive the decoded [Bitmap] or error.
-      */
     fun decodeImage(
         j2kData: ByteArray,
         left: Int,
@@ -618,14 +608,6 @@ class Jp2kDecoderAsync(
         decodeImage(j2kData, left, top, right, bottom, ColorFormat.ARGB8888, callback)
       }
 
-     /**
-      * Decodes a specific region of a JPEG 2000 image asynchronously.
-      *
-      * @param j2kData The raw byte array of the JPEG 2000 image.
-      * @param region The region to decode.
-      * @param colorFormat The desired output color format.
-      * @param callback The callback to receive the decoded [Bitmap] or error.
-      */
     fun decodeImage(
         j2kData: ByteArray,
         region: Rect,
@@ -635,13 +617,6 @@ class Jp2kDecoderAsync(
         decodeImage(j2kData, region.left, region.top, region.right, region.bottom, colorFormat, callback)
       }
 
-     /**
-      * Decodes a specific region of a JPEG 2000 image asynchronously with default color format (ARGB 8888).
-      *
-      * @param j2kData The raw byte array of the JPEG 2000 image.
-      * @param region The region to decode.
-      * @param callback The callback to receive the decoded [Bitmap] or error.
-      */
     fun decodeImage(
         j2kData: ByteArray,
         region: Rect,
@@ -650,14 +625,6 @@ class Jp2kDecoderAsync(
         decodeImage(j2kData, region, ColorFormat.ARGB8888, callback)
       }
 
-     /**
-      * Decodes a specific region of a JPEG 2000 image asynchronously.
-      *
-      * @param j2kData The raw byte array of the JPEG 2000 image.
-      * @param region The region to decode.
-      * @param colorFormat The desired output color format.
-      * @param callback The callback to receive the decoded [Bitmap] or error.
-      */
     fun decodeImage(
         j2kData: ByteArray,
         region: RectF,
@@ -667,13 +634,6 @@ class Jp2kDecoderAsync(
         decodeImage(j2kData, region.left, region.top, region.right, region.bottom, colorFormat, callback)
       }
 
-     /**
-      * Decodes a specific region of a JPEG 2000 image asynchronously with default color format (ARGB 8888).
-      *
-      * @param j2kData The raw byte array of the JPEG 2000 image.
-      * @param region The region to decode.
-      * @param callback The callback to receive the decoded [Bitmap] or error.
-      */
     fun decodeImage(
         j2kData: ByteArray,
         region: RectF,
@@ -682,17 +642,6 @@ class Jp2kDecoderAsync(
         decodeImage(j2kData, region, ColorFormat.ARGB8888, callback)
       }
 
-     /**
-      * Decodes a specific region of a JPEG 2000 image asynchronously.
-      *
-      * @param j2kData The raw byte array of the JPEG 2000 image.
-      * @param left The left coordinate ratio (0.0 - 1.0).
-      * @param top The top coordinate ratio (0.0 - 1.0).
-      * @param right The right coordinate ratio (0.0 - 1.0).
-      * @param bottom The bottom coordinate ratio (0.0 - 1.0).
-      * @param colorFormat The desired output color format.
-      * @param callback The callback to receive the decoded [Bitmap] or error.
-      */
     fun decodeImage(
         j2kData: ByteArray,
         left: Float,
@@ -702,9 +651,6 @@ class Jp2kDecoderAsync(
         colorFormat: ColorFormat = ColorFormat.ARGB8888,
         callback: Callback<Bitmap>
      ) {
-        log(Log.INFO) { "DataChannel: ${dataChannel.name}" }
-        log(Log.INFO) { "Input data length: ${j2kData.size}" }
-
         if (j2kData.size < MIN_INPUT_SIZE) {
             callback.onError(IllegalArgumentException("Input data is too short"))
             return
@@ -713,26 +659,19 @@ class Jp2kDecoderAsync(
             return
          }
 
+        logInputDataInfo(j2kData)
+
         val measureTimes = config.logLevel != null
         val encoded = dataChannel.encodePayload(j2kData)
-        log(Log.INFO) { "Converted string length: ${encoded.length}" }
-        log(Log.INFO) { "Converted string: $encoded" }
+        logEncodedInputInfo(encoded)
+
+        val kotlinStartTime = System.currentTimeMillis()
         val script =
-             "globalThis.decodeJ2KRatio('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom);"
+             "globalThis.decodeJ2KRatio('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom, $kotlinStartTime);"
 
         executeDecodeImage(script, colorFormat, callback, j2kData.size.toLong())
       }
 
-     /**
-      * Decodes a specific region of a JPEG 2000 image asynchronously with default color format (ARGB 8888).
-      *
-      * @param j2kData The raw byte array of the JPEG 2000 image.
-      * @param left The left coordinate ratio (0.0 - 1.0).
-      * @param top The top coordinate ratio (0.0 - 1.0).
-      * @param right The right coordinate ratio (0.0 - 1.0).
-      * @param bottom The bottom coordinate ratio (0.0 - 1.0).
-      * @param callback The callback to receive the decoded [Bitmap] or error.
-      */
     fun decodeImage(
         j2kData: ByteArray,
         left: Float,
@@ -767,24 +706,19 @@ class Jp2kDecoderAsync(
         inputSize: Long = 0L,
      ) {
         synchronized(lock) {
-             // Allow if Initialized OR Processing (queueing up)
             if (_state != State.Initialized && _state != State.Processing) {
                 callback.onError(IllegalStateException("Cannot decodeImage while in state: $_state"))
                 return
              }
-             // Do NOT set state to Processing here. Wait until execution starts.
          }
 
         backgroundExecutor.execute {
-             // Serialize execution
             synchronized(executionLock) {
-                 // Check state again inside the serial lock
                 synchronized(lock) {
                     if (_state == State.Released || _state == State.Releasing) {
                         callback.onError(CancellationException("Decoder was released."))
                         return@execute
                      }
-                     // It's possible init failed or something else happened while waiting in queue
                     if (_state != State.Initialized && _state != State.Processing) {
                         callback.onError(IllegalStateException("Decoder state invalid before execution: $_state"))
                         return@execute
@@ -802,8 +736,8 @@ class Jp2kDecoderAsync(
 
                     val resultFuture = isolate.evaluateJavaScriptAsync(script)
 
-                     // Block and wait for result on background thread
                     val jsonResult = ensureNotEmpty(resultFuture.get(), "JSON")
+                    val kotlinReceiveTimeMs = System.currentTimeMillis()
                     val transferEnd = if (measureTimes) System.nanoTime() else 0L
 
                     val root = JSONObject(jsonResult)
@@ -829,9 +763,25 @@ class Jp2kDecoderAsync(
                      }
 
                     val bmpBase64 = root.getString("bmp")
+                    log(Log.INFO) { "Output encoded content length: ${bmpBase64.length} chars" }
+                    log(Log.INFO) { "Output encoded content (64 chars per line):\n${bmpBase64.chunked64()}" }
+
+                    val kotlinDecodeStart = System.nanoTime()
                     val bmpBytes = dataChannel.decodePayload(bmpBase64)
 
-                    log(Log.INFO) { "Output data length: ${bmpBytes.size}" }
+                    val options = BitmapFactory.Options().apply {
+                        inPreferredConfig = when (colorFormat) {
+                            ColorFormat.RGB565 -> Bitmap.Config.RGB_565
+                            ColorFormat.ARGB8888 -> Bitmap.Config.ARGB_8888
+                         }
+                     }
+
+                    val bitmap =
+                        BitmapFactory.decodeByteArray(bmpBytes, 0, bmpBytes.size, options)
+
+                    val kotlinDecodeTimeMs = (System.nanoTime() - kotlinDecodeStart) / 1_000_000.0
+
+                    log(Log.INFO) { "Output data length: ${bmpBytes.size} bytes" }
 
                     if (measureTimes) {
                         val timePreProcess = root.optDouble("timePreProcess", 0.0)
@@ -842,6 +792,17 @@ class Jp2kDecoderAsync(
                         val jsEncodeTimeMs = root.optDouble("timeBase64Encode", 0.0)
                         val wasmHeapSizeBytes = root.optLong("wasmHeapSizeBytes", 0)
                         val totalMs = (System.currentTimeMillis() - start).toDouble()
+
+                        val inputTransferDelayMs = root.optDouble("inputTransferDelayMs", 0.0)
+                        val jsFinishTimeMs = root.optLong("jsFinishTimeMs", 0L)
+                        val outputTransferDelayMs = if (jsFinishTimeMs > 0) Math.max(0.0, (kotlinReceiveTimeMs - jsFinishTimeMs).toDouble()) else 0.0
+
+                        log(Log.INFO) { "Input transfer start delay (Kotlin -> JS start): ${"%.2f".format(inputTransferDelayMs)} ms" }
+                        if (dataChannel.isStringMediated) {
+                            log(Log.INFO) { "Input JS decode time: ${"%.2f".format(jsDecodeTimeMs)} ms" }
+                        }
+                        log(Log.INFO) { "Output transfer delay (JS finish -> Kotlin receive): ${"%.2f".format(outputTransferDelayMs)} ms" }
+                        log(Log.INFO) { "Output Kotlin decode time: ${"%.2f".format(kotlinDecodeTimeMs)} ms" }
 
                         val metrics = PerformanceMetrics(
                             inputDataSizeBytes = inputSize,
@@ -871,16 +832,6 @@ class Jp2kDecoderAsync(
                             "Pre-process: $timePreProcess ms, WASM: $timeWasm ms, Post-process: $timePostProcess ms"
                         }
                      }
-
-                    val options = BitmapFactory.Options().apply {
-                        inPreferredConfig = when (colorFormat) {
-                            ColorFormat.RGB565 -> Bitmap.Config.RGB_565
-                            ColorFormat.ARGB8888 -> Bitmap.Config.ARGB_8888
-                         }
-                     }
-
-                    val bitmap =
-                        BitmapFactory.decodeByteArray(bmpBytes, 0, bmpBytes.size, options)
 
                     if (bitmap == null) {
                         throw IllegalStateException("Bitmap decoding failed (returned null).")

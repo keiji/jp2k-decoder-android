@@ -10,6 +10,8 @@ package dev.keiji.jp2k
  * @param maxEvaluationReturnSizeBytes The maximum size of the return value in bytes from JavaScript evaluation.
  *                                     Defaults to [DEFAULT_MAX_EVALUATION_RETURN_SIZE_BYTES].
  * @param logLevel The logging level (e.g., Log.DEBUG, Log.INFO). If null, logging is disabled.
+ * @param logger The logger instance to output log messages. Defaults to [AndroidLogger].
+ * @param maxLogLines The maximum number of log lines to output per log message. Messages exceeding this line count will be truncated. Defaults to 10.
  * @param preferDirectBinaryTransfer Whether to prefer direct binary transfer via `JavaScriptIsolate.provideNamedData` when available. This enables more efficient data transfer; if false, string-mediated data transfer is used. Defaults to true.
  */
 data class Config(
@@ -17,5 +19,7 @@ data class Config(
     val maxHeapSizeBytes: Long = DEFAULT_MAX_HEAP_SIZE_BYTES,
     val maxEvaluationReturnSizeBytes: Int = DEFAULT_MAX_EVALUATION_RETURN_SIZE_BYTES,
     val logLevel: Int? = null,
+    val logger: Logger = AndroidLogger,
+    val maxLogLines: Int = 10,
     val preferDirectBinaryTransfer: Boolean = true
 )
