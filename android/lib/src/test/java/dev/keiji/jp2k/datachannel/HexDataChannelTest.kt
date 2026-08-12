@@ -63,4 +63,28 @@ class HexDataChannelTest {
         val j2kExpr = channel.getJ2KExpression(isolate, ByteArray(0))
         assertEquals("(async () => { globalThis.j2kData = globalThis.hexToBytes(''); return '$INTERNAL_RESULT_SUCCESS'; })()", j2kExpr)
     }
+
+    @Test
+    fun uppercaseAndMixedCaseHexDecode() {
+        val channel = HexDataChannel()
+
+        val bytes = byteArrayOf(0x00, 0x0F, 0x10, 0xFF.toByte())
+        assertArrayEquals(bytes, channel.decodePayload("000F10FF"))
+        assertArrayEquals(bytes, channel.decodePayload("000f10FF"))
+    }
+
+    @Test
+    fun VariousByteValuesAndLengths() {
+        val channel = HexDataChannel()
+
+        val testBytes = byteArrayOf(0x00, 0x01, 0x09, 0x0A.toByte(), 0x0F, 0x10, 0x7F, 0x80.toByte(), 0xFE.toByte(), 0xFF.toByte())
+        val encoded = channel.encodePayload(testBytes)
+        assertEquals("0001090a0f107f80feff", encoded)
+        assertArrayEquals(testBytes, channel.decodePayload(encoded))
+
+        val randomBytes = ByteArray(256) { (it and 0xFF).toByte() }
+        val encodedRandom = channel.encodePayload(randomBytes)
+        assertArrayEquals(randomBytes, channel.decodePayload(encodedRandom))
+    }
 }
+

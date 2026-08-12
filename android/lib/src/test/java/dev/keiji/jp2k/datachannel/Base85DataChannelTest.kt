@@ -88,4 +88,20 @@ class Base85DataChannelTest {
         val j2kExpr = channel.getJ2KExpression(isolate, ByteArray(0))
         assertEquals("(async () => { globalThis.j2kData = globalThis.base85ToBytes(''); return '$INTERNAL_RESULT_SUCCESS'; })()", j2kExpr)
     }
+
+    @Test
+    fun zeroBlockAndNonAlphabetCharacters() {
+        val channel = Base85DataChannel()
+
+        val zeros = ByteArray(4)
+        val encodedZeros = channel.encodePayload(zeros)
+        assertEquals("00000", encodedZeros)
+        assertArrayEquals(zeros, channel.decodePayload(encodedZeros))
+
+        val bytes = byteArrayOf(0x01, 0x02, 0x03, 0x04)
+        val encoded = channel.encodePayload(bytes)
+        val decodedWithSpaces = channel.decodePayload("  " + encoded + " \n ")
+        assertArrayEquals(bytes, decodedWithSpaces)
+    }
 }
+

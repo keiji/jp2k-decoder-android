@@ -63,4 +63,18 @@ class JsArrayDataChannelTest {
         val j2kExpr = channel.getJ2KExpression(isolate, ByteArray(0))
         assertEquals("(async () => { globalThis.j2kData = globalThis.arrayToBytes('[]'); return '$INTERNAL_RESULT_SUCCESS'; })()", j2kExpr)
     }
+
+    @Test
+    fun formattedArrayStrings() {
+        val channel = JsArrayDataChannel()
+
+        val bytes = byteArrayOf(0x00, 0x01, 0xFF.toByte())
+        assertArrayEquals(bytes, channel.decodePayload("[0, 1, 255]"))
+        assertArrayEquals(ByteArray(0), channel.decodePayload("[]"))
+        assertArrayEquals(ByteArray(0), channel.decodePayload(""))
+
+        val singleByte = byteArrayOf(0x80.toByte())
+        assertArrayEquals(singleByte, channel.decodePayload("[128]"))
+    }
 }
+
