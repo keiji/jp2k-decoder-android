@@ -4,6 +4,18 @@ import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
 import dev.keiji.jp2k.INTERNAL_RESULT_SUCCESS
 
+// Move lookup tables to the file (top) level to avoid the access overhead
+// associated with companion object getter methods during tight loops.
+private const val BASE85_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!#$%&()*+-;<=>?@^_`{|}~"
+
+private val BASE85_ENCODER_TABLE = BASE85_ALPHABET.toCharArray()
+
+private val BASE85_DECODER_TABLE = IntArray(256) { -1 }.also { table ->
+    for (i in BASE85_ALPHABET.indices) {
+        table[BASE85_ALPHABET[i].code] = i
+    }
+}
+
 private const val SCRIPT_CONVERTER = """
             (() => {
                 const ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!#$%&()*+-;<=>?@^_`{|}~";
@@ -130,23 +142,14 @@ private const val SCRIPT_CONVERTER = """
 internal class Base85DataChannel : JSDataChannel {
     override val name: String = "Base85DataChannel"
     override val isStringMediated: Boolean = true
-    override fun init(sandbox: JavaScriptSandbox) {
-        // No-op — Base85 works on all devices
-    }
+    override fun init(sandbox: JavaScriptSandbox) {}
 
-    override fun getWasmExpression(
-        isolate: JavaScriptIsolate,
-        wasmBytes: ByteArray,
-    ): String {
+    override fun getWasmExpression(isolate: JavaScriptIsolate, wasmBytes: ByteArray): String {
         val encoded = encodePayload(wasmBytes)
-        // Note: Make sure to escape if your implementation requires it (e.g. encoded.escapeJs())
         return "base85ToBytes('$encoded')"
     }
 
-    override fun getJ2KExpression(
-        isolate: JavaScriptIsolate,
-        j2kData: ByteArray,
-    ): String {
+    override fun getJ2KExpression(isolate: JavaScriptIsolate, j2kData: ByteArray): String {
         val encoded = encodePayload(j2kData)
         return "(async () => { globalThis.j2kData = globalThis.base85ToBytes('$encoded'); return '$INTERNAL_RESULT_SUCCESS'; })()"
     }
@@ -155,7 +158,6 @@ internal class Base85DataChannel : JSDataChannel {
         val len = data.size
         if (len == 0) return ""
 
-        // Calculate maximum potential characters
         val maxChars = (len * 5) / 4 + 5
         val out = CharArray(maxChars)
         var outIdx = 0
@@ -164,38 +166,35 @@ internal class Base85DataChannel : JSDataChannel {
         while (i < len) {
             val remaining = len - i
             if (remaining >= 4) {
-                val val32 = (((data[i].toLong() and 0xFF) shl 24) or
-                        ((data[i + 1].toLong() and 0xFF) shl 16) or
-                        ((data[i + 2].toLong() and 0xFF) shl 8) or
-                        (data[i + 3].toLong() and 0xFF))
+                val val32 = ((data[i].toInt() and 0xFF) shl 24) or
+                        ((data[i + 1].toInt() and 0xFF) shl 16) or
+                        ((data[i + 2].toInt() and 0xFF) shl 8) or
+                        (data[i + 3].toInt() and 0xFF)
 
-                // Loop unrolling for better performance
-                var temp = val32
-                out[outIdx++] = ENCODER_TABLE[(temp / 52200625L).toInt()]; temp %= 52200625L
-                out[outIdx++] = ENCODER_TABLE[(temp / 614125L).toInt()]; temp %= 614125L
-                out[outIdx++] = ENCODER_TABLE[(temp / 7225L).toInt()]; temp %= 7225L
-                out[outIdx++] = ENCODER_TABLE[(temp / 85L).toInt()]; temp %= 85L
-                out[outIdx++] = ENCODER_TABLE[temp.toInt()]
+                var temp = val32.toUInt()
+                val q0 = temp / 52200625u; out[outIdx++] = BASE85_ENCODER_TABLE[q0.toInt()]; temp -= q0 * 52200625u
+                val q1 = temp / 614125u;   out[outIdx++] = BASE85_ENCODER_TABLE[q1.toInt()]; temp -= q1 * 614125u
+                val q2 = temp / 7225u;     out[outIdx++] = BASE85_ENCODER_TABLE[q2.toInt()]; temp -= q2 * 7225u
+                val q3 = temp / 85u;       out[outIdx++] = BASE85_ENCODER_TABLE[q3.toInt()]; temp -= q3 * 85u
+                out[outIdx++] = BASE85_ENCODER_TABLE[temp.toInt()]
 
                 i += 4
             } else {
-                // Partial block (1..3 bytes)
-                var val32 = 0L
+                var val32 = 0
                 for (b in 0 until remaining) {
-                    val32 = val32 or ((data[i + b].toLong() and 0xFF) shl (24 - b * 8))
+                    val32 = val32 or ((data[i + b].toInt() and 0xFF) shl (24 - b * 8))
                 }
 
-                var temp = val32
-                val c0 = ENCODER_TABLE[(temp / 52200625L).toInt()]; temp %= 52200625L
-                val c1 = ENCODER_TABLE[(temp / 614125L).toInt()]; temp %= 614125L
-                val c2 = ENCODER_TABLE[(temp / 7225L).toInt()]; temp %= 7225L
-                val c3 = ENCODER_TABLE[(temp / 85L).toInt()]; temp %= 85L
-                val c4 = ENCODER_TABLE[temp.toInt()]
+                var temp = val32.toUInt()
+                val q0 = temp / 52200625u; temp -= q0 * 52200625u
+                val q1 = temp / 614125u;   temp -= q1 * 614125u
+                val q2 = temp / 7225u;     temp -= q2 * 7225u
+                val q3 = temp / 85u;       temp -= q3 * 85u
 
-                out[outIdx++] = c0
-                if (remaining >= 1) out[outIdx++] = c1
-                if (remaining >= 2) out[outIdx++] = c2
-                if (remaining >= 3) out[outIdx++] = c3
+                out[outIdx++] = BASE85_ENCODER_TABLE[q0.toInt()]
+                if (remaining >= 1) out[outIdx++] = BASE85_ENCODER_TABLE[q1.toInt()]
+                if (remaining >= 2) out[outIdx++] = BASE85_ENCODER_TABLE[q2.toInt()]
+                if (remaining >= 3) out[outIdx++] = BASE85_ENCODER_TABLE[q3.toInt()]
 
                 i += remaining
             }
@@ -208,46 +207,46 @@ internal class Base85DataChannel : JSDataChannel {
         val len = encoded.length
         if (len == 0) return ByteArray(0)
 
-        val out = ByteArray(len) // Upper bound: max 4 bytes for every 5 chars
+        val out = ByteArray(len)
         var outIdx = 0
 
+        val group = IntArray(5)
         var groupCount = 0
-        // Use discrete variables instead of IntArray to avoid allocation overhead
-        var g0 = 0L; var g1 = 0L; var g2 = 0L; var g3 = 0L; var g4 = 0L
 
         for (idx in 0 until len) {
             val code = encoded[idx].code
-            if (code >= 256) continue // Out of bounds for DECODER_TABLE
+            if (code >= 256) continue
 
-            val val85 = DECODER_TABLE[code]
+            val val85 = BASE85_DECODER_TABLE[code]
             if (val85 >= 0) {
-                val v = val85.toLong()
-                when (groupCount) {
-                    0 -> g0 = v
-                    1 -> g1 = v
-                    2 -> g2 = v
-                    3 -> g3 = v
-                    4 -> {
-                        g4 = v
-                        val val32 = g0 * 52200625L + g1 * 614125L + g2 * 7225L + g3 * 85L + g4
-                        out[outIdx++] = ((val32 ushr 24) and 0xFF).toByte()
-                        out[outIdx++] = ((val32 ushr 16) and 0xFF).toByte()
-                        out[outIdx++] = ((val32 ushr 8) and 0xFF).toByte()
-                        out[outIdx++] = (val32 and 0xFF).toByte()
-                        groupCount = -1 // Reset for next iteration
-                    }
+                group[groupCount++] = val85
+
+                if (groupCount == 5) {
+                    val val32 = group[0] * 52200625 +
+                            group[1] * 614125 +
+                            group[2] * 7225 +
+                            group[3] * 85 +
+                            group[4]
+
+                    out[outIdx++] = ((val32 ushr 24) and 0xFF).toByte()
+                    out[outIdx++] = ((val32 ushr 16) and 0xFF).toByte()
+                    out[outIdx++] = ((val32 ushr 8) and 0xFF).toByte()
+                    out[outIdx++] = (val32 and 0xFF).toByte()
+                    groupCount = 0
                 }
-                groupCount++
             }
         }
 
         if (groupCount > 1) {
-            // Partial block at the end (pad with 84)
-            if (groupCount <= 2) g2 = 84L
-            if (groupCount <= 3) g3 = 84L
-            if (groupCount <= 4) g4 = 84L
+            for (p in groupCount until 5) {
+                group[p] = 84
+            }
+            val val32 = group[0] * 52200625 +
+                    group[1] * 614125 +
+                    group[2] * 7225 +
+                    group[3] * 85 +
+                    group[4]
 
-            val val32 = g0 * 52200625L + g1 * 614125L + g2 * 7225L + g3 * 85L + g4
             val bytesToWrite = groupCount - 1
             for (b in 0 until bytesToWrite) {
                 out[outIdx++] = ((val32 ushr (24 - b * 8)) and 0xFF).toByte()
@@ -265,14 +264,4 @@ internal class Base85DataChannel : JSDataChannel {
 
     override val jsDecodeFunctionName: String
         get() = "base85ToBytes"
-
-    companion object {
-        private const val ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!#$%&()*+-;<=>?@^_`{|}~"
-        private val ENCODER_TABLE = ALPHABET.toCharArray()
-        private val DECODER_TABLE = IntArray(256) { -1 }.also { table ->
-            for (i in ALPHABET.indices) {
-                table[ALPHABET[i].code] = i
-            }
-        }
-    }
 }
