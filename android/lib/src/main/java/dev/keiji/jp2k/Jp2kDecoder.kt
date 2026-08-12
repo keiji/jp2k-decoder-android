@@ -105,6 +105,7 @@ class Jp2kDecoder(
             ).also { isolate ->
                 Jp2kSandbox.setupConsoleCallback(isolate, sandbox, mainExecutor, TAG)
             }
+            dataChannel.setupIsolate(isolate, mainExecutor)
 
             if (_state == State.Released || _state == State.Releasing) {
                 isolate.close()
@@ -149,6 +150,14 @@ class Jp2kDecoder(
                 var wasmInstance;
 
                 (async () => {
+                    if (typeof android !== 'undefined' && typeof android.getNamedPort === 'function') {
+                        try {
+                            globalThis.outputMessagePort = await android.getNamedPort('$MESSAGE_PORT_NAME');
+                        } catch (e) {
+                            globalThis.outputMessagePort = null;
+                        }
+                    }
+
                     const wasmBuffer = await $wasmExpression;
 
                     $SCRIPT_IMPORT_OBJECT_LOCAL
@@ -564,6 +573,7 @@ class Jp2kDecoder(
             val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
 
             val bitmap = withContext(coroutineDispatcher) {
+                dataChannel.prepareForDecode()
                 val measureTimes = config.logLevel != null
                 val transferStart = if (measureTimes) System.nanoTime() else 0L
 
@@ -594,9 +604,11 @@ class Jp2kDecoder(
                     throw Jp2kException(Jp2kError.Unknown, errorMsg)
                 }
 
-                val bmpBase64 = root.getString("bmp")
-                log(Log.INFO) { "Output encoded content length: ${bmpBase64.length} chars" }
-                log(Log.INFO) { "Output encoded content (64 chars per line):\n${bmpBase64.chunked64()}" }
+                val bmpBase64 = root.optString("bmp", "")
+                if (bmpBase64.isNotEmpty()) {
+                    log(Log.INFO) { "Output encoded content length: ${bmpBase64.length} chars" }
+                    log(Log.INFO) { "Output encoded content (64 chars per line):\n${bmpBase64.chunked64()}" }
+                }
 
                 val kotlinDecodeStart = System.nanoTime()
                 val bmpBytes = dataChannel.decodePayload(bmpBase64)
