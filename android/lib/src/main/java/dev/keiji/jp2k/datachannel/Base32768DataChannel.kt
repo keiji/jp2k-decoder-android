@@ -7,10 +7,15 @@ import dev.keiji.jp2k.INTERNAL_RESULT_SUCCESS
 private const val SCRIPT_CONVERTER = """
             globalThis.bytesToBase32768 = function(bytes) {
                 if (!bytes || bytes.length === 0) return "";
-                let result = "";
+                
+                const len = bytes.length;
+                // Pre-calculate the maximum required characters and allocate the array
+                const maxChars = Math.floor((len * 8 + 14) / 15) + 1;
+                const out = new Array(maxChars);
+                let outIdx = 0;
+                
                 let bitBuffer = 0;
                 let bitCount = 0;
-                const len = bytes.length;
 
                 for (let i = 0; i < len; i++) {
                     bitBuffer = (bitBuffer << 8) | (bytes[i] & 0xFF);
@@ -26,7 +31,7 @@ private const val SCRIPT_CONVERTER = """
                         } else {
                             codePoint = 0xAC00 + (chunk15 - 0x6B00);
                         }
-                        result += String.fromCharCode(codePoint);
+                        out[outIdx++] = String.fromCharCode(codePoint);
                     }
                 }
 
@@ -41,15 +46,16 @@ private const val SCRIPT_CONVERTER = """
                     } else {
                         codePoint = 0xAC00 + (chunk15 - 0x6B00);
                     }
-                    result += String.fromCharCode(codePoint);
+                    out[outIdx++] = String.fromCharCode(codePoint);
 
                     const remBytes = len % 15;
                     if (remBytes > 0) {
-                        result += String.fromCharCode(0x2100 + remBytes);
+                        out[outIdx++] = String.fromCharCode(0x2100 + remBytes);
                     }
                 }
 
-                return result;
+                // Join array into a string at once for better performance with large payloads
+                return out.join('');
             };
 
             globalThis.base32768ToBytes = function(str) {
@@ -64,8 +70,20 @@ private const val SCRIPT_CONVERTER = """
                     mainStrLength = str.length - 1;
                 }
 
-                const chunks = new Uint16Array(mainStrLength);
-                let chunkCount = 0;
+                let totalBytes;
+                if (remBytes > 0) {
+                    const fullBlocks = Math.floor(mainStrLength / 8);
+                    totalBytes = fullBlocks * 15 + remBytes;
+                } else {
+                    totalBytes = Math.floor((mainStrLength * 15) / 8);
+                }
+
+                const out = new Uint8Array(totalBytes);
+                let bitBuffer = 0;
+                let bitCount = 0;
+                let outIdx = 0;
+
+                // Process in a single pass without intermediate arrays
                 for (let i = 0; i < mainStrLength; i++) {
                     const code = str.charCodeAt(i);
                     let val15 = -1;
@@ -76,34 +94,19 @@ private const val SCRIPT_CONVERTER = """
                     } else if (code >= 0xAC00 && code <= 0xC0FF) {
                         val15 = (code - 0xAC00) + 0x6B00;
                     }
+
                     if (val15 >= 0) {
-                        chunks[chunkCount++] = val15;
+                        bitBuffer = (bitBuffer << 15) | val15;
+                        bitCount += 15;
+                        while (bitCount >= 8 && outIdx < totalBytes) {
+                            out[outIdx++] = (bitBuffer >>> (bitCount - 8)) & 0xFF;
+                            bitCount -= 8;
+                        }
                     }
                 }
 
-                let totalBytes;
-                if (remBytes > 0) {
-                    const fullBlocks = Math.floor(chunkCount / 8);
-                    totalBytes = fullBlocks * 15 + remBytes;
-                } else {
-                    totalBytes = Math.floor((chunkCount * 15) / 8);
-                }
-
-                const out = new Uint8Array(totalBytes);
-                let bitBuffer = 0;
-                let bitCount = 0;
-                let outIdx = 0;
-
-                for (let i = 0; i < chunkCount; i++) {
-                    bitBuffer = (bitBuffer << 15) | chunks[i];
-                    bitCount += 15;
-                    while (bitCount >= 8 && outIdx < totalBytes) {
-                        out[outIdx++] = (bitBuffer >>> (bitCount - 8)) & 0xFF;
-                        bitCount -= 8;
-                    }
-                }
-
-                return out;
+                // Fallback to subarray if invalid characters were skipped
+                return outIdx === totalBytes ? out : out.subarray(0, outIdx);
             };
 
             globalThis.encodePayload = globalThis.bytesToBase32768;
@@ -145,12 +148,16 @@ internal class Base32768DataChannel : JSDataChannel {
     }
 
     override fun encodePayload(data: ByteArray): String {
-        if (data.isEmpty()) return ""
+        val len = data.size
+        if (len == 0) return ""
 
-        val sb = StringBuilder((data.size * 8) / 15 + 2)
+        // Calculate maximum required characters (1 character per 15 bits, plus potential padding)
+        val maxChars = (len * 8 + 14) / 15 + 1
+        val outChars = CharArray(maxChars)
+        var outIdx = 0
+
         var bitBuffer = 0
         var bitCount = 0
-        val len = data.size
 
         for (i in 0 until len) {
             bitBuffer = (bitBuffer shl 8) or (data[i].toInt() and 0xFF)
@@ -158,50 +165,56 @@ internal class Base32768DataChannel : JSDataChannel {
             while (bitCount >= 15) {
                 val chunk15 = (bitBuffer ushr (bitCount - 15)) and 0x7FFF
                 bitCount -= 15
-                sb.append(encodeChunk15(chunk15))
+
+                // Inline encoding logic
+                val codePoint = when {
+                    chunk15 < 0x1900 -> 0x3400 + chunk15
+                    chunk15 < 0x6B00 -> 0x4E00 + (chunk15 - 0x1900)
+                    else -> 0xAC00 + (chunk15 - 0x6B00)
+                }
+                outChars[outIdx++] = codePoint.toChar()
             }
         }
 
         if (bitCount > 0) {
             val remainingBits = bitBuffer and ((1 shl bitCount) - 1)
             val chunk15 = (remainingBits shl (15 - bitCount)) and 0x7FFF
-            sb.append(encodeChunk15(chunk15))
+
+            val codePoint = when {
+                chunk15 < 0x1900 -> 0x3400 + chunk15
+                chunk15 < 0x6B00 -> 0x4E00 + (chunk15 - 0x1900)
+                else -> 0xAC00 + (chunk15 - 0x6B00)
+            }
+            outChars[outIdx++] = codePoint.toChar()
 
             val remBytes = len % 15
             if (remBytes > 0) {
-                sb.append((0x2100 + remBytes).toChar())
+                outChars[outIdx++] = (0x2100 + remBytes).toChar()
             }
         }
 
-        return sb.toString()
+        return String(outChars, 0, outIdx)
     }
 
     override fun decodePayload(encoded: String): ByteArray {
-        if (encoded.isEmpty()) return ByteArray(0)
+        val len = encoded.length
+        if (len == 0) return ByteArray(0)
 
         var remBytes = 0
-        var mainStr = encoded
+        var dataLen = len
 
-        val lastCode = encoded.last().code
+        val lastCode = encoded[len - 1].code
         if (lastCode in 0x2101..0x210E) {
             remBytes = lastCode - 0x2100
-            mainStr = encoded.substring(0, encoded.length - 1)
+            dataLen = len - 1
         }
 
-        val chunks = IntArray(mainStr.length)
-        var chunkCount = 0
-        for (i in mainStr.indices) {
-            val val15 = decodeChar(mainStr[i])
-            if (val15 >= 0) {
-                chunks[chunkCount++] = val15
-            }
-        }
-
+        // Calculate maximum potential total bytes
         val totalBytes = if (remBytes > 0) {
-            val fullBlocks = chunkCount / 8
+            val fullBlocks = dataLen / 8
             fullBlocks * 15 + remBytes
         } else {
-            (chunkCount * 15) / 8
+            (dataLen * 15) / 8
         }
 
         val out = ByteArray(totalBytes)
@@ -209,16 +222,28 @@ internal class Base32768DataChannel : JSDataChannel {
         var bitCount = 0
         var outIdx = 0
 
-        for (i in 0 until chunkCount) {
-            bitBuffer = (bitBuffer shl 15) or chunks[i]
-            bitCount += 15
-            while (bitCount >= 8 && outIdx < totalBytes) {
-                out[outIdx++] = ((bitBuffer ushr (bitCount - 8)) and 0xFF).toByte()
-                bitCount -= 8
+        for (i in 0 until dataLen) {
+            val code = encoded[i].code
+            // Inline decoding logic
+            val val15 = when (code) {
+                in 0x3400..0x4CFF -> code - 0x3400
+                in 0x4E00..0x9FFF -> (code - 0x4E00) + 0x1900
+                in 0xAC00..0xC0FF -> (code - 0xAC00) + 0x6B00
+                else -> -1
+            }
+
+            if (val15 >= 0) {
+                bitBuffer = (bitBuffer shl 15) or val15
+                bitCount += 15
+                while (bitCount >= 8 && outIdx < totalBytes) {
+                    out[outIdx++] = ((bitBuffer ushr (bitCount - 8)) and 0xFF).toByte()
+                    bitCount -= 8
+                }
             }
         }
 
-        return out
+        // Return exact array, fallback to copyOf if invalid characters were skipped
+        return if (outIdx == totalBytes) out else out.copyOf(outIdx)
     }
 
     override val jsConverterScript: String
@@ -229,25 +254,4 @@ internal class Base32768DataChannel : JSDataChannel {
 
     override val jsDecodeFunctionName: String
         get() = "base32768ToBytes"
-
-    companion object {
-        private fun encodeChunk15(chunk15: Int): Char {
-            val codePoint = when {
-                chunk15 < 0x1900 -> 0x3400 + chunk15
-                chunk15 < 0x6B00 -> 0x4E00 + (chunk15 - 0x1900)
-                else -> 0xAC00 + (chunk15 - 0x6B00)
-            }
-            return codePoint.toChar()
-        }
-
-        private fun decodeChar(ch: Char): Int {
-            val code = ch.code
-            return when (code) {
-                in 0x3400..0x4CFF -> code - 0x3400
-                in 0x4E00..0x9FFF -> (code - 0x4E00) + 0x1900
-                in 0xAC00..0xC0FF -> (code - 0xAC00) + 0x6B00
-                else -> -1
-            }
-        }
-    }
 }
