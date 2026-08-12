@@ -15,16 +15,17 @@ import dev.keiji.jp2k.PROVIDED_WASM_DATA
  */
 internal class ProvidedNamedDataChannel : JSDataChannel {
     override val name: String = "ProvidedNamedDataChannel"
+    override val isStringMediated: Boolean = false
     @Volatile
     private var sandbox: JavaScriptSandbox? = null
 
-    private val fallbackChannel = DefaultJsDataChannel()
+    private val fallbackChannel = Base64UrlDataChannel()
 
     override fun init(sandbox: JavaScriptSandbox) {
         require(
             sandbox.isFeatureSupported(
                 JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER,
-            )
+            ),
         ) {
             "JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER not supported"
         }

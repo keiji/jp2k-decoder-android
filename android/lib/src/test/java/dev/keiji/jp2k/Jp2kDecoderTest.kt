@@ -17,6 +17,7 @@ import kotlinx.coroutines.test.setMain
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
@@ -828,4 +829,121 @@ class Jp2kDecoderTest {
             assertEquals("JavaScriptEngine returned empty result - expected JSON", e.message)
         }
     }
+
+    @Test
+    fun testGetSize_WithByteArray_Success() = runTest {
+        val jsonSize = """{"width": 300, "height": 400}"""
+
+        val decoder = createInitializedDecoder { script ->
+            if (script.startsWith("globalThis.getSizeWithCache") || script.startsWith("globalThis.getSize(")) {
+                TestListenableFuture(jsonSize)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        val data = ByteArray(20)
+        val size = decoder.getSize(data)
+        assertEquals(300, size.width)
+        assertEquals(400, size.height)
+    }
+
+    @Test
+    fun testGetSize_WithByteArray_EmptyResult() = runTest {
+        val decoder = createInitializedDecoder { script ->
+            if (script.startsWith("globalThis.getSizeWithCache") || script.startsWith("globalThis.getSize(")) {
+                TestListenableFuture("")
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        val data = ByteArray(20)
+        try {
+            decoder.getSize(data)
+            fail("Should throw IllegalStateException")
+        } catch (e: IllegalStateException) {
+            assertEquals("JavaScriptEngine returned empty result - expected JSON", e.message)
+        }
+    }
+
+    @Test
+    fun testValidateRatio_Bounds() = runTest {
+        val jsonBmp = """{"bmp": "AQID"}"""
+        val decoder = createInitializedDecoder { script ->
+            if (script.startsWith("globalThis.decodeJ2K")) {
+                TestListenableFuture(jsonBmp)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        // Negative left
+        try {
+            decoder.decodeImage(-0.1f, 0f, 0.5f, 0.5f)
+            fail("Should throw IllegalArgumentException")
+        } catch (e: IllegalArgumentException) {
+            assertEquals("Ratio must be 0.0 - 1.0", e.message)
+        }
+
+        // Top > 1.0
+        try {
+            decoder.decodeImage(0f, 1.1f, 0.5f, 0.5f)
+            fail("Should throw IllegalArgumentException")
+        } catch (e: IllegalArgumentException) {
+            assertEquals("Ratio must be 0.0 - 1.0", e.message)
+        }
+
+        // Right < 0.0
+        try {
+            decoder.decodeImage(0f, 0f, -0.5f, 0.5f)
+            fail("Should throw IllegalArgumentException")
+        } catch (e: IllegalArgumentException) {
+            assertEquals("Ratio must be 0.0 - 1.0", e.message)
+        }
+
+        // Bottom > 1.0
+        try {
+            decoder.decodeImage(0f, 0f, 0.5f, 1.5f)
+            fail("Should throw IllegalArgumentException")
+        } catch (e: IllegalArgumentException) {
+            assertEquals("Ratio must be 0.0 - 1.0", e.message)
+        }
+    }
+
+    @Test
+    fun testDecodeImage_ByteArray_IntCoords() = runTest {
+        val jsonBmp = """{"bmp": "AQID"}"""
+
+        val decoder = createInitializedDecoder { script ->
+            if (script.contains("decodeJ2K(")) {
+                TestListenableFuture(jsonBmp)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        val data = ByteArray(20)
+        decoder.decodeImage(data, 10, 20, 100, 200)
+        verify(isolate, Mockito.atLeastOnce()).evaluateJavaScriptAsync(contains("decodeJ2K("))
+    }
+
+    @Test
+    fun testDecodeImage_PerformanceMetrics() = runTest {
+        val jsonBmpWithMetrics = """{"bmp": "AQID", "timeBase64Decode": 1.0, "timePreProcess": 2.0, "timeWasm": 3.0, "timePostProcess": 4.0, "timeBase64Encode": 5.0, "wasmHeapSizeBytes": 1024}"""
+
+        val config = Config(logLevel = android.util.Log.VERBOSE)
+        val decoder = createInitializedDecoder(config = config) { script ->
+            if (script.contains("decodeJ2K(")) {
+                TestListenableFuture(jsonBmpWithMetrics)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        val data = ByteArray(20)
+        val bitmap = decoder.decodeImage(data)
+        assertNotNull(bitmap)
+    }
 }
+

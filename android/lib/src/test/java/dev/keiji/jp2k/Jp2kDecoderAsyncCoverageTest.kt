@@ -714,4 +714,56 @@ class Jp2kDecoderAsyncCoverageTest {
             assertEquals("Decoder was released.", it.message)
         })
     }
+
+    @Test
+    fun testGetSize_WithByteArray_Success() {
+        val decoder = createInitializedDecoder()
+        val callback = org.mockito.kotlin.mock<Callback<Size>>()
+        val data = ByteArray(20)
+
+        val jsonSize = """{"width": 640, "height": 480}"""
+        doAnswer {
+            TestListenableFuture(jsonSize)
+        }.whenever(isolate).evaluateJavaScriptAsync(org.mockito.ArgumentMatchers.contains("getSize("))
+
+        decoder.getSize(data, callback)
+
+        verify(callback).onSuccess(org.mockito.kotlin.check {
+            assertEquals(640, it.width)
+            assertEquals(480, it.height)
+        })
+    }
+
+    @Test
+    fun testGetSize_WithByteArray_StateError() {
+        val directExecutor = Executor { it.run() }
+        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
+        val callback = org.mockito.kotlin.mock<Callback<Size>>()
+
+        decoder.getSize(ByteArray(20), callback)
+
+        verify(callback).onError(org.mockito.kotlin.check {
+            assertTrue(it is IllegalStateException)
+            assertTrue(it.message!!.contains("Cannot getSize while in state"))
+        })
+    }
+
+    @Test
+    fun testDecodeImage_PerformanceMetrics() {
+        val config = Config(logLevel = android.util.Log.VERBOSE)
+        val directExecutor = Executor { it.run() }
+        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor, config = config)
+
+        doAnswer { TestListenableFuture(INTERNAL_RESULT_SUCCESS) }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
+        decoder.init(context, org.mockito.kotlin.mock())
+
+        val jsonBmpWithMetrics = """{"bmp": "AQID", "timeBase64Decode": 1.0, "timePreProcess": 2.0, "timeWasm": 3.0, "timePostProcess": 4.0, "timeBase64Encode": 5.0, "wasmHeapSizeBytes": 1024}"""
+        doAnswer { TestListenableFuture(jsonBmpWithMetrics) }.whenever(isolate).evaluateJavaScriptAsync(org.mockito.ArgumentMatchers.contains("decodeJ2K"))
+
+        val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
+        decoder.decodeImage(ByteArray(20), callback)
+
+        verify(callback).onSuccess(any())
+    }
 }
+

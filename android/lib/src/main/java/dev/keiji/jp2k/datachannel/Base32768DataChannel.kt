@@ -123,6 +123,7 @@ private const val SCRIPT_CONVERTER = """
  */
 internal class Base32768DataChannel : JSDataChannel {
     override val name: String = "Base32768DataChannel"
+    override val isStringMediated: Boolean = true
     override fun init(sandbox: JavaScriptSandbox) {
         // No-op — Base32768 works on all devices
     }

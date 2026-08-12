@@ -106,6 +106,7 @@ private const val SCRIPT_CONVERTER = """
  */
 internal class Ascii85DataChannel : JSDataChannel {
     override val name: String = "Ascii85DataChannel"
+    override val isStringMediated: Boolean = true
     override fun init(sandbox: JavaScriptSandbox) {
         // No-op — Ascii85 works on all devices
     }
@@ -114,7 +115,7 @@ internal class Ascii85DataChannel : JSDataChannel {
         isolate: JavaScriptIsolate,
         wasmBytes: ByteArray,
     ): String {
-        val encoded = encodePayload(wasmBytes).escapeJs()
+        val encoded = encodePayload(wasmBytes)
         return "ascii85ToBytes('$encoded')"
     }
 
@@ -122,7 +123,7 @@ internal class Ascii85DataChannel : JSDataChannel {
         isolate: JavaScriptIsolate,
         j2kData: ByteArray,
     ): String {
-        val encoded = encodePayload(j2kData).escapeJs()
+        val encoded = encodePayload(j2kData)
         return "(async () => { globalThis.j2kData = globalThis.ascii85ToBytes('$encoded'); return '$INTERNAL_RESULT_SUCCESS'; })()"
     }
 

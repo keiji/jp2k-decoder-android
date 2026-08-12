@@ -8,7 +8,7 @@ import androidx.javascriptengine.JavaScriptSandbox
 /**
  * Default string-based data channel used as fallback or initial channel.
  */
-internal typealias DefaultJsDataChannel = Base64DataChannel
+internal typealias DefaultJsDataChannel = Base64UrlDataChannel
 
 /**
  * Abstraction for transferring binary data (WASM, J2K image) to the JavaScript sandbox.
@@ -32,6 +32,12 @@ internal interface JSDataChannel {
      * Human-readable name of the channel.
      */
     val name: String
+
+    /**
+     * Indicates whether data is transferred using string encoding (e.g., Base64, Hex, JS Array)
+     * as opposed to direct binary transfer (e.g., provideNamedData).
+     */
+    val isStringMediated: Boolean
 
     /**
      * Initializes the channel with the sandbox.
