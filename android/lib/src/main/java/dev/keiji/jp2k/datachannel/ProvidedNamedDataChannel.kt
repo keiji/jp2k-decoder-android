@@ -14,12 +14,13 @@ import dev.keiji.jp2k.PROVIDED_WASM_DATA
  * @see JSDataChannel
  */
 internal class ProvidedNamedDataChannel : JSDataChannel {
-    override val name: String = "ProvidedNamedDataChannel"
     override val isStringMediated: Boolean = false
     @Volatile
     private var sandbox: JavaScriptSandbox? = null
 
-    private val fallbackChannel = Base64UrlDataChannel()
+    private val fallbackChannel = DefaultJsDataChannel()
+
+    override val name: String = "ProvidedNamedDataChannel - ${fallbackChannel.name}"
 
     override fun init(sandbox: JavaScriptSandbox) {
         require(
