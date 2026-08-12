@@ -75,6 +75,85 @@ class ProvidedNamedDataChannelTest {
     }
 
     @Test
+    fun getGetSizeExpression_callsProvideNamedData_and_returnsAsyncIife() {
+        val sandbox = mock<JavaScriptSandbox>()
+        whenever(sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)).thenReturn(true)
+
+        val isolate = mock<JavaScriptIsolate>()
+        val channel = ProvidedNamedDataChannel()
+        channel.init(sandbox)
+
+        val j2kData = byteArrayOf(9, 8, 7)
+        val expr = channel.getGetSizeExpression(isolate, j2kData)
+
+        verify(isolate).provideNamedData(PROVIDED_J2K_DATA, j2kData)
+        assertEquals(
+            "(async () => { const data = await globalThis.transferFromProvidedNamedData('$PROVIDED_J2K_DATA'); return globalThis.internalGetSize(data); })()",
+            expr
+        )
+    }
+
+    @Test
+    fun getDecodeJ2KExpression_callsProvideNamedData_and_returnsAsyncIife() {
+        val sandbox = mock<JavaScriptSandbox>()
+        whenever(sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)).thenReturn(true)
+
+        val isolate = mock<JavaScriptIsolate>()
+        val channel = ProvidedNamedDataChannel()
+        channel.init(sandbox)
+
+        val j2kData = byteArrayOf(9, 8, 7)
+        val expr = channel.getDecodeJ2KExpression(
+            isolate,
+            j2kData,
+            maxPixels = 100,
+            maxHeapSizeBytes = 200L,
+            colorFormatId = 1,
+            measureTimes = false,
+            left = 10,
+            top = 20,
+            right = 30,
+            bottom = 40,
+        )
+
+        verify(isolate).provideNamedData(PROVIDED_J2K_DATA, j2kData)
+        assertEquals(
+            "(async () => { const data = await globalThis.transferFromProvidedNamedData('$PROVIDED_J2K_DATA'); return globalThis.internalDecodeJ2K(data, 100, 200, 1, false, 10, 20, 30, 40, 0); })()",
+            expr
+        )
+    }
+
+    @Test
+    fun getDecodeJ2KRatioExpression_callsProvideNamedData_and_returnsAsyncIife() {
+        val sandbox = mock<JavaScriptSandbox>()
+        whenever(sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)).thenReturn(true)
+
+        val isolate = mock<JavaScriptIsolate>()
+        val channel = ProvidedNamedDataChannel()
+        channel.init(sandbox)
+
+        val j2kData = byteArrayOf(9, 8, 7)
+        val expr = channel.getDecodeJ2KRatioExpression(
+            isolate,
+            j2kData,
+            maxPixels = 100,
+            maxHeapSizeBytes = 200L,
+            colorFormatId = 1,
+            measureTimes = false,
+            leftRatio = 0.1f,
+            topRatio = 0.2f,
+            rightRatio = 0.3f,
+            bottomRatio = 0.4f,
+        )
+
+        verify(isolate).provideNamedData(PROVIDED_J2K_DATA, j2kData)
+        assertEquals(
+            "(async () => { const data = await globalThis.transferFromProvidedNamedData('$PROVIDED_J2K_DATA'); return globalThis.internalDecodeJ2KRatio(data, 100, 200, 1, false, 0.1, 0.2, 0.3, 0.4, 0); })()",
+            expr
+        )
+    }
+
+    @Test
     fun getWasmExpression_emptyBytes() {
         val sandbox = mock<JavaScriptSandbox>()
         whenever(sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)).thenReturn(true)
@@ -98,8 +177,8 @@ class ProvidedNamedDataChannelTest {
         val decoded = channel.decodePayload(encoded)
         assertArrayEquals(bytes, decoded)
 
-        assertEquals("bytesToBase64", channel.jsEncodeFunctionName)
-        assertEquals("base64ToBytes", channel.jsDecodeFunctionName)
-        assertTrue(channel.jsConverterScript.contains("bytesToBase64"))
+        assertEquals("bytesToBase64Url", channel.jsEncodeFunctionName)
+        assertEquals("base64UrlToBytes", channel.jsDecodeFunctionName)
+        assertTrue(channel.jsConverterScript.contains("bytesToBase64Url"))
     }
 }

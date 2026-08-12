@@ -7,13 +7,13 @@ import java.util.Base64
 
 private const val SCRIPT_CONVERTER = """
             (() => {
-                const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+                const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
                 const lookup = new Uint8Array(256);
                 for (let i = 0; i < chars.length; i++) {
                     lookup[chars.charCodeAt(i)] = i;
                 }
 
-                globalThis.bytesToBase64 = function(bytes) {
+                globalThis.bytesToBase64Url = function(bytes) {
                     let output = "";
                     for (let i = 0; i < bytes.length; i += 3) {
                         const b1 = bytes[i];
@@ -40,7 +40,7 @@ private const val SCRIPT_CONVERTER = """
                     return output;
                 };
 
-                globalThis.base64ToBytes = function(base64) {
+                globalThis.base64UrlToBytes = function(base64) {
                     let bufferLength = base64.length * 0.75;
                     let len = base64.length;
                     let i, p = 0, encoded1, encoded2, encoded3, encoded4;
@@ -68,53 +68,53 @@ private const val SCRIPT_CONVERTER = """
                     return bytes;
                 };
 
-                globalThis.encodePayload = globalThis.bytesToBase64;
-                globalThis.decodePayload = globalThis.base64ToBytes;
+                globalThis.encodePayload = globalThis.bytesToBase64Url;
+                globalThis.decodePayload = globalThis.base64UrlToBytes;
             })();
 """
 
 /**
- * Channel that Base64-encodes binary data and passes it as a JS string.
+ * Channel that Base64Url-encodes binary data and passes it as a JS string.
  *
  * @see JSDataChannel
  */
-internal class Base64DataChannel : JSDataChannel {
-    override val name: String = "Base64DataChannel"
+internal class Base64UrlDataChannel : JSDataChannel {
+    override val name: String = "Base64UrlDataChannel"
     override val isStringMediated: Boolean = true
     override fun init(sandbox: JavaScriptSandbox) {
-        // No-op — Base64 works on all devices
+        // No-op — Base64Url works on all devices
     }
 
     override fun getWasmExpression(
         isolate: JavaScriptIsolate,
         wasmBytes: ByteArray,
     ): String {
-        val encoded = encodePayload(wasmBytes)
-        return "base64ToBytes('$encoded')"
+        val encoded = encodePayload(wasmBytes).escapeJs()
+        return "base64UrlToBytes('$encoded')"
     }
 
     override fun getJ2KExpression(
         isolate: JavaScriptIsolate,
         j2kData: ByteArray,
     ): String {
-        val encoded = encodePayload(j2kData)
-        return "(async () => { globalThis.j2kData = globalThis.base64ToBytes('$encoded'); return '$INTERNAL_RESULT_SUCCESS'; })()"
+        val encoded = encodePayload(j2kData).escapeJs()
+        return "(async () => { globalThis.j2kData = globalThis.base64UrlToBytes('$encoded'); return '$INTERNAL_RESULT_SUCCESS'; })()"
     }
 
     override fun encodePayload(data: ByteArray): String {
-        return Base64.getEncoder().encodeToString(data)
+        return Base64.getUrlEncoder().encodeToString(data)
     }
 
     override fun decodePayload(encoded: String): ByteArray {
-        return Base64.getDecoder().decode(encoded)
+        return Base64.getUrlDecoder().decode(encoded)
     }
 
     override val jsConverterScript: String
         get() = SCRIPT_CONVERTER
 
     override val jsEncodeFunctionName: String
-        get() = "bytesToBase64"
+        get() = "bytesToBase64Url"
 
     override val jsDecodeFunctionName: String
-        get() = "base64ToBytes"
+        get() = "base64UrlToBytes"
 }

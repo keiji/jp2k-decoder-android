@@ -5,26 +5,40 @@ import androidx.javascriptengine.JavaScriptSandbox
 import dev.keiji.jp2k.INTERNAL_RESULT_SUCCESS
 
 private const val SCRIPT_CONVERTER = """
-            globalThis.bytesToHex = function(bytes) {
-                let hex = "";
-                for (let i = 0; i < bytes.length; i++) {
-                    let h = bytes[i].toString(16);
-                    if (h.length === 1) h = "0" + h;
-                    hex += h;
+            (() => {
+                const byteToHex = new Array(256);
+                for (let i = 0; i < 256; i++) {
+                    byteToHex[i] = (i < 16 ? "0" : "") + i.toString(16);
                 }
-                return hex;
-            };
-
-            globalThis.hexToBytes = function(hex) {
-                const bytes = new Uint8Array(hex.length / 2);
-                for (let i = 0; i < hex.length; i += 2) {
-                    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
+                const hexToByte = new Int32Array(256);
+                for (let i = 0; i < 256; i++) {
+                    hexToByte[i] = -1;
                 }
-                return bytes;
-            };
+                for (let i = 0; i < 10; i++) hexToByte[48 + i] = i;
+                for (let i = 0; i < 6; i++) {
+                    hexToByte[97 + i] = 10 + i;
+                    hexToByte[65 + i] = 10 + i;
+                }
 
-            globalThis.encodePayload = globalThis.bytesToHex;
-            globalThis.decodePayload = globalThis.hexToBytes;
+                globalThis.bytesToHex = function(bytes) {
+                    let hex = "";
+                    for (let i = 0; i < bytes.length; i++) {
+                        hex += byteToHex[bytes[i]];
+                    }
+                    return hex;
+                };
+
+                globalThis.hexToBytes = function(hex) {
+                    const bytes = new Uint8Array(hex.length / 2);
+                    for (let i = 0, j = 0; i < hex.length; i += 2, j++) {
+                        bytes[j] = (hexToByte[hex.charCodeAt(i)] << 4) | hexToByte[hex.charCodeAt(i + 1)];
+                    }
+                    return bytes;
+                };
+
+                globalThis.encodePayload = globalThis.bytesToHex;
+                globalThis.decodePayload = globalThis.hexToBytes;
+            })();
 """
 
 /**
@@ -56,24 +70,32 @@ internal class HexDataChannel : JSDataChannel {
     }
 
     override fun encodePayload(data: ByteArray): String {
-        val sb = StringBuilder(data.size * 2)
-        for (b in data) {
-            val i = b.toInt() and 0xFF
-            if (i < 16) sb.append('0')
-            sb.append(Integer.toHexString(i))
+        val chars = CharArray(data.size * 2)
+        val hexSymbols = "0123456789abcdef".toCharArray()
+        for (i in data.indices) {
+            val v = data[i].toInt() and 0xFF
+            chars[i * 2] = hexSymbols[v ushr 4]
+            chars[i * 2 + 1] = hexSymbols[v and 0x0F]
         }
-        return sb.toString()
+        return String(chars)
     }
 
     override fun decodePayload(encoded: String): ByteArray {
         val len = encoded.length
         val data = ByteArray(len / 2)
-        var i = 0
-        while (i < len) {
-            data[i / 2] = ((Character.digit(encoded[i], 16) shl 4) + Character.digit(encoded[i + 1], 16)).toByte()
-            i += 2
+        for (i in 0 until len step 2) {
+            data[i / 2] = ((hexToInt(encoded[i]) shl 4) or hexToInt(encoded[i + 1])).toByte()
         }
         return data
+    }
+
+    private fun hexToInt(c: Char): Int {
+        return when (c) {
+            in '0'..'9' -> c - '0'
+            in 'a'..'f' -> c - 'a' + 10
+            in 'A'..'F' -> c - 'A' + 10
+            else -> throw IllegalArgumentException("Invalid hex char: $c")
+        }
     }
 
     override val jsConverterScript: String

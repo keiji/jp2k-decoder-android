@@ -6,11 +6,11 @@ import dev.keiji.jp2k.INTERNAL_RESULT_SUCCESS
 
 private const val SCRIPT_CONVERTER = """
             globalThis.bytesToArray = function(bytes) {
-                return "[" + Array.from(bytes).join(",") + "]";
+                return "[" + bytes.join(",") + "]";
             };
 
             globalThis.arrayToBytes = function(arrayString) {
-                if (!arrayString || arrayString.length === 0) return new Uint8Array(0);
+                if (!arrayString || arrayString.length <= 2) return new Uint8Array(0);
                 const arr = JSON.parse(arrayString);
                 return new Uint8Array(arr);
             };
@@ -48,18 +48,44 @@ internal class JsArrayDataChannel : JSDataChannel {
     }
 
     override fun encodePayload(data: ByteArray): String {
-        return data.joinToString(separator = ",", prefix = "[", postfix = "]") { (it.toInt() and 0xFF).toString() }
+        if (data.isEmpty()) return "[]"
+        val sb = StringBuilder(data.size * 4 + 2)
+        sb.append("[")
+        for (i in data.indices) {
+            sb.append(data[i].toInt() and 0xFF)
+            if (i < data.lastIndex) sb.append(",")
+        }
+        sb.append("]")
+        return sb.toString()
     }
 
     override fun decodePayload(encoded: String): ByteArray {
-        val trimmed = encoded.trim().removePrefix("[").removeSuffix("]")
-        if (trimmed.isEmpty()) return ByteArray(0)
-        val parts = trimmed.split(",")
-        val bytes = ByteArray(parts.size)
-        for (i in parts.indices) {
-            bytes[i] = parts[i].trim().toInt().toByte()
+        val trimmed = encoded.trim()
+        if (trimmed.length <= 2) return ByteArray(0)
+
+        val data = ByteArray(trimmed.length / 2)
+        var dataIdx = 0
+        
+        var currentNum = 0
+        var hasNum = false
+        for (i in 1 until trimmed.length - 1) { // Skip '[' and ']'
+            val c = trimmed[i]
+            if (c == ',') {
+                if (hasNum) {
+                    data[dataIdx++] = currentNum.toByte()
+                    currentNum = 0
+                    hasNum = false
+                }
+            } else if (c in '0'..'9') {
+                currentNum = currentNum * 10 + (c - '0')
+                hasNum = true
+            }
         }
-        return bytes
+        if (hasNum) {
+            data[dataIdx++] = currentNum.toByte()
+        }
+        
+        return data.copyOf(dataIdx)
     }
 
     override val jsConverterScript: String
