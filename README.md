@@ -174,7 +174,49 @@ You can customize the decoder behavior by passing a `Config` object to the const
 | `maxPixels` | `Int` | 16,000,000 | The maximum number of pixels allowed in the decoded image. |
 | `maxHeapSizeBytes` | `Long` | 512 MB | The maximum size of the heap in bytes allowed for the JavaScript sandbox. |
 | `maxEvaluationReturnSizeBytes` | `Int` | 256 MB | The maximum size of the return value in bytes from JavaScript evaluation. |
-| `logLevel` | `Int?` | `null` | The logging level (e.g., `Log.DEBUG`). If `null`, logging is disabled. |
+| `logLevel` | `Int?` | `null` | The logging level (e.g., `Log.DEBUG`, `Log.INFO`). If `null`, logging is disabled. |
+| `logger` | `Logger` | `AndroidLogger` | Custom `Logger` implementation to handle log messages. |
+| `maxLogLines` | `Int` | 10 | The maximum number of log lines to output per message. Excess lines will be truncated. |
+| `preferDirectBinaryTransfer` | `Boolean` | `true` | Whether to prefer direct binary transfer via `provideNamedData` when supported. |
+
+## Execution Logs (ログの見方)
+
+When `logLevel` is set (e.g., `Log.INFO`), detailed logs regarding data transfers, performance metrics, and timing analysis are output to Logcat:
+
+```text
+2026-08-12 19:42:17.170 Jp2kDecoder I Input binary length: 147041
+2026-08-12 19:42:17.170 Jp2kDecoder I J2K expression: (async () => { ... })()
+2026-08-12 19:42:17.468 Jp2kDecoder I Output encoded content length: 1638472 chars
+2026-08-12 19:42:17.688 Jp2kDecoder I Output encoded content (64 chars per line):
+                                      Qk02wBIAAAAAADYAAAAoAAAAgAIAACD+//8BACAAAAAAAAAAAAAAAAAAAAAAAAAA
+                                      ... (truncated 25593 lines) ...
+                                      QEgS/
+2026-08-12 19:42:17.726 Jp2kDecoder I Output data length: 1228854 bytes
+2026-08-12 19:42:17.727 Jp2kDecoder I Input transfer start delay (Kotlin -> JS start): 2.00 ms
+2026-08-12 19:42:17.727 Jp2kDecoder I Output transfer delay (JS finish -> Kotlin receive): 20.00 ms
+2026-08-12 19:42:17.727 Jp2kDecoder I Output Kotlin decode time: 37.97 ms
+2026-08-12 19:42:17.728 Jp2kDecoder I Performance: inputSize=0B totalTime=545ms
+                                          dataTransferTime=261ms jsDecodeTime=0ms jsEncodeTime=144ms
+                                          wasmHeapSize=7MB outputImage=1228854B
+2026-08-12 19:42:17.728 Jp2kDecoder I Pre-process: 0.0 ms, WASM: 95.0 ms, Post-process: 144.0 ms
+2026-08-12 19:42:17.728 Jp2kDecoder I decodeImage() finished in 546 msec
+```
+
+### Explanation of Log Fields
+
+| Log Message / Metric | Description (説明) |
+| :--- | :--- |
+| `Input binary length` / `Input data length` | Size of the input raw JPEG 2000 byte array in bytes (Kotlin側から入力したデータサイズ)。 |
+| `Input encoded content length` | Length of the encoded string in characters when string-mediated transfer is used. |
+| `Input encoded content (64 chars per line)` | Encoded string of input data (formatted 64 chars/line). Truncated if exceeding `maxLogLines`. |
+| `Input JS decode time` | Time spent decoding input string payload to `Uint8Array` in JavaScript (`ms`). |
+| `Input transfer start delay (Kotlin -> JS start)` | Overhead delay from Kotlin request initiation to JS execution start (`ms`). |
+| `Output transfer delay (JS finish -> Kotlin receive)` | Overhead delay from JS execution completion to Kotlin result receipt (`ms`). |
+| `Output encoded content length` | Length of the decoded output image payload (e.g. BMP) in characters (`chars`). |
+| `Output encoded content (64 chars per line)` | Encoded output string (formatted 64 chars/line). Truncated if exceeding `maxLogLines`. |
+| `Output Kotlin decode time` | Time spent decoding the return string payload in Kotlin (`ms`). |
+| `Output data length` | Size of the decoded output bitmap bytes in bytes. |
+| `Performance: ...` / `Pre-process / WASM / Post-process` | Breakdown of WASM execution, JS pre/post-processing, heap size, and total time. |
 
 ## Color Formats
 

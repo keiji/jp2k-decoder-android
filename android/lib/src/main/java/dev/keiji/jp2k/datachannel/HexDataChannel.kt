@@ -34,6 +34,7 @@ private const val SCRIPT_CONVERTER = """
  */
 internal class HexDataChannel : JSDataChannel {
     override val name: String = "HexDataChannel"
+    override val isStringMediated: Boolean = true
     override fun init(sandbox: JavaScriptSandbox) {
         // No-op — Hex works on all devices
     }
