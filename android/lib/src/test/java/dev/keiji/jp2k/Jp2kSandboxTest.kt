@@ -133,9 +133,26 @@ class Jp2kSandboxTest {
         whenever(sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_CONSOLE_MESSAGING)).thenReturn(true)
         val executor = Executor { it.run() }
 
-        Jp2kSandbox.setupConsoleCallback(isolate, sandbox, executor, "TestTag")
+        val captor = ArgumentCaptor.forClass(androidx.javascriptengine.JavaScriptConsoleCallback::class.java)
 
-        verify(isolate).setConsoleCallback(any(), any())
+        val mockLog = mockStatic(android.util.Log::class.java)
+        try {
+            Jp2kSandbox.setupConsoleCallback(isolate, sandbox, executor, "TestTag")
+
+            verify(isolate).setConsoleCallback(any(), captor.capture())
+
+            val consoleCallback = captor.value
+            val message = Mockito.mock(androidx.javascriptengine.JavaScriptConsoleCallback.ConsoleMessage::class.java)
+            whenever(message.message).thenReturn("Console log test message")
+
+            consoleCallback.onConsoleMessage(message)
+
+            mockLog.verify({
+                android.util.Log.v("TestTag", "Console log test message")
+            }, Mockito.atLeastOnce())
+        } finally {
+            mockLog.close()
+        }
     }
 
     @Test

@@ -93,4 +93,20 @@ class Ascii85DataChannelTest {
         val j2kExpr = channel.getJ2KExpression(isolate, ByteArray(0))
         assertEquals("(async () => { globalThis.j2kData = globalThis.ascii85ToBytes(''); return '$INTERNAL_RESULT_SUCCESS'; })()", j2kExpr)
     }
+
+    @Test
+    fun zeroCompressionAndWhitespaceHandling() {
+        val channel = Ascii85DataChannel()
+
+        val bytesWithZeros = byteArrayOf(0x01, 0x02, 0x03, 0x04, 0x00, 0x00, 0x00, 0x00, 0x05, 0x06, 0x07, 0x08)
+        val encoded = channel.encodePayload(bytesWithZeros)
+        assertTrue(encoded.contains("z"))
+        assertArrayEquals(bytesWithZeros, channel.decodePayload(encoded))
+
+        // Whitespace inside encoded string during decode
+        val decodedWithSpaces = channel.decodePayload("  z \n z\t ")
+        val expectedEightZeros = ByteArray(8)
+        assertArrayEquals(expectedEightZeros, decodedWithSpaces)
+    }
 }
+
