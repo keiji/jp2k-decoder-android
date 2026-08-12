@@ -6,11 +6,17 @@ import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
 
 /**
+ * Default string-based data channel used as fallback or initial channel.
+ */
+internal typealias DefaultJsDataChannel = Base64DataChannel
+
+/**
  * Abstraction for transferring binary data (WASM, J2K image) to the JavaScript sandbox.
  *
  * Implementations:
  * - [ProvidedNamedDataChannel]: uses [JavaScriptIsolate.provideNamedData] for direct binary transfer
- * - [Base64DataChannel]: Base64-encodes data to a JS string (fallback for unsupported devices)
+ * - [Base64DataChannel]: Base64-encodes data to a JS string
+ * - [Base64UrlDataChannel]: Base64Url-encodes data to a JS string
  * - [HexDataChannel]: Hex-encodes data to a JS string
  * - [JsArrayDataChannel]: Encodes data as a JavaScript Array string
  *
@@ -66,7 +72,61 @@ internal interface JSDataChannel {
      * Name of the JS function used to decode string payload to byte arrays.
      */
     val jsDecodeFunctionName: String
+
+    /**
+     * Returns a JS expression that executes getSize for the provided [j2kData].
+     */
+    fun getGetSizeExpression(
+        isolate: JavaScriptIsolate,
+        j2kData: ByteArray,
+    ): String {
+        val encoded = encodePayload(j2kData).escapeJs()
+        return "globalThis.getSize('$encoded');"
+    }
+
+    /**
+     * Returns a JS expression that executes decodeJ2K for the provided [j2kData].
+     */
+    fun getDecodeJ2KExpression(
+        isolate: JavaScriptIsolate,
+        j2kData: ByteArray,
+        maxPixels: Int,
+        maxHeapSizeBytes: Long,
+        colorFormatId: Int,
+        measureTimes: Boolean,
+        left: Int = 0,
+        top: Int = 0,
+        right: Int = 0,
+        bottom: Int = 0,
+    ): String {
+        val encoded = encodePayload(j2kData).escapeJs()
+        return "globalThis.decodeJ2K('$encoded', $maxPixels, $maxHeapSizeBytes, $colorFormatId, $measureTimes, $left, $top, $right, $bottom);"
+    }
+
+    /**
+     * Returns a JS expression that executes decodeJ2KRatio for the provided [j2kData].
+     */
+    fun getDecodeJ2KRatioExpression(
+        isolate: JavaScriptIsolate,
+        j2kData: ByteArray,
+        maxPixels: Int,
+        maxHeapSizeBytes: Long,
+        colorFormatId: Int,
+        measureTimes: Boolean,
+        leftRatio: Float = 0f,
+        topRatio: Float = 0f,
+        rightRatio: Float = 0f,
+        bottomRatio: Float = 0f,
+    ): String {
+        val encoded = encodePayload(j2kData).escapeJs()
+        return "globalThis.decodeJ2KRatio('$encoded', $maxPixels, $maxHeapSizeBytes, $colorFormatId, $measureTimes, $leftRatio, $topRatio, $rightRatio, $bottomRatio);"
+    }
 }
+
+/**
+ * Escapes backslashes and single quotes in a string for safe embedding into JS single-quoted string literals.
+ */
+internal fun String.escapeJs(): String = replace("\\", "\\\\").replace("'", "\\'")
 
 /**
  * Creates the appropriate [JSDataChannel] based on feature support.
@@ -88,6 +148,6 @@ internal fun createDataChannel(
     ) {
         ProvidedNamedDataChannel().also { it.init(sandbox) }
     } else {
-        Base64DataChannel().also { it.init(sandbox) }
+        DefaultJsDataChannel().also { it.init(sandbox) }
     }
 }

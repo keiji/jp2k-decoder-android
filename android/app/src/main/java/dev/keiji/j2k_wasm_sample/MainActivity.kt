@@ -33,6 +33,11 @@ import dev.keiji.jp2k.Config
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+private val config = Config(
+    logLevel = Log.DEBUG,
+    preferDirectBinaryTransfer = true,
+)
+
 private data class DecodeResult(
     val bmp: Bitmap?,
     val bmpCropped: Bitmap?,
@@ -64,9 +69,6 @@ class MainActivity : ComponentActivity() {
                                 val bytes = applicationContext.assets.open(ASSET_PATH_SAMPLE_IMAGE).use {
                                     it.readBytes()
                                 }
-                                val config = Config(
-                                    logLevel = Log.DEBUG,
-                                )
                                 Jp2kDecoder(
                                     config = config,
                                 ).use { decoder ->
