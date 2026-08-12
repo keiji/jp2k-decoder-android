@@ -4,40 +4,33 @@ import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
 import dev.keiji.jp2k.INTERNAL_RESULT_SUCCESS
 
+// File-level lookup tables to eliminate branch prediction penalties during tight loops.
+// 32768 possible 15-bit values directly mapped to their corresponding Unicode characters.
+private val BASE32768_ENCODER_TABLE = CharArray(32768) { chunk15 ->
+    val codePoint = when {
+        chunk15 < 0x1900 -> 0x3400 + chunk15
+        chunk15 < 0x6B00 -> 0x4E00 + (chunk15 - 0x1900)
+        else -> 0xAC00 + (chunk15 - 0x6B00)
+    }
+    codePoint.toChar()
+}
+
+// Max Unicode point used in Base32768 is 0xC0FF.
+// Array size 0xC100 (49408) covers all possible values in O(1) time without branching.
+private val BASE32768_DECODER_TABLE = IntArray(0xC100) { -1 }.also { table ->
+    for (i in 0 until 32768) {
+        val charCode = BASE32768_ENCODER_TABLE[i].code
+        table[charCode] = i
+    }
+}
+
 private const val SCRIPT_CONVERTER = """
-            globalThis.bytesToBase32768 = function(bytes) {
-                if (!bytes || bytes.length === 0) return "";
-                
-                const len = bytes.length;
-                // Pre-calculate the maximum required characters and allocate the array
-                const maxChars = Math.floor((len * 8 + 14) / 15) + 1;
-                const out = new Array(maxChars);
-                let outIdx = 0;
-                
-                let bitBuffer = 0;
-                let bitCount = 0;
+            (() => {
+                // Pre-compute lookup tables for Base32768 to avoid String.fromCharCode and branching overhead in loops
+                const ENCODER_TABLE = new Array(32768);
+                const DECODER_TABLE = new Int32Array(49408).fill(-1); // Max Unicode point 0xC0FF is 49407
 
-                for (let i = 0; i < len; i++) {
-                    bitBuffer = (bitBuffer << 8) | (bytes[i] & 0xFF);
-                    bitCount += 8;
-                    while (bitCount >= 15) {
-                        const chunk15 = (bitBuffer >>> (bitCount - 15)) & 0x7FFF;
-                        bitCount -= 15;
-                        let codePoint;
-                        if (chunk15 < 0x1900) {
-                            codePoint = 0x3400 + chunk15;
-                        } else if (chunk15 < 0x6B00) {
-                            codePoint = 0x4E00 + (chunk15 - 0x1900);
-                        } else {
-                            codePoint = 0xAC00 + (chunk15 - 0x6B00);
-                        }
-                        out[outIdx++] = String.fromCharCode(codePoint);
-                    }
-                }
-
-                if (bitCount > 0) {
-                    const remainingBits = bitBuffer & ((1 << bitCount) - 1);
-                    const chunk15 = (remainingBits << (15 - bitCount)) & 0x7FFF;
+                for (let chunk15 = 0; chunk15 < 32768; chunk15++) {
                     let codePoint;
                     if (chunk15 < 0x1900) {
                         codePoint = 0x3400 + chunk15;
@@ -46,71 +39,95 @@ private const val SCRIPT_CONVERTER = """
                     } else {
                         codePoint = 0xAC00 + (chunk15 - 0x6B00);
                     }
-                    out[outIdx++] = String.fromCharCode(codePoint);
-
-                    const remBytes = len % 15;
-                    if (remBytes > 0) {
-                        out[outIdx++] = String.fromCharCode(0x2100 + remBytes);
-                    }
+                    const charStr = String.fromCharCode(codePoint);
+                    ENCODER_TABLE[chunk15] = charStr;
+                    DECODER_TABLE[codePoint] = chunk15;
                 }
 
-                // Join array into a string at once for better performance with large payloads
-                return out.join('');
-            };
+                globalThis.bytesToBase32768 = function(bytes) {
+                    if (!bytes || bytes.length === 0) return "";
+                    
+                    const len = bytes.length;
+                    const maxChars = Math.floor((len * 8 + 14) / 15) + 1;
+                    const out = new Array(maxChars);
+                    let outIdx = 0;
+                    
+                    let bitBuffer = 0;
+                    let bitCount = 0;
 
-            globalThis.base32768ToBytes = function(str) {
-                if (!str || str.length === 0) return new Uint8Array(0);
-
-                let remBytes = 0;
-                let mainStrLength = str.length;
-
-                const lastCode = str.charCodeAt(str.length - 1);
-                if (lastCode >= 0x2101 && lastCode <= 0x210E) {
-                    remBytes = lastCode - 0x2100;
-                    mainStrLength = str.length - 1;
-                }
-
-                let totalBytes;
-                if (remBytes > 0) {
-                    const fullBlocks = Math.floor(mainStrLength / 8);
-                    totalBytes = fullBlocks * 15 + remBytes;
-                } else {
-                    totalBytes = Math.floor((mainStrLength * 15) / 8);
-                }
-
-                const out = new Uint8Array(totalBytes);
-                let bitBuffer = 0;
-                let bitCount = 0;
-                let outIdx = 0;
-
-                // Process in a single pass without intermediate arrays
-                for (let i = 0; i < mainStrLength; i++) {
-                    const code = str.charCodeAt(i);
-                    let val15 = -1;
-                    if (code >= 0x3400 && code <= 0x4CFF) {
-                        val15 = code - 0x3400;
-                    } else if (code >= 0x4E00 && code <= 0x9FFF) {
-                        val15 = (code - 0x4E00) + 0x1900;
-                    } else if (code >= 0xAC00 && code <= 0xC0FF) {
-                        val15 = (code - 0xAC00) + 0x6B00;
-                    }
-
-                    if (val15 >= 0) {
-                        bitBuffer = (bitBuffer << 15) | val15;
-                        bitCount += 15;
-                        while (bitCount >= 8 && outIdx < totalBytes) {
-                            out[outIdx++] = (bitBuffer >>> (bitCount - 8)) & 0xFF;
-                            bitCount -= 8;
+                    for (let i = 0; i < len; i++) {
+                        bitBuffer = (bitBuffer << 8) | (bytes[i] & 0xFF);
+                        bitCount += 8;
+                        while (bitCount >= 15) {
+                            const chunk15 = (bitBuffer >>> (bitCount - 15)) & 0x7FFF;
+                            bitCount -= 15;
+                            // Branchless O(1) array lookup
+                            out[outIdx++] = ENCODER_TABLE[chunk15];
                         }
                     }
-                }
 
-                // Fallback to subarray if invalid characters were skipped
-                return outIdx === totalBytes ? out : out.subarray(0, outIdx);
-            };
+                    if (bitCount > 0) {
+                        const remainingBits = bitBuffer & ((1 << bitCount) - 1);
+                        const chunk15 = (remainingBits << (15 - bitCount)) & 0x7FFF;
+                        out[outIdx++] = ENCODER_TABLE[chunk15];
 
-            globalThis.encodePayload = globalThis.bytesToBase32768;
-            globalThis.decodePayload = globalThis.base32768ToBytes;
+                        const remBytes = len % 15;
+                        if (remBytes > 0) {
+                            // This happens only once at the very end, so String.fromCharCode is fine here
+                            out[outIdx++] = String.fromCharCode(0x2100 + remBytes);
+                        }
+                    }
+
+                    return out.join('');
+                };
+
+                globalThis.base32768ToBytes = function(str) {
+                    if (!str || str.length === 0) return new Uint8Array(0);
+
+                    let remBytes = 0;
+                    let mainStrLength = str.length;
+
+                    const lastCode = str.charCodeAt(str.length - 1);
+                    if (lastCode >= 0x2101 && lastCode <= 0x210E) {
+                        remBytes = lastCode - 0x2100;
+                        mainStrLength = str.length - 1;
+                    }
+
+                    let totalBytes;
+                    if (remBytes > 0) {
+                        const fullBlocks = Math.floor(mainStrLength / 8);
+                        totalBytes = fullBlocks * 15 + remBytes;
+                    } else {
+                        totalBytes = Math.floor((mainStrLength * 15) / 8);
+                    }
+
+                    const out = new Uint8Array(totalBytes);
+                    let bitBuffer = 0;
+                    let bitCount = 0;
+                    let outIdx = 0;
+
+                    for (let i = 0; i < mainStrLength; i++) {
+                        const code = str.charCodeAt(i);
+                        if (code >= 49408) continue; // Out of bounds safety
+                        
+                        // Branchless O(1) array lookup
+                        const val15 = DECODER_TABLE[code];
+                        if (val15 >= 0) {
+                            bitBuffer = (bitBuffer << 15) | val15;
+                            bitCount += 15;
+                            while (bitCount >= 8 && outIdx < totalBytes) {
+                                out[outIdx++] = (bitBuffer >>> (bitCount - 8)) & 0xFF;
+                                bitCount -= 8;
+                            }
+                        }
+                    }
+
+                    return outIdx === totalBytes ? out : out.subarray(0, outIdx);
+                };
+
+                globalThis.encodePayload = globalThis.bytesToBase32768;
+                globalThis.decodePayload = globalThis.base32768ToBytes;
+            })();
 """
 
 /**
@@ -135,6 +152,7 @@ internal class Base32768DataChannel : JSDataChannel {
         isolate: JavaScriptIsolate,
         wasmBytes: ByteArray,
     ): String {
+        // Assume you have an escapeJs() extension function handling backslashes/quotes if needed
         val encoded = encodePayload(wasmBytes).escapeJs()
         return "base32768ToBytes('$encoded')"
     }
@@ -160,19 +178,14 @@ internal class Base32768DataChannel : JSDataChannel {
         var bitCount = 0
 
         for (i in 0 until len) {
+            // Keep pure 32-bit arithmetic
             bitBuffer = (bitBuffer shl 8) or (data[i].toInt() and 0xFF)
             bitCount += 8
             while (bitCount >= 15) {
                 val chunk15 = (bitBuffer ushr (bitCount - 15)) and 0x7FFF
                 bitCount -= 15
-
-                // Inline encoding logic
-                val codePoint = when {
-                    chunk15 < 0x1900 -> 0x3400 + chunk15
-                    chunk15 < 0x6B00 -> 0x4E00 + (chunk15 - 0x1900)
-                    else -> 0xAC00 + (chunk15 - 0x6B00)
-                }
-                outChars[outIdx++] = codePoint.toChar()
+                // Branchless O(1) table lookup
+                outChars[outIdx++] = BASE32768_ENCODER_TABLE[chunk15]
             }
         }
 
@@ -180,12 +193,7 @@ internal class Base32768DataChannel : JSDataChannel {
             val remainingBits = bitBuffer and ((1 shl bitCount) - 1)
             val chunk15 = (remainingBits shl (15 - bitCount)) and 0x7FFF
 
-            val codePoint = when {
-                chunk15 < 0x1900 -> 0x3400 + chunk15
-                chunk15 < 0x6B00 -> 0x4E00 + (chunk15 - 0x1900)
-                else -> 0xAC00 + (chunk15 - 0x6B00)
-            }
-            outChars[outIdx++] = codePoint.toChar()
+            outChars[outIdx++] = BASE32768_ENCODER_TABLE[chunk15]
 
             val remBytes = len % 15
             if (remBytes > 0) {
@@ -224,14 +232,11 @@ internal class Base32768DataChannel : JSDataChannel {
 
         for (i in 0 until dataLen) {
             val code = encoded[i].code
-            // Inline decoding logic
-            val val15 = when (code) {
-                in 0x3400..0x4CFF -> code - 0x3400
-                in 0x4E00..0x9FFF -> (code - 0x4E00) + 0x1900
-                in 0xAC00..0xC0FF -> (code - 0xAC00) + 0x6B00
-                else -> -1
-            }
+            // Prevent IndexOutOfBoundsException for out-of-range characters
+            if (code >= 0xC100) continue
 
+            // Branchless O(1) table lookup
+            val val15 = BASE32768_DECODER_TABLE[code]
             if (val15 >= 0) {
                 bitBuffer = (bitBuffer shl 15) or val15
                 bitCount += 15
