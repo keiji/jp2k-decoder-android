@@ -70,6 +70,16 @@ internal interface JSDataChannel {
     val jsConverterScript: String
 
     /**
+     * Binds isolate-level message channels or listeners to the provided isolate.
+     */
+    fun setupIsolate(isolate: JavaScriptIsolate, executor: java.util.concurrent.Executor) {}
+
+    /**
+     * Prepares the data channel before initiating a decode request (e.g. clearing queues).
+     */
+    fun prepareForDecode() {}
+
+    /**
      * Name of the JS function used to encode byte arrays to string payload.
      */
     val jsEncodeFunctionName: String
@@ -137,22 +147,33 @@ internal fun String.escapeJs(): String = replace("\\", "\\\\").replace("'", "\\'
 /**
  * Creates the appropriate [JSDataChannel] based on feature support.
  *
- * Checks [JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER] using the provided sandbox
- * and initializes the channel via its [JSDataChannel.init] method.
+ * Checks feature flags using the provided sandbox and initializes the channel
+ * via its [JSDataChannel.init] method.
+ *
+ * Priority order when [preferDirectBinaryTransfer] is true:
+ * 1. [MessagePortDataChannel] (if [JavaScriptSandbox.JS_FEATURE_MESSAGE_PORTS] and
+ *    [JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER] are supported)
+ * 2. [ProvidedNamedDataChannel] (if [JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER] is supported)
+ * 3. [DefaultJsDataChannel]
  *
  * @param sandbox The sandbox to check feature support.
  * @param preferDirectBinaryTransfer If true, prefers direct binary transfer when feature is supported; if false, forces Base64.
- * @return [ProvidedNamedDataChannel] if supported and preferred, otherwise [Base64DataChannel].
+ * @return The created and initialized [JSDataChannel].
  */
 internal fun createDataChannel(
     sandbox: JavaScriptSandbox,
     preferDirectBinaryTransfer: Boolean = true,
 ): JSDataChannel {
-    return if (preferDirectBinaryTransfer && sandbox.isFeatureSupported(
-            JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER,
-        )
-    ) {
-        ProvidedNamedDataChannel().also { it.init(sandbox) }
+    return if (preferDirectBinaryTransfer) {
+        if (sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_MESSAGE_PORTS) &&
+            sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)
+        ) {
+            MessagePortDataChannel().also { it.init(sandbox) }
+        } else if (sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)) {
+            ProvidedNamedDataChannel().also { it.init(sandbox) }
+        } else {
+            DefaultJsDataChannel().also { it.init(sandbox) }
+        }
     } else {
         DefaultJsDataChannel().also { it.init(sandbox) }
     }

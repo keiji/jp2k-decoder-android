@@ -108,6 +108,8 @@ class Jp2kDecoderAsync(
                         Jp2kSandbox.setupConsoleCallback(isolate, sandbox, mainExecutor, TAG)
                      }
 
+                    dataChannel.setupIsolate(isolate, backgroundExecutor)
+
                     synchronized(lock) {
                         if (_state == State.Released || _state == State.Releasing) {
                             isolate.close()
@@ -157,6 +159,7 @@ class Jp2kDecoderAsync(
             ${dataChannel.jsConverterScript}
             $SCRIPT_TRANSFER_FROM_PROVIDED_NAMED_DATA
             $SCRIPT_DEFINE_SET_DATA
+            $SCRIPT_INIT_MESSAGE_PORT
 
             var wasmInstance;
 
@@ -725,6 +728,8 @@ class Jp2kDecoderAsync(
                      }
                      _state = State.Processing
                  }
+
+                dataChannel.prepareForDecode()
 
                 val start = System.currentTimeMillis()
 

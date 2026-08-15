@@ -103,6 +103,8 @@ class Jp2kDecoder(
                 Jp2kSandbox.setupConsoleCallback(isolate, sandbox, mainExecutor, TAG)
             }
 
+            dataChannel.setupIsolate(isolate, mainExecutor)
+
             if (_state == State.Released || _state == State.Releasing) {
                 isolate.close()
                 throw CancellationException("Jp2kDecoder was released during initialization.")
@@ -142,6 +144,7 @@ class Jp2kDecoder(
                 ${dataChannel.jsConverterScript}
                 $SCRIPT_TRANSFER_FROM_PROVIDED_NAMED_DATA_LOCAL
                 $SCRIPT_DEFINE_SET_DATA_LOCAL
+                $SCRIPT_INIT_MESSAGE_PORT_LOCAL
 
                 var wasmInstance;
 
@@ -555,6 +558,8 @@ class Jp2kDecoder(
         }
         _state = State.Processing
 
+        dataChannel.prepareForDecode()
+
         val start = System.currentTimeMillis()
 
         return try {
@@ -791,5 +796,6 @@ class Jp2kDecoder(
         private val SCRIPT_DEFINE_DECODE_J2K_LOCAL = SCRIPT_DEFINE_DECODE_J2K
         private val SCRIPT_DEFINE_GET_SIZE_LOCAL = SCRIPT_DEFINE_GET_SIZE
         private const val SCRIPT_TRANSFER_FROM_PROVIDED_NAMED_DATA_LOCAL = SCRIPT_TRANSFER_FROM_PROVIDED_NAMED_DATA
+        private const val SCRIPT_INIT_MESSAGE_PORT_LOCAL = SCRIPT_INIT_MESSAGE_PORT
     }
 }

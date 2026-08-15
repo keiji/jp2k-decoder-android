@@ -140,8 +140,14 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
                     const bmpSize = view.getUint32(bmpPtr + 2, true);
 
                     const bmpBuffer = new Uint8Array(exports.memory.buffer, bmpPtr, bmpSize);
-                    const encodeFn = globalThis.encodePayload || globalThis.bytesToBase64;
-                    const base64String = encodeFn(bmpBuffer);
+                    let base64String = "";
+                    if (typeof globalThis.outputMessagePort !== 'undefined' && globalThis.outputMessagePort) {
+                        const bufferCopy = new Uint8Array(bmpBuffer).slice().buffer;
+                        globalThis.outputMessagePort.postMessage(bufferCopy);
+                    } else {
+                        const encodeFn = globalThis.encodePayload || globalThis.bytesToBase64;
+                        base64String = encodeFn(bmpBuffer);
+                    }
 
                     exports.free(bmpPtr);
                     exports.free(inputPtr);
@@ -317,4 +323,14 @@ globalThis.transferFromProvidedNamedData = async function(key) {
     if (provided === undefined || provided === null) return null;
     return provided.byteLength > 0 ? new Uint8Array(provided) : new Uint8Array(0);
 };
+"""
+
+internal const val SCRIPT_INIT_MESSAGE_PORT = """
+if (typeof android !== 'undefined' && typeof android.getNamedPort === 'function') {
+    try {
+        android.getNamedPort('jp2k_binary_port').then(port => {
+            globalThis.outputMessagePort = port;
+        }).catch(e => {});
+    } catch (e) {}
+}
 """
