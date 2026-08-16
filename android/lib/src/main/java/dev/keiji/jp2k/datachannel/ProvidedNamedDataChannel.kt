@@ -5,6 +5,7 @@ package dev.keiji.jp2k.datachannel
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
 import dev.keiji.jp2k.INTERNAL_RESULT_SUCCESS
+import dev.keiji.jp2k.JavaScriptEngineEnvironment
 import dev.keiji.jp2k.PROVIDED_J2K_DATA
 import dev.keiji.jp2k.PROVIDED_WASM_DATA
 
@@ -23,7 +24,8 @@ internal class ProvidedNamedDataChannel : JSDataChannel {
 
     override fun init(sandbox: JavaScriptSandbox) {
         require(
-            sandbox.isFeatureSupported(
+            JavaScriptEngineEnvironment.isFeatureSupported(
+                sandbox,
                 JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER,
             ),
         ) {

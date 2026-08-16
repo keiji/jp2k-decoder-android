@@ -7,7 +7,9 @@ import androidx.javascriptengine.JavaScriptSandbox
 import com.google.common.util.concurrent.ListenableFuture
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.ArgumentCaptor
@@ -63,6 +65,7 @@ class Jp2kSandboxTest {
 
     @After
     fun tearDown() {
+        JavaScriptEngineEnvironment.resetForTesting()
         mockJavaScriptSandbox.close()
     }
 
@@ -163,5 +166,40 @@ class Jp2kSandboxTest {
         Jp2kSandbox.setupConsoleCallback(isolate, sandbox, executor, "TestTag")
 
         verify(isolate, Mockito.never()).setConsoleCallback(any(), any())
+    }
+
+    @Test
+    fun testDelegatedFeatureControlMethods() {
+        whenever(sandbox.isFeatureSupported(any<String>())).thenReturn(true)
+
+        // Message ports
+        Jp2kSandbox.disableMessagePortsForTesting()
+        assertFalse(Jp2kSandbox.isFeatureSupported(sandbox, JavaScriptSandbox.JS_FEATURE_MESSAGE_PORTS))
+        Jp2kSandbox.enableMessagePortsForTesting()
+        assertTrue(Jp2kSandbox.isFeatureSupported(sandbox, JavaScriptSandbox.JS_FEATURE_MESSAGE_PORTS))
+
+        // Provide consume array buffer
+        Jp2kSandbox.disableProvideConsumeArrayBufferForTesting()
+        assertFalse(Jp2kSandbox.isFeatureSupported(sandbox, JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER))
+        Jp2kSandbox.enableProvideConsumeArrayBufferForTesting()
+        assertTrue(Jp2kSandbox.isFeatureSupported(sandbox, JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER))
+
+        // Evaluate without transaction limit
+        Jp2kSandbox.disableEvaluateWithoutTransactionLimitForTesting()
+        assertFalse(Jp2kSandbox.isFeatureSupported(sandbox, JavaScriptSandbox.JS_FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT))
+        Jp2kSandbox.enableEvaluateWithoutTransactionLimitForTesting()
+        assertTrue(Jp2kSandbox.isFeatureSupported(sandbox, JavaScriptSandbox.JS_FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT))
+
+        // Isolate max heap size
+        Jp2kSandbox.disableIsolateMaxHeapSizeForTesting()
+        assertFalse(Jp2kSandbox.isFeatureSupported(sandbox, JavaScriptSandbox.JS_FEATURE_ISOLATE_MAX_HEAP_SIZE))
+        Jp2kSandbox.enableIsolateMaxHeapSizeForTesting()
+        assertTrue(Jp2kSandbox.isFeatureSupported(sandbox, JavaScriptSandbox.JS_FEATURE_ISOLATE_MAX_HEAP_SIZE))
+
+        // Console messaging
+        Jp2kSandbox.disableConsoleMessagingForTesting()
+        assertFalse(Jp2kSandbox.isFeatureSupported(sandbox, JavaScriptSandbox.JS_FEATURE_CONSOLE_MESSAGING))
+        Jp2kSandbox.enableConsoleMessagingForTesting()
+        assertTrue(Jp2kSandbox.isFeatureSupported(sandbox, JavaScriptSandbox.JS_FEATURE_CONSOLE_MESSAGING))
     }
 }

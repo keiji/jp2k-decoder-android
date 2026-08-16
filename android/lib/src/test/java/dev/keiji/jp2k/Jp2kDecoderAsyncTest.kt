@@ -17,6 +17,7 @@ import kotlinx.coroutines.test.setMain
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
@@ -95,11 +96,13 @@ class Jp2kDecoderAsyncTest {
 
     @After
     fun tearDown() {
+        JavaScriptEngineEnvironment.resetForTesting()
         mockJp2kSandbox.close()
         mockBitmapFactory.close()
     }
 
     private fun createInitializedDecoder(
+        config: Config = Config(),
         scriptHandler: (String) -> TestListenableFuture<String> = { TestListenableFuture(INTERNAL_RESULT_SUCCESS) }
     ): Jp2kDecoderAsync {
         doAnswer { invocation ->
@@ -108,7 +111,7 @@ class Jp2kDecoderAsyncTest {
         }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
 
         val directExecutor = Executor { it.run() }
-        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor)
+        val decoder = Jp2kDecoderAsync(config = config, backgroundExecutor = directExecutor)
         decoder.init(context, org.mockito.kotlin.mock<Callback<Unit>>())
         return decoder
     }
@@ -652,4 +655,198 @@ class Jp2kDecoderAsyncTest {
             assertEquals("JavaScriptEngine returned empty result - expected JSON", it.message)
         })
     }
+
+    @Test
+    fun testInputDataSizeExceedsMaxHeap_ThrowsException() {
+        val config = Config(maxHeapSizeBytes = 100L)
+        doAnswer { invocation ->
+            TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+        }.whenever(isolate).evaluateJavaScriptAsync(any<String>())
+
+        val directExecutor = Executor { it.run() }
+        val decoder = Jp2kDecoderAsync(backgroundExecutor = directExecutor, config = config)
+        decoder.init(context, org.mockito.kotlin.mock<Callback<Unit>>())
+
+        val oversizedData = ByteArray(150)
+        val decodeCallback = org.mockito.kotlin.mock<Callback<Bitmap>>()
+        decoder.decodeImage(oversizedData, decodeCallback)
+        verify(decodeCallback).onError(org.mockito.kotlin.check {
+            assert(it is Jp2kException)
+            assertEquals(Jp2kError.InputDataSize, (it as Jp2kException).error)
+        })
+
+        val precacheCallback = org.mockito.kotlin.mock<Callback<Unit>>()
+        decoder.precache(oversizedData, precacheCallback)
+        verify(precacheCallback).onError(org.mockito.kotlin.check {
+            assert(it is Jp2kException)
+            assertEquals(Jp2kError.InputDataSize, (it as Jp2kException).error)
+        })
+
+        val sizeCallback = org.mockito.kotlin.mock<Callback<Size>>()
+        decoder.getSize(oversizedData, sizeCallback)
+        verify(sizeCallback).onError(org.mockito.kotlin.check {
+            assert(it is Jp2kException)
+            assertEquals(Jp2kError.InputDataSize, (it as Jp2kException).error)
+        })
+    }
+
+    @Test
+    fun testChunkedInputOutput_WithoutTransactionLimitSupport() {
+        whenever(sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT)).thenReturn(false)
+        whenever(sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)).thenReturn(false)
+        whenever(sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_MESSAGE_PORTS)).thenReturn(false)
+
+        val chunkedResultJson = """{"outputSize": 8, "isChunked": true}"""
+        var appendChunkCalled = false
+        var getOutputChunkCalled = false
+        var clearOutputCalled = false
+
+        val decoder = createInitializedDecoder { script ->
+            when {
+                script.startsWith("globalThis.appendInputChunk") -> {
+                    appendChunkCalled = true
+                    TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+                }
+                script.startsWith("globalThis.clearInputChunks") -> {
+                    TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+                }
+                script.startsWith("globalThis.decodeJ2KFromChunks") -> {
+                    TestListenableFuture(chunkedResultJson)
+                }
+                script.startsWith("globalThis.getOutputChunk") -> {
+                    getOutputChunkCalled = true
+                    TestListenableFuture("AQIDBAUG")
+                }
+                script.startsWith("globalThis.clearOutput") -> {
+                    clearOutputCalled = true
+                    TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+                }
+                else -> TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        val data = ByteArray(20)
+        val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
+        decoder.decodeImage(data, callback)
+        verify(callback).onSuccess(any())
+        assertEquals(true, appendChunkCalled)
+        assertEquals(true, getOutputChunkCalled)
+        assertEquals(true, clearOutputCalled)
+    }
+
+    @Test
+    fun testGetSize_ChunkedInput_WithoutTransactionLimitSupport() {
+        whenever(sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT)).thenReturn(false)
+        whenever(sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)).thenReturn(false)
+        whenever(sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_MESSAGE_PORTS)).thenReturn(false)
+
+        val sizeJson = """{"width": 800, "height": 600}"""
+        var getSizeFromChunksCalled = false
+
+        val decoder = createInitializedDecoder { script ->
+            when {
+                script.startsWith("globalThis.appendInputChunk") -> {
+                    TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+                }
+                script.startsWith("globalThis.clearInputChunks") -> {
+                    TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+                }
+                script.startsWith("globalThis.getSizeFromChunks") -> {
+                    getSizeFromChunksCalled = true
+                    TestListenableFuture(sizeJson)
+                }
+                else -> TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        val data = ByteArray(20)
+        val callback = org.mockito.kotlin.mock<Callback<Size>>()
+        decoder.getSize(data, callback)
+        verify(callback).onSuccess(org.mockito.kotlin.check {
+            assertEquals(800, it.width)
+            assertEquals(600, it.height)
+        })
+        assertEquals(true, getSizeFromChunksCalled)
+    }
+
+    @Test
+    fun testChunkedInput_SmallBinderChunkSize_SplitsIntoMultipleChunks() {
+        whenever(sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT)).thenReturn(false)
+        whenever(sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)).thenReturn(false)
+        whenever(sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_MESSAGE_PORTS)).thenReturn(false)
+
+        val appendChunkCalls = mutableListOf<String>()
+        val decoder = createInitializedDecoder(
+            config = Config(binderTransactionMaxChunkSizeBytes = 8, preferDirectBinaryTransfer = false),
+        ) { script ->
+            when {
+                script.startsWith("globalThis.appendInputChunk") -> {
+                    appendChunkCalls.add(script)
+                    TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+                }
+                script.startsWith("globalThis.clearInputChunks") -> {
+                    TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+                }
+                script.startsWith("globalThis.decodeJ2KFromChunks") -> {
+                    TestListenableFuture("""{"bmp": "AQIDBAUG"}""")
+                }
+                else -> TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        val data = ByteArray(30)
+        val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
+        decoder.decodeImage(data, callback)
+        verify(callback).onSuccess(any())
+        assertTrue(appendChunkCalls.size > 1)
+    }
+
+    @Test
+    fun testDecodeImage_StrictWasmMaxMemory_CallsOnError() {
+        val decoder = createInitializedDecoder(
+            config = Config(wasmMaxMemoryBytes = 10L),
+        )
+
+        val data = ByteArray(20)
+        val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
+        decoder.decodeImage(data, callback)
+        verify(callback).onError(org.mockito.kotlin.check {
+            assertTrue(it is Jp2kException)
+            assertEquals(Jp2kError.InputDataSize, (it as Jp2kException).error)
+        })
+    }
+
+    @Test
+    fun testDisableFeatureViaEnvironment_WithoutTransactionLimit() {
+        whenever(sandbox.isFeatureSupported(any<String>())).thenReturn(true)
+        JavaScriptEngineEnvironment.disableFeatureForTesting(JavaScriptSandbox.JS_FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT)
+        JavaScriptEngineEnvironment.disableFeatureForTesting(JavaScriptSandbox.JS_FEATURE_MESSAGE_PORTS)
+        JavaScriptEngineEnvironment.disableFeatureForTesting(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)
+
+        var appendChunkCalled = false
+        val decoder = createInitializedDecoder(
+            config = Config(preferDirectBinaryTransfer = false),
+        ) { script ->
+            when {
+                script.startsWith("globalThis.appendInputChunk") -> {
+                    appendChunkCalled = true
+                    TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+                }
+                script.startsWith("globalThis.clearInputChunks") -> {
+                    TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+                }
+                script.startsWith("globalThis.decodeJ2KFromChunks") -> {
+                    TestListenableFuture("""{"bmp": "AQIDBAUG"}""")
+                }
+                else -> TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        val data = ByteArray(20)
+        val callback = org.mockito.kotlin.mock<Callback<Bitmap>>()
+        decoder.decodeImage(data, callback)
+        verify(callback).onSuccess(any())
+        assertTrue(appendChunkCalled)
+    }
 }
+

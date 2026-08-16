@@ -4,6 +4,7 @@ package dev.keiji.jp2k.datachannel
 
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
+import dev.keiji.jp2k.JavaScriptEngineEnvironment
 
 /**
  * Default string-based data channel used as fallback or initial channel.
@@ -181,9 +182,9 @@ internal fun createDataChannel(
     sandbox: JavaScriptSandbox,
     preferDirectBinaryTransfer: Boolean = true,
 ): JSDataChannel {
-    val isMessagePortsSupported = sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_MESSAGE_PORTS)
+    val isMessagePortsSupported = JavaScriptEngineEnvironment.isFeatureSupported(sandbox, JavaScriptSandbox.JS_FEATURE_MESSAGE_PORTS)
     val isProvideConsumeArrayBufferSupported =
-        sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)
+        JavaScriptEngineEnvironment.isFeatureSupported(sandbox, JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)
 
     val channel = when {
         preferDirectBinaryTransfer && isMessagePortsSupported -> {

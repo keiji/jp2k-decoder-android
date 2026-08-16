@@ -1,7 +1,9 @@
 package dev.keiji.jp2k
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import androidx.javascriptengine.IsolateStartupParameters
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
@@ -42,6 +44,7 @@ object Jp2kSandbox {
      * @param maxEvaluationReturnSizeBytes The maximum return size for evaluation (if supported).
      * @return A new [JavaScriptIsolate] instance.
      */
+    @SuppressLint("RequiresFeature")
     @JvmStatic
     fun createIsolate(
         sandbox: JavaScriptSandbox,
@@ -49,10 +52,10 @@ object Jp2kSandbox {
         maxEvaluationReturnSizeBytes: Int,
     ): JavaScriptIsolate {
         val params = IsolateStartupParameters()
-        if (sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_ISOLATE_MAX_HEAP_SIZE)) {
+        if (JavaScriptEngineEnvironment.isFeatureSupported(sandbox, JavaScriptSandbox.JS_FEATURE_ISOLATE_MAX_HEAP_SIZE)) {
             params.maxHeapSizeBytes = maxHeapSizeBytes
         }
-        if (sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT)) {
+        if (JavaScriptEngineEnvironment.isFeatureSupported(sandbox, JavaScriptSandbox.JS_FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT)) {
             params.maxEvaluationReturnSizeBytes = maxEvaluationReturnSizeBytes
         }
         return sandbox.createIsolate(params)
@@ -66,17 +69,151 @@ object Jp2kSandbox {
      * @param executor The executor on which the callback will be invoked.
      * @param tag The tag to use for logging.
      */
+    @SuppressLint("RequiresFeature")
     @JvmStatic
     fun setupConsoleCallback(
         isolate: JavaScriptIsolate,
         sandbox: JavaScriptSandbox,
         executor: Executor,
-        tag: String
+        tag: String,
     ) {
-        if (sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_CONSOLE_MESSAGING)) {
+        if (JavaScriptEngineEnvironment.isFeatureSupported(sandbox, JavaScriptSandbox.JS_FEATURE_CONSOLE_MESSAGING)) {
             isolate.setConsoleCallback(executor) { consoleMessage ->
                 Log.v(tag, consoleMessage.message)
             }
         }
+    }
+
+    /**
+     * Checks whether the specified [feature] is supported by the provided [sandbox] in the current environment.
+     *
+     * @param sandbox The [JavaScriptSandbox] instance.
+     * @param feature The feature name constant.
+     * @return `true` if supported; `false` otherwise.
+     */
+    @JvmStatic
+    fun isFeatureSupported(sandbox: JavaScriptSandbox, feature: String): Boolean {
+        return JavaScriptEngineEnvironment.isFeatureSupported(sandbox, feature)
+    }
+
+    /**
+     * Disables the specified [feature] for testing purposes.
+     *
+     * @param feature The feature name constant.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun disableFeatureForTesting(feature: String) {
+        JavaScriptEngineEnvironment.disableFeatureForTesting(feature)
+    }
+
+    /**
+     * Disables the Message Ports feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun disableMessagePortsForTesting() {
+        JavaScriptEngineEnvironment.disableMessagePortsForTesting()
+    }
+
+    /**
+     * Disables the direct binary transfer (provide/consume array buffer) feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun disableProvideConsumeArrayBufferForTesting() {
+        JavaScriptEngineEnvironment.disableProvideConsumeArrayBufferForTesting()
+    }
+
+    /**
+     * Disables the evaluation without transaction limit feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun disableEvaluateWithoutTransactionLimitForTesting() {
+        JavaScriptEngineEnvironment.disableEvaluateWithoutTransactionLimitForTesting()
+    }
+
+    /**
+     * Disables the isolate max heap size configuration feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun disableIsolateMaxHeapSizeForTesting() {
+        JavaScriptEngineEnvironment.disableIsolateMaxHeapSizeForTesting()
+    }
+
+    /**
+     * Disables the console messaging callback feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun disableConsoleMessagingForTesting() {
+        JavaScriptEngineEnvironment.disableConsoleMessagingForTesting()
+    }
+
+    /**
+     * Enables a previously disabled [feature] for testing purposes.
+     *
+     * @param feature The feature name constant.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun enableFeatureForTesting(feature: String) {
+        JavaScriptEngineEnvironment.enableFeatureForTesting(feature)
+    }
+
+    /**
+     * Enables the Message Ports feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun enableMessagePortsForTesting() {
+        JavaScriptEngineEnvironment.enableMessagePortsForTesting()
+    }
+
+    /**
+     * Enables the direct binary transfer (provide/consume array buffer) feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun enableProvideConsumeArrayBufferForTesting() {
+        JavaScriptEngineEnvironment.enableProvideConsumeArrayBufferForTesting()
+    }
+
+    /**
+     * Enables the evaluation without transaction limit feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun enableEvaluateWithoutTransactionLimitForTesting() {
+        JavaScriptEngineEnvironment.enableEvaluateWithoutTransactionLimitForTesting()
+    }
+
+    /**
+     * Enables the isolate max heap size configuration feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun enableIsolateMaxHeapSizeForTesting() {
+        JavaScriptEngineEnvironment.enableIsolateMaxHeapSizeForTesting()
+    }
+
+    /**
+     * Enables the console messaging callback feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun enableConsoleMessagingForTesting() {
+        JavaScriptEngineEnvironment.enableConsoleMessagingForTesting()
+    }
+
+    /**
+     * Resets all test feature overrides.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun resetFeaturesForTesting() {
+        JavaScriptEngineEnvironment.resetForTesting()
     }
 }
