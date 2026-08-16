@@ -140,8 +140,19 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
                     const bmpSize = view.getUint32(bmpPtr + 2, true);
 
                     const bmpBuffer = new Uint8Array(exports.memory.buffer, bmpPtr, bmpSize);
-                    const encodeFn = globalThis.encodePayload || globalThis.bytesToBase64;
-                    const base64String = encodeFn(bmpBuffer);
+                    let base64String = "";
+                    let base64EncodeTime = 0;
+                    if (typeof globalThis.outputMessagePort !== 'undefined' && globalThis.outputMessagePort) {
+                        const bufferCopy = new Uint8Array(bmpBuffer).slice().buffer;
+                        globalThis.outputMessagePort.postMessage(bufferCopy);
+                    } else {
+                        const encodeStart = measureTimes ? now() : 0;
+                        const encodeFn = globalThis.encodePayload || globalThis.bytesToBase64;
+                        base64String = encodeFn(bmpBuffer);
+                        if (measureTimes) {
+                            base64EncodeTime = now() - encodeStart;
+                        }
+                    }
 
                     exports.free(bmpPtr);
                     exports.free(inputPtr);
@@ -161,7 +172,7 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
                         result.timePreProcess = timeAfterPreProcess - timeStart;
                         result.timeWasm = timeAfterDecode - timeAfterPreProcess;
                         result.timePostProcess = timeAfterPostProcess - timeAfterDecode;
-                        result.timeBase64Encode = timeAfterPostProcess - timeAfterDecode;
+                        result.timeBase64Encode = base64EncodeTime;
                         result.wasmHeapSizeBytes = (exports && exports.memory && exports.memory.buffer) ? exports.memory.buffer.byteLength : 0;
                     }
 
@@ -316,5 +327,43 @@ globalThis.transferFromProvidedNamedData = async function(key) {
     const provided = await android.consumeNamedDataAsArrayBuffer(key);
     if (provided === undefined || provided === null) return null;
     return provided.byteLength > 0 ? new Uint8Array(provided) : new Uint8Array(0);
+};
+"""
+
+internal const val SCRIPT_INIT_MESSAGE_PORT = """
+globalThis.bufferedBinaryInput = [];
+globalThis.binaryInputResolvers = [];
+
+globalThis.receiveBinaryMessage = function() {
+    if (globalThis.bufferedBinaryInput && globalThis.bufferedBinaryInput.length > 0) {
+        return Promise.resolve(globalThis.bufferedBinaryInput.shift());
+    }
+    return new Promise((resolve) => {
+        if (!globalThis.binaryInputResolvers) {
+            globalThis.binaryInputResolvers = [];
+        }
+        globalThis.binaryInputResolvers.push(resolve);
+    });
+};
+
+globalThis.initMessagePort = async function() {
+    if (typeof android !== 'undefined' && typeof android.getNamedPort === 'function') {
+        try {
+            const port = await android.getNamedPort('jp2k_binary_port');
+            globalThis.outputMessagePort = port;
+            port.onmessage = (event) => {
+                const data = new Uint8Array(event.data);
+                if (globalThis.binaryInputResolvers && globalThis.binaryInputResolvers.length > 0) {
+                    const resolve = globalThis.binaryInputResolvers.shift();
+                    resolve(data);
+                } else {
+                    if (!globalThis.bufferedBinaryInput) {
+                        globalThis.bufferedBinaryInput = [];
+                    }
+                    globalThis.bufferedBinaryInput.push(data);
+                }
+            };
+        } catch (e) {}
+    }
 };
 """

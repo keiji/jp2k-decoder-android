@@ -103,6 +103,8 @@ class Jp2kDecoder(
                 Jp2kSandbox.setupConsoleCallback(isolate, sandbox, mainExecutor, TAG)
             }
 
+            dataChannel.setupIsolate(isolate, mainExecutor)
+
             if (_state == State.Released || _state == State.Releasing) {
                 isolate.close()
                 throw CancellationException("Jp2kDecoder was released during initialization.")
@@ -135,20 +137,42 @@ class Jp2kDecoder(
             log(Log.INFO) { "DataChannel: ${dataChannel.name}" }
             log(Log.INFO) { "Input binary length: ${wasmBytes.size}" }
 
+            // Stage 1: Initialize JavaScript environment, helper functions, and establish data channel.
+            // When using MessagePort, messages sent before the JavaScript onmessage handler is attached
+            // will be silently dropped by Android JavaScriptEngine.
+            // Therefore, we evaluate the channel's setup script and await its initialization expression first.
+            val setupScript = """
+                ${dataChannel.jsConverterScript}
+                ${dataChannel.jsSetupScript}
+                $SCRIPT_DEFINE_SET_DATA_LOCAL
+                $SCRIPT_IMPORT_OBJECT_LOCAL
+
+                (async () => {
+                    ${dataChannel.jsInitExpression}
+                    return "$INTERNAL_RESULT_SUCCESS";
+                })();
+            """.trimIndent()
+
+            val setupResultFuture = isolate.evaluateJavaScriptAsync(setupScript)
+            try {
+                val setupResult = setupResultFuture.await()
+                if (setupResult != INTERNAL_RESULT_SUCCESS) {
+                    ensureNotEmpty(setupResult, "Success indicator")
+                    throw IllegalStateException("WASM instantiation failed.")
+                }
+            } catch (e: ExecutionException) {
+                throw e.cause ?: e
+            }
+
+            // Stage 2: Transmit WASM binary and instantiate the WebAssembly module.
             val wasmExpression = dataChannel.getWasmExpression(isolate, wasmBytes)
             log(Log.INFO) { "WASM expression: $wasmExpression" }
 
-            val script = """
-                ${dataChannel.jsConverterScript}
-                $SCRIPT_TRANSFER_FROM_PROVIDED_NAMED_DATA_LOCAL
-                $SCRIPT_DEFINE_SET_DATA_LOCAL
-
+            val instantiateScript = """
                 var wasmInstance;
 
                 (async () => {
                     const wasmBuffer = await $wasmExpression;
-
-                    $SCRIPT_IMPORT_OBJECT_LOCAL
 
                     const res = await WebAssembly.instantiate(wasmBuffer, importObject);
                     wasmInstance = res.instance;
@@ -160,7 +184,7 @@ class Jp2kDecoder(
                 })();
             """.trimIndent()
 
-            val resultFuture = isolate.evaluateJavaScriptAsync(script)
+            val resultFuture = isolate.evaluateJavaScriptAsync(instantiateScript)
             try {
                 val result = resultFuture.await()
                 if (result != INTERNAL_RESULT_SUCCESS) {
@@ -555,6 +579,8 @@ class Jp2kDecoder(
         }
         _state = State.Processing
 
+        dataChannel.prepareForDecode()
+
         val start = System.currentTimeMillis()
 
         return try {
@@ -592,11 +618,13 @@ class Jp2kDecoder(
                 }
 
                 val bmpBase64 = root.getString("bmp")
-                log(Log.INFO) { "Output encoded content length: ${bmpBase64.length} chars" }
-                log(Log.INFO) { "Output encoded content (64 chars per line):\n${bmpBase64.chunked64()}" }
+                if (dataChannel.isStringMediated) {
+                    log(Log.INFO) { "Output encoded content length: ${bmpBase64.length} chars" }
+                    log(Log.INFO) { "Output encoded content (64 chars per line):\n${bmpBase64.chunked64()}" }
+                }
 
                 val kotlinDecodeStart = System.nanoTime()
-                val bmpBytes = dataChannel.decodePayload(bmpBase64)
+                val bmpBytes = dataChannel.retrieveDecodedBytes(bmpBase64)
 
                 val options = BitmapFactory.Options().apply {
                     inPreferredConfig = when (colorFormat) {
@@ -790,6 +818,5 @@ class Jp2kDecoder(
         private const val SCRIPT_IMPORT_OBJECT_LOCAL = SCRIPT_IMPORT_OBJECT
         private val SCRIPT_DEFINE_DECODE_J2K_LOCAL = SCRIPT_DEFINE_DECODE_J2K
         private val SCRIPT_DEFINE_GET_SIZE_LOCAL = SCRIPT_DEFINE_GET_SIZE
-        private const val SCRIPT_TRANSFER_FROM_PROVIDED_NAMED_DATA_LOCAL = SCRIPT_TRANSFER_FROM_PROVIDED_NAMED_DATA
     }
 }

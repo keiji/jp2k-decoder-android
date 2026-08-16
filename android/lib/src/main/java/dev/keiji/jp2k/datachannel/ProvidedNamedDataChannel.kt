@@ -95,6 +95,9 @@ internal class ProvidedNamedDataChannel : JSDataChannel {
     override val jsConverterScript: String
         get() = fallbackChannel.jsConverterScript
 
+    override val jsSetupScript: String
+        get() = dev.keiji.jp2k.SCRIPT_TRANSFER_FROM_PROVIDED_NAMED_DATA
+
     override val jsEncodeFunctionName: String
         get() = fallbackChannel.jsEncodeFunctionName
 

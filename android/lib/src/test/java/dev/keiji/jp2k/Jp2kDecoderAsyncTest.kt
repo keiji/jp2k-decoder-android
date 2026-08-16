@@ -133,7 +133,7 @@ class Jp2kDecoderAsyncTest {
         val callbackPrecache = org.mockito.kotlin.mock<Callback<Unit>>()
         decoder.precache(data, callbackPrecache)
 
-        verify(isolate, Mockito.atLeastOnce()).evaluateJavaScriptAsync(contains("transferFromProvidedNamedData('$PROVIDED_J2K_DATA')"))
+        verify(isolate, Mockito.atLeastOnce()).evaluateJavaScriptAsync(contains("globalThis.j2kData"))
         verify(callbackPrecache).onSuccess(any())
     }
 
