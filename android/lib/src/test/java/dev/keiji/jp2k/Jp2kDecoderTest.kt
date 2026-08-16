@@ -127,7 +127,7 @@ class Jp2kDecoderTest {
         decoder.precache(data)
 
         // Verify setData was called
-        verify(isolate, Mockito.atLeastOnce()).evaluateJavaScriptAsync(contains("transferFromProvidedNamedData('$PROVIDED_J2K_DATA')"))
+        verify(isolate, Mockito.atLeastOnce()).evaluateJavaScriptAsync(contains("globalThis.j2kData"))
     }
 
     @Test

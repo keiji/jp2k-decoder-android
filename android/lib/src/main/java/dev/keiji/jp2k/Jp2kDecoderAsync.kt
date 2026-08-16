@@ -152,21 +152,42 @@ class Jp2kDecoderAsync(
         log(Log.INFO) { "DataChannel: ${dataChannel.name}" }
         log(Log.INFO) { "Input binary length: ${wasmBytes.size}" }
 
+        // Stage 1: Initialize JavaScript environment, helper functions, and establish data channel.
+        // When using MessagePort, messages sent before the JavaScript onmessage handler is attached
+        // will be silently dropped by Android JavaScriptEngine.
+        // Therefore, we evaluate the channel's setup script and await its initialization expression first.
+        val setupScript = """
+            ${dataChannel.jsConverterScript}
+            ${dataChannel.jsSetupScript}
+            $SCRIPT_DEFINE_SET_DATA
+            $SCRIPT_IMPORT_OBJECT
+
+            (async () => {
+                ${dataChannel.jsInitExpression}
+                return "$INTERNAL_RESULT_SUCCESS";
+            })();
+        """.trimIndent()
+
+        val setupResultFuture = isolate.evaluateJavaScriptAsync(setupScript)
+        try {
+            val setupResult = setupResultFuture.get()
+            if (setupResult != INTERNAL_RESULT_SUCCESS) {
+                ensureNotEmpty(setupResult, "Success indicator")
+                throw IllegalStateException("WASM instantiation failed.")
+            }
+        } catch (e: ExecutionException) {
+            throw e.cause ?: e
+        }
+
+        // Stage 2: Transmit WASM binary and instantiate the WebAssembly module.
         val wasmExpression = dataChannel.getWasmExpression(isolate, wasmBytes)
         log(Log.INFO) { "WASM expression: $wasmExpression" }
 
-        val script = """
-            ${dataChannel.jsConverterScript}
-            $SCRIPT_TRANSFER_FROM_PROVIDED_NAMED_DATA
-            $SCRIPT_DEFINE_SET_DATA
-            $SCRIPT_INIT_MESSAGE_PORT
-
+        val instantiateScript = """
             var wasmInstance;
 
             (async () => {
                 const wasmBuffer = await $wasmExpression;
-
-                $SCRIPT_IMPORT_OBJECT
 
                 const res = await WebAssembly.instantiate(wasmBuffer, importObject);
                 wasmInstance = res.instance;
@@ -178,19 +199,19 @@ class Jp2kDecoderAsync(
             })();
         """.trimIndent()
 
-         // evaluateJavaScriptAsync returns a ListenableFuture.
-         // We must wait for it synchronously on this background thread
-        val resultFuture = isolate.evaluateJavaScriptAsync(script)
+        // evaluateJavaScriptAsync returns a ListenableFuture.
+        // We must wait for it synchronously on this background thread
+        val resultFuture = isolate.evaluateJavaScriptAsync(instantiateScript)
 
         try {
             val result = resultFuture.get()
             if (result != INTERNAL_RESULT_SUCCESS) {
                 ensureNotEmpty(result, "Success indicator")
                 throw IllegalStateException("WASM instantiation failed.")
-             }
-         } catch (e: ExecutionException) {
+            }
+        } catch (e: ExecutionException) {
             throw e.cause ?: e
-         }
+        }
       }
 
      /**
@@ -768,11 +789,13 @@ class Jp2kDecoderAsync(
                      }
 
                     val bmpBase64 = root.getString("bmp")
-                    log(Log.INFO) { "Output encoded content length: ${bmpBase64.length} chars" }
-                    log(Log.INFO) { "Output encoded content (64 chars per line):\n${bmpBase64.chunked64()}" }
+                    if (dataChannel.isStringMediated) {
+                        log(Log.INFO) { "Output encoded content length: ${bmpBase64.length} chars" }
+                        log(Log.INFO) { "Output encoded content (64 chars per line):\n${bmpBase64.chunked64()}" }
+                    }
 
                     val kotlinDecodeStart = System.nanoTime()
-                    val bmpBytes = dataChannel.decodePayload(bmpBase64)
+                    val bmpBytes = dataChannel.retrieveDecodedBytes(bmpBase64)
 
                     val options = BitmapFactory.Options().apply {
                         inPreferredConfig = when (colorFormat) {

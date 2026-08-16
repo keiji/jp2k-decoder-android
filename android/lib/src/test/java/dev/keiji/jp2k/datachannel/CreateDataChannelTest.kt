@@ -19,6 +19,16 @@ class CreateDataChannelTest {
     }
 
     @Test
+    fun messagePortSupported_evenIfProvideUnsupported_returnsMessagePortDataChannel() {
+        val sandbox = mock<JavaScriptSandbox>()
+        whenever(sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_MESSAGE_PORTS)).thenReturn(true)
+        whenever(sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)).thenReturn(false)
+
+        val channel = createDataChannel(sandbox, preferDirectBinaryTransfer = true)
+        assertEquals(MessagePortDataChannel::class.java, channel.javaClass)
+    }
+
+    @Test
     fun messagePortUnsupported_provideSupported_and_preferTrue_returnsProvidedNamedDataChannel() {
         val sandbox = mock<JavaScriptSandbox>()
         whenever(sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_MESSAGE_PORTS)).thenReturn(false)
