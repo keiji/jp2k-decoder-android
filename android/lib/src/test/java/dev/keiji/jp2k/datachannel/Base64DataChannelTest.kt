@@ -27,6 +27,8 @@ class Base64DataChannelTest {
         assertEquals("base64ToBytes", channel.jsDecodeFunctionName)
         assertTrue(channel.jsConverterScript.contains("bytesToBase64"))
         assertTrue(channel.jsConverterScript.contains("base64ToBytes"))
+        assertTrue(channel.jsConverterScript.contains("toBase64()"))
+        assertTrue(channel.jsConverterScript.contains("Uint8Array.fromBase64"))
     }
 
     @Test

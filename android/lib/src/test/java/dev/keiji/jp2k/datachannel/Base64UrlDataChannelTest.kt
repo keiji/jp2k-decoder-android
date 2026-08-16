@@ -28,6 +28,9 @@ class Base64UrlDataChannelTest {
         assertEquals("base64UrlToBytes", channel.jsDecodeFunctionName)
         assertTrue(channel.jsConverterScript.contains("bytesToBase64Url"))
         assertTrue(channel.jsConverterScript.contains("base64UrlToBytes"))
+        assertTrue(channel.jsConverterScript.contains("toBase64"))
+        assertTrue(channel.jsConverterScript.contains("Uint8Array.fromBase64"))
+        assertTrue(channel.jsConverterScript.contains("base64url"))
     }
 
     @Test
