@@ -11,6 +11,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 
@@ -35,6 +36,47 @@ class JavaScriptEngineEnvironmentTest {
         assertEquals(4L * 1024 * 1024 * 1024L, JavaScriptEngineEnvironment.DEFAULT_WASM_MAX_MEMORY_BYTES)
         assertEquals(JavaScriptEngineEnvironment.DEFAULT_BINDER_TRANSACTION_MAX_CHUNK_SIZE_BYTES, JavaScriptEngineEnvironment.binderTransactionMaxChunkSizeBytes)
         assertEquals(JavaScriptEngineEnvironment.DEFAULT_WASM_MAX_MEMORY_BYTES, JavaScriptEngineEnvironment.wasmMaxMemoryBytes)
+
+        assertEquals(JavaScriptSandbox.JS_FEATURE_MESSAGE_PORTS, JavaScriptEngineEnvironment.FEATURE_MESSAGE_PORTS)
+        assertEquals(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER, JavaScriptEngineEnvironment.FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)
+        assertEquals(JavaScriptSandbox.JS_FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT, JavaScriptEngineEnvironment.FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT)
+        assertEquals(JavaScriptSandbox.JS_FEATURE_ISOLATE_MAX_HEAP_SIZE, JavaScriptEngineEnvironment.FEATURE_ISOLATE_MAX_HEAP_SIZE)
+        assertEquals(JavaScriptSandbox.JS_FEATURE_CONSOLE_MESSAGING, JavaScriptEngineEnvironment.FEATURE_CONSOLE_MESSAGING)
+    }
+
+    @Test
+    fun testDedicatedHelperMethods() {
+        whenever(sandbox.isFeatureSupported(any<String>())).thenReturn(true)
+
+        // Message ports
+        JavaScriptEngineEnvironment.disableMessagePortsForTesting()
+        assertFalse(JavaScriptEngineEnvironment.isFeatureSupported(sandbox, JavaScriptEngineEnvironment.FEATURE_MESSAGE_PORTS))
+        JavaScriptEngineEnvironment.enableMessagePortsForTesting()
+        assertTrue(JavaScriptEngineEnvironment.isFeatureSupported(sandbox, JavaScriptEngineEnvironment.FEATURE_MESSAGE_PORTS))
+
+        // Provide consume array buffer
+        JavaScriptEngineEnvironment.disableProvideConsumeArrayBufferForTesting()
+        assertFalse(JavaScriptEngineEnvironment.isFeatureSupported(sandbox, JavaScriptEngineEnvironment.FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER))
+        JavaScriptEngineEnvironment.enableProvideConsumeArrayBufferForTesting()
+        assertTrue(JavaScriptEngineEnvironment.isFeatureSupported(sandbox, JavaScriptEngineEnvironment.FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER))
+
+        // Evaluate without transaction limit
+        JavaScriptEngineEnvironment.disableEvaluateWithoutTransactionLimitForTesting()
+        assertFalse(JavaScriptEngineEnvironment.isFeatureSupported(sandbox, JavaScriptEngineEnvironment.FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT))
+        JavaScriptEngineEnvironment.enableEvaluateWithoutTransactionLimitForTesting()
+        assertTrue(JavaScriptEngineEnvironment.isFeatureSupported(sandbox, JavaScriptEngineEnvironment.FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT))
+
+        // Isolate max heap size
+        JavaScriptEngineEnvironment.disableIsolateMaxHeapSizeForTesting()
+        assertFalse(JavaScriptEngineEnvironment.isFeatureSupported(sandbox, JavaScriptEngineEnvironment.FEATURE_ISOLATE_MAX_HEAP_SIZE))
+        JavaScriptEngineEnvironment.enableIsolateMaxHeapSizeForTesting()
+        assertTrue(JavaScriptEngineEnvironment.isFeatureSupported(sandbox, JavaScriptEngineEnvironment.FEATURE_ISOLATE_MAX_HEAP_SIZE))
+
+        // Console messaging
+        JavaScriptEngineEnvironment.disableConsoleMessagingForTesting()
+        assertFalse(JavaScriptEngineEnvironment.isFeatureSupported(sandbox, JavaScriptEngineEnvironment.FEATURE_CONSOLE_MESSAGING))
+        JavaScriptEngineEnvironment.enableConsoleMessagingForTesting()
+        assertTrue(JavaScriptEngineEnvironment.isFeatureSupported(sandbox, JavaScriptEngineEnvironment.FEATURE_CONSOLE_MESSAGING))
     }
 
     @Test

@@ -13,6 +13,31 @@ import androidx.javascriptengine.JavaScriptSandbox
 object JavaScriptEngineEnvironment {
 
     /**
+     * Feature flag constant for Message Ports support.
+     */
+    const val FEATURE_MESSAGE_PORTS: String = JavaScriptSandbox.JS_FEATURE_MESSAGE_PORTS
+
+    /**
+     * Feature flag constant for direct binary transfer (provide/consume array buffer) support.
+     */
+    const val FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER: String = JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER
+
+    /**
+     * Feature flag constant for evaluating JavaScript without IPC transaction size limits.
+     */
+    const val FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT: String = JavaScriptSandbox.JS_FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT
+
+    /**
+     * Feature flag constant for configuring maximum isolate heap size.
+     */
+    const val FEATURE_ISOLATE_MAX_HEAP_SIZE: String = JavaScriptSandbox.JS_FEATURE_ISOLATE_MAX_HEAP_SIZE
+
+    /**
+     * Feature flag constant for console messaging callbacks.
+     */
+    const val FEATURE_CONSOLE_MESSAGING: String = JavaScriptSandbox.JS_FEATURE_CONSOLE_MESSAGING
+
+    /**
      * Default maximum chunk size in bytes / characters for safe transfer across Android Binder transactions.
      * 256KB: Safely below the 1MB shared Binder buffer limit.
      */
@@ -71,6 +96,41 @@ object JavaScriptEngineEnvironment {
     }
 
     /**
+     * Disables the Message Ports feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun disableMessagePortsForTesting() = disableFeatureForTesting(FEATURE_MESSAGE_PORTS)
+
+    /**
+     * Disables the direct binary transfer (provide/consume array buffer) feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun disableProvideConsumeArrayBufferForTesting() = disableFeatureForTesting(FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)
+
+    /**
+     * Disables the evaluation without transaction limit feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun disableEvaluateWithoutTransactionLimitForTesting() = disableFeatureForTesting(FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT)
+
+    /**
+     * Disables the isolate max heap size configuration feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun disableIsolateMaxHeapSizeForTesting() = disableFeatureForTesting(FEATURE_ISOLATE_MAX_HEAP_SIZE)
+
+    /**
+     * Disables the console messaging callback feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun disableConsoleMessagingForTesting() = disableFeatureForTesting(FEATURE_CONSOLE_MESSAGING)
+
+    /**
      * Enables a previously disabled [feature] for testing purposes.
      *
      * @param feature The feature name constant to re-enable.
@@ -82,6 +142,41 @@ object JavaScriptEngineEnvironment {
             disabledFeatures.remove(feature)
         }
     }
+
+    /**
+     * Enables the Message Ports feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun enableMessagePortsForTesting() = enableFeatureForTesting(FEATURE_MESSAGE_PORTS)
+
+    /**
+     * Enables the direct binary transfer (provide/consume array buffer) feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun enableProvideConsumeArrayBufferForTesting() = enableFeatureForTesting(FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)
+
+    /**
+     * Enables the evaluation without transaction limit feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun enableEvaluateWithoutTransactionLimitForTesting() = enableFeatureForTesting(FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT)
+
+    /**
+     * Enables the isolate max heap size configuration feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun enableIsolateMaxHeapSizeForTesting() = enableFeatureForTesting(FEATURE_ISOLATE_MAX_HEAP_SIZE)
+
+    /**
+     * Enables the console messaging callback feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun enableConsoleMessagingForTesting() = enableFeatureForTesting(FEATURE_CONSOLE_MESSAGING)
 
     /**
      * Checks if the specified [feature] is currently marked as disabled for testing.

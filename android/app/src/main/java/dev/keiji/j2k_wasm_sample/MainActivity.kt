@@ -3,6 +3,7 @@ package dev.keiji.j2k_wasm_sample
 import android.graphics.Bitmap
 import android.os.Bundle
 import android.util.Log
+import android.webkit.JavascriptInterface
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -30,6 +31,7 @@ import dev.keiji.jp2k.MemoryUsage
 import dev.keiji.jp2k.Size
 import dev.keiji.j2k_wasm_sample.ui.theme.J2kwasmsampleTheme
 import dev.keiji.jp2k.Config
+import dev.keiji.jp2k.JavaScriptEngineEnvironment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -52,6 +54,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         enableEdgeToEdge()
+
+        JavaScriptEngineEnvironment.disableMessagePortsForTesting()
+        JavaScriptEngineEnvironment.disableEvaluateWithoutTransactionLimitForTesting()
+        JavaScriptEngineEnvironment.disableProvideConsumeArrayBufferForTesting()
 
         setContent {
             J2kwasmsampleTheme {

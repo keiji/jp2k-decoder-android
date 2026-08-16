@@ -108,6 +108,51 @@ object Jp2kSandbox {
     }
 
     /**
+     * Disables the Message Ports feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun disableMessagePortsForTesting() {
+        JavaScriptEngineEnvironment.disableMessagePortsForTesting()
+    }
+
+    /**
+     * Disables the direct binary transfer (provide/consume array buffer) feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun disableProvideConsumeArrayBufferForTesting() {
+        JavaScriptEngineEnvironment.disableProvideConsumeArrayBufferForTesting()
+    }
+
+    /**
+     * Disables the evaluation without transaction limit feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun disableEvaluateWithoutTransactionLimitForTesting() {
+        JavaScriptEngineEnvironment.disableEvaluateWithoutTransactionLimitForTesting()
+    }
+
+    /**
+     * Disables the isolate max heap size configuration feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun disableIsolateMaxHeapSizeForTesting() {
+        JavaScriptEngineEnvironment.disableIsolateMaxHeapSizeForTesting()
+    }
+
+    /**
+     * Disables the console messaging callback feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun disableConsoleMessagingForTesting() {
+        JavaScriptEngineEnvironment.disableConsoleMessagingForTesting()
+    }
+
+    /**
      * Enables a previously disabled [feature] for testing purposes.
      *
      * @param feature The feature name constant.
@@ -116,6 +161,51 @@ object Jp2kSandbox {
     @JvmStatic
     fun enableFeatureForTesting(feature: String) {
         JavaScriptEngineEnvironment.enableFeatureForTesting(feature)
+    }
+
+    /**
+     * Enables the Message Ports feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun enableMessagePortsForTesting() {
+        JavaScriptEngineEnvironment.enableMessagePortsForTesting()
+    }
+
+    /**
+     * Enables the direct binary transfer (provide/consume array buffer) feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun enableProvideConsumeArrayBufferForTesting() {
+        JavaScriptEngineEnvironment.enableProvideConsumeArrayBufferForTesting()
+    }
+
+    /**
+     * Enables the evaluation without transaction limit feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun enableEvaluateWithoutTransactionLimitForTesting() {
+        JavaScriptEngineEnvironment.enableEvaluateWithoutTransactionLimitForTesting()
+    }
+
+    /**
+     * Enables the isolate max heap size configuration feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun enableIsolateMaxHeapSizeForTesting() {
+        JavaScriptEngineEnvironment.enableIsolateMaxHeapSizeForTesting()
+    }
+
+    /**
+     * Enables the console messaging callback feature for testing purposes.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun enableConsoleMessagingForTesting() {
+        JavaScriptEngineEnvironment.enableConsoleMessagingForTesting()
     }
 
     /**
