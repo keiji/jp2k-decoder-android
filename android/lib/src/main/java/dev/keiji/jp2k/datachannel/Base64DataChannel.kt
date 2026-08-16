@@ -6,20 +6,71 @@ import dev.keiji.jp2k.INTERNAL_RESULT_SUCCESS
 import java.util.Base64
 
 private const val SCRIPT_CONVERTER = """
-(() => {
-    globalThis.bytesToBase64 = function(bytes) {
-        if (!bytes || bytes.length === 0) return "";
-        return bytes.toBase64();
-    };
+            (() => {
+                const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+                const lookup = new Uint8Array(256);
+                for (let i = 0; i < chars.length; i++) {
+                    lookup[chars.charCodeAt(i)] = i;
+                }
 
-    globalThis.base64ToBytes = function(str) {
-        if (!str || str.length === 0) return new Uint8Array(0);
-        return Uint8Array.fromBase64(str);
-    };
+                globalThis.bytesToBase64 = function(bytes) {
+                    let output = "";
+                    for (let i = 0; i < bytes.length; i += 3) {
+                        const b1 = bytes[i];
+                        const b2 = i + 1 < bytes.length ? bytes[i + 1] : 0;
+                        const b3 = i + 2 < bytes.length ? bytes[i + 2] : 0;
 
-    globalThis.encodePayload = globalThis.bytesToBase64;
-    globalThis.decodePayload = globalThis.base64ToBytes;
-})();
+                        const e1 = b1 >> 2;
+                        const e2 = ((b1 & 3) << 4) | (b2 >> 4);
+                        const e3 = ((b2 & 15) << 2) | (b3 >> 6);
+                        const e4 = b3 & 63;
+
+                        output += chars.charAt(e1) + chars.charAt(e2);
+                        if (i + 1 < bytes.length) {
+                            output += chars.charAt(e3);
+                        } else {
+                            output += "=";
+                        }
+                        if (i + 2 < bytes.length) {
+                            output += chars.charAt(e4);
+                        } else {
+                            output += "=";
+                        }
+                    }
+                    return output;
+                };
+
+                globalThis.base64ToBytes = function(base64) {
+                    let bufferLength = base64.length * 0.75;
+                    let len = base64.length;
+                    let i, p = 0, encoded1, encoded2, encoded3, encoded4;
+
+                    if (base64[base64.length - 1] === "=") {
+                        bufferLength--;
+                        if (base64[base64.length - 2] === "=") {
+                            bufferLength--;
+                        }
+                    }
+
+                    const bytes = new Uint8Array(bufferLength);
+
+                    for (i = 0; i < len; i += 4) {
+                        encoded1 = lookup[base64.charCodeAt(i)];
+                        encoded2 = lookup[base64.charCodeAt(i + 1)];
+                        encoded3 = lookup[base64.charCodeAt(i + 2)];
+                        encoded4 = lookup[base64.charCodeAt(i + 3)];
+
+                        bytes[p++] = (encoded1 << 2) | (encoded2 >> 4);
+                        if (p < bufferLength) bytes[p++] = ((encoded2 & 15) << 4) | (encoded3 >> 2);
+                        if (p < bufferLength) bytes[p++] = ((encoded3 & 3) << 6) | (encoded4 & 63);
+                    }
+
+                    return bytes;
+                };
+
+                globalThis.encodePayload = globalThis.bytesToBase64;
+                globalThis.decodePayload = globalThis.base64ToBytes;
+            })();
 """
 
 /**
@@ -28,7 +79,7 @@ private const val SCRIPT_CONVERTER = """
  * @see JSDataChannel
  */
 internal class Base64DataChannel : JSDataChannel {
-    override val name: String = "Base64NativeDataChannel"
+    override val name: String = "Base64DataChannel"
     override val isStringMediated: Boolean = true
     override fun init(sandbox: JavaScriptSandbox) {
         // No-op — Base64 works on all devices
@@ -59,7 +110,7 @@ internal class Base64DataChannel : JSDataChannel {
     }
 
     override val jsConverterScript: String
-        get() = SCRIPT_CONVERTER.minifyJs()
+        get() = SCRIPT_CONVERTER
 
     override val jsEncodeFunctionName: String
         get() = "bytesToBase64"

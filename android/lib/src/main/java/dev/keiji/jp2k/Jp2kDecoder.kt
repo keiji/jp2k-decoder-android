@@ -9,10 +9,12 @@ import android.graphics.RectF
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.javascriptengine.JavaScriptIsolate
+import androidx.javascriptengine.JavaScriptSandbox
 import com.google.common.util.concurrent.ListenableFuture
 import dev.keiji.jp2k.datachannel.Base64DataChannel
 import dev.keiji.jp2k.datachannel.JSDataChannel
 import dev.keiji.jp2k.datachannel.createDataChannel
+import dev.keiji.jp2k.datachannel.escapeJs
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -60,6 +62,8 @@ class Jp2kDecoder(
      */
     private var dataChannel: JSDataChannel = Base64DataChannel()
 
+    private var isEvaluateWithoutTransactionLimitSupported: Boolean = true
+
     private inline fun log(priority: Int, message: () -> String) {
         if (config.logLevel != null && priority >= config.logLevel) {
             val msg = message().trimLines(config.maxLogLines)
@@ -95,6 +99,8 @@ class Jp2kDecoder(
             Jp2kSandbox.logFeatureFlags(sandbox) { msg ->
                 log(Log.INFO) { msg }
             }
+            isEvaluateWithoutTransactionLimitSupported =
+                JavaScriptEngineEnvironment.isFeatureSupported(sandbox, JavaScriptSandbox.JS_FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT)
             dataChannel = createDataChannel(sandbox, config.preferDirectBinaryTransfer)
             log(Log.INFO) { "DataChannel: ${dataChannel.name}" }
 
@@ -105,6 +111,7 @@ class Jp2kDecoder(
             ).also { isolate ->
                 Jp2kSandbox.setupConsoleCallback(isolate, sandbox, mainExecutor, TAG)
             }
+
             dataChannel.setupIsolate(isolate, mainExecutor)
 
             if (_state == State.Released || _state == State.Releasing) {
@@ -139,28 +146,43 @@ class Jp2kDecoder(
             log(Log.INFO) { "DataChannel: ${dataChannel.name}" }
             log(Log.INFO) { "Input binary length: ${wasmBytes.size}" }
 
+            // Stage 1: Initialize JavaScript environment, helper functions, and establish data channel.
+            // When using MessagePort, messages sent before the JavaScript onmessage handler is attached
+            // will be silently dropped by Android JavaScriptEngine.
+            // Therefore, we evaluate the channel's setup script and await its initialization expression first.
+            val setupScript = """
+                ${dataChannel.jsConverterScript}
+                ${dataChannel.jsSetupScript}
+                $SCRIPT_DEFINE_INPUT_CHUNKS_LOCAL
+                $SCRIPT_DEFINE_SET_DATA_LOCAL
+                $SCRIPT_IMPORT_OBJECT_LOCAL
+
+                (async () => {
+                    ${dataChannel.jsInitExpression}
+                    return "$INTERNAL_RESULT_SUCCESS";
+                })();
+            """.trimIndent()
+
+            val setupResultFuture = isolate.evaluateJavaScriptAsync(setupScript)
+            try {
+                val setupResult = setupResultFuture.await()
+                if (setupResult != INTERNAL_RESULT_SUCCESS) {
+                    ensureNotEmpty(setupResult, "Success indicator")
+                    throw IllegalStateException("WASM instantiation failed.")
+                }
+            } catch (e: ExecutionException) {
+                throw e.cause ?: e
+            }
+
+            // Stage 2: Transmit WASM binary and instantiate the WebAssembly module.
             val wasmExpression = dataChannel.getWasmExpression(isolate, wasmBytes)
             log(Log.INFO) { "WASM expression: $wasmExpression" }
 
-            val script = """
-                ${dataChannel.jsConverterScript}
-                $SCRIPT_TRANSFER_FROM_PROVIDED_NAMED_DATA_LOCAL
-                $SCRIPT_DEFINE_SET_DATA_LOCAL
-
+            val instantiateScript = """
                 var wasmInstance;
 
                 (async () => {
-                    if (typeof android !== 'undefined' && typeof android.getNamedPort === 'function') {
-                        try {
-                            globalThis.outputMessagePort = await android.getNamedPort('$MESSAGE_PORT_NAME');
-                        } catch (e) {
-                            globalThis.outputMessagePort = null;
-                        }
-                    }
-
                     const wasmBuffer = await $wasmExpression;
-
-                    $SCRIPT_IMPORT_OBJECT_LOCAL
 
                     const res = await WebAssembly.instantiate(wasmBuffer, importObject);
                     wasmInstance = res.instance;
@@ -172,7 +194,7 @@ class Jp2kDecoder(
                 })();
             """.trimIndent()
 
-            val resultFuture = isolate.evaluateJavaScriptAsync(script)
+            val resultFuture = isolate.evaluateJavaScriptAsync(instantiateScript)
             try {
                 val result = resultFuture.await()
                 if (result != INTERNAL_RESULT_SUCCESS) {
@@ -182,6 +204,27 @@ class Jp2kDecoder(
             } catch (e: ExecutionException) {
                 throw e.cause ?: e
             }
+        }
+    }
+
+    private fun validateInputSize(size: Int) {
+        val maxAllowable = minOf(config.maxHeapSizeBytes, config.wasmMaxMemoryBytes)
+        if (size.toLong() > maxAllowable) {
+            throw Jp2kException(
+                Jp2kError.InputDataSize,
+                "Input data size ($size bytes) exceeds maximum allowable size ($maxAllowable bytes)",
+            )
+        }
+    }
+
+    private suspend fun transferInputInChunks(isolate: JavaScriptIsolate, encoded: String) {
+        isolate.evaluateJavaScriptAsync("globalThis.clearInputChunks();").await()
+        var offset = 0
+        while (offset < encoded.length) {
+            val end = minOf(offset + config.binderTransactionMaxChunkSizeBytes, encoded.length)
+            val chunk = encoded.substring(offset, end).escapeJs()
+            isolate.evaluateJavaScriptAsync("globalThis.appendInputChunk('$chunk');").await()
+            offset = end
         }
     }
 
@@ -201,6 +244,7 @@ class Jp2kDecoder(
         if (_state != State.Initialized) {
             throw IllegalStateException("Cannot precache while in state: $_state")
         }
+        validateInputSize(j2kData.size)
         _state = State.Processing
 
         try {
@@ -208,11 +252,16 @@ class Jp2kDecoder(
             withContext(coroutineDispatcher) {
                 log(Log.INFO) { "DataChannel: ${dataChannel.name}" }
                 log(Log.INFO) { "Input binary length: ${j2kData.size}" }
-                val script = dataChannel.getJ2KExpression(isolate, j2kData)
-                log(Log.INFO) { "J2K expression: $script" }
 
-                val resultFuture = isolate.evaluateJavaScriptAsync(script)
-                val result = resultFuture.await()
+                val result = if (!isEvaluateWithoutTransactionLimitSupported && dataChannel.isStringMediated) {
+                    val encoded = dataChannel.encodePayload(j2kData)
+                    transferInputInChunks(isolate, encoded)
+                    isolate.evaluateJavaScriptAsync("globalThis.setDataFromChunks();").await()
+                } else {
+                    val script = dataChannel.getJ2KExpression(isolate, j2kData)
+                    log(Log.INFO) { "J2K expression: $script" }
+                    isolate.evaluateJavaScriptAsync(script).await()
+                }
 
                 if (result != INTERNAL_RESULT_SUCCESS) {
                     ensureNotEmpty(result, "Success indicator or JSON error")
@@ -244,10 +293,19 @@ class Jp2kDecoder(
      * @return The [Size] of the image.
      */
     suspend fun getSize(j2kData: ByteArray): Size {
+        validateInputSize(j2kData.size)
         logInputDataInfo(j2kData)
         val encoded = dataChannel.encodePayload(j2kData)
         logEncodedInputInfo(encoded)
-        return executeGetSize("globalThis.getSize('$encoded');")
+
+        return executeGetSize { isolate ->
+            if (!isEvaluateWithoutTransactionLimitSupported && dataChannel.isStringMediated) {
+                transferInputInChunks(isolate, encoded)
+                isolate.evaluateJavaScriptAsync("globalThis.getSizeFromChunks();").await()
+            } else {
+                isolate.evaluateJavaScriptAsync("globalThis.getSize('$encoded');").await()
+            }
+        }
     }
 
     /**
@@ -256,10 +314,14 @@ class Jp2kDecoder(
      * @return The [Size] of the image.
      */
     suspend fun getSize(): Size {
-        return executeGetSize("globalThis.getSizeWithCache();")
+        return executeGetSize { isolate ->
+            isolate.evaluateJavaScriptAsync("globalThis.getSizeWithCache();").await()
+        }
     }
 
-    private suspend fun executeGetSize(script: String): Size = mutex.withLock {
+    private suspend fun executeGetSize(
+        evaluate: suspend (JavaScriptIsolate) -> String,
+    ): Size = mutex.withLock {
         if (_state == State.Released || _state == State.Releasing) {
             throw CancellationException("Decoder was released.")
         }
@@ -272,8 +334,7 @@ class Jp2kDecoder(
             val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
 
             val result = withContext(coroutineDispatcher) {
-                val resultFuture = isolate.evaluateJavaScriptAsync(script)
-                val jsonResult = ensureNotEmpty(resultFuture.await(), "JSON")
+                val jsonResult = ensureNotEmpty(evaluate(isolate), "JSON")
 
                 val root = JSONObject(jsonResult)
                 if (root.has("errorCode")) {
@@ -326,23 +387,7 @@ class Jp2kDecoder(
     suspend fun decodeImage(
         j2kData: ByteArray,
         colorFormat: ColorFormat = ColorFormat.ARGB8888,
-    ): Bitmap {
-        if (j2kData.size < MIN_INPUT_SIZE) {
-            throw IllegalArgumentException("Input data is too short")
-        }
-
-        logInputDataInfo(j2kData)
-
-        val measureTimes = config.logLevel != null
-        val encoded = dataChannel.encodePayload(j2kData)
-        logEncodedInputInfo(encoded)
-
-        val kotlinStartTime = System.currentTimeMillis()
-        val script =
-            "globalThis.decodeJ2K('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, 0, 0, 0, 0, $kotlinStartTime);"
-
-        return executeDecodeImage(script, colorFormat, j2kData.size.toLong())
-    }
+    ): Bitmap = decodeImage(j2kData, 0, 0, 0, 0, colorFormat)
 
     /**
      * Decodes a specific region of a JPEG 2000 image.
@@ -366,7 +411,7 @@ class Jp2kDecoder(
         if (j2kData.size < MIN_INPUT_SIZE) {
             throw IllegalArgumentException("Input data is too short")
         }
-
+        validateInputSize(j2kData.size)
         logInputDataInfo(j2kData)
 
         val measureTimes = config.logLevel != null
@@ -374,10 +419,19 @@ class Jp2kDecoder(
         logEncodedInputInfo(encoded)
 
         val kotlinStartTime = System.currentTimeMillis()
-        val script =
-            "globalThis.decodeJ2K('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom, $kotlinStartTime);"
+        val chunkedOutput = !isEvaluateWithoutTransactionLimitSupported
 
-        return executeDecodeImage(script, colorFormat, j2kData.size.toLong())
+        return executeDecodeImage(colorFormat, j2kData.size.toLong()) { isolate ->
+            if (!isEvaluateWithoutTransactionLimitSupported && dataChannel.isStringMediated) {
+                transferInputInChunks(isolate, encoded)
+                isolate.evaluateJavaScriptAsync(
+                    "globalThis.decodeJ2KFromChunks(${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom, $kotlinStartTime, $chunkedOutput);"
+                ).await()
+            } else {
+                val script = "globalThis.decodeJ2K('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom, $kotlinStartTime, $chunkedOutput);"
+                isolate.evaluateJavaScriptAsync(script).await()
+            }
+        }
     }
 
     /**
@@ -434,6 +488,7 @@ class Jp2kDecoder(
         if (j2kData.size < MIN_INPUT_SIZE) {
             throw IllegalArgumentException("Input data is too short")
         }
+        validateInputSize(j2kData.size)
         validateRatio(left, top, right, bottom)
 
         logInputDataInfo(j2kData)
@@ -443,10 +498,19 @@ class Jp2kDecoder(
         logEncodedInputInfo(encoded)
 
         val kotlinStartTime = System.currentTimeMillis()
-        val script =
-            "globalThis.decodeJ2KRatio('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom, $kotlinStartTime);"
+        val chunkedOutput = !isEvaluateWithoutTransactionLimitSupported
 
-        return executeDecodeImage(script, colorFormat, j2kData.size.toLong())
+        return executeDecodeImage(colorFormat, j2kData.size.toLong()) { isolate ->
+            if (!isEvaluateWithoutTransactionLimitSupported && dataChannel.isStringMediated) {
+                transferInputInChunks(isolate, encoded)
+                isolate.evaluateJavaScriptAsync(
+                    "globalThis.decodeJ2KRatioFromChunks(${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom, $kotlinStartTime, $chunkedOutput);"
+                ).await()
+            } else {
+                val script = "globalThis.decodeJ2KRatio('$encoded', ${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom, $kotlinStartTime, $chunkedOutput);"
+                isolate.evaluateJavaScriptAsync(script).await()
+            }
+        }
     }
 
     /**
@@ -457,14 +521,7 @@ class Jp2kDecoder(
      */
     suspend fun decodeImage(
         colorFormat: ColorFormat = ColorFormat.ARGB8888,
-    ): Bitmap {
-        val measureTimes = config.logLevel != null
-        val kotlinStartTime = System.currentTimeMillis()
-        val script =
-            "globalThis.decodeJ2KWithCache(${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, 0, 0, 0, 0, $kotlinStartTime);"
-
-        return executeDecodeImage(script, colorFormat)
-    }
+    ): Bitmap = decodeImage(0, 0, 0, 0, colorFormat)
 
     /**
      * Decodes a specific region of a JPEG 2000 image using cached data.
@@ -485,10 +542,13 @@ class Jp2kDecoder(
     ): Bitmap {
         val measureTimes = config.logLevel != null
         val kotlinStartTime = System.currentTimeMillis()
+        val chunkedOutput = !isEvaluateWithoutTransactionLimitSupported
         val script =
-            "globalThis.decodeJ2KWithCache(${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom, $kotlinStartTime);"
+            "globalThis.decodeJ2KWithCache(${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom, $kotlinStartTime, $chunkedOutput);"
 
-        return executeDecodeImage(script, colorFormat)
+        return executeDecodeImage(colorFormat) { isolate ->
+            isolate.evaluateJavaScriptAsync(script).await()
+        }
     }
 
     /**
@@ -540,10 +600,13 @@ class Jp2kDecoder(
 
         val measureTimes = config.logLevel != null
         val kotlinStartTime = System.currentTimeMillis()
+        val chunkedOutput = !isEvaluateWithoutTransactionLimitSupported
         val script =
-            "globalThis.decodeJ2KWithCacheRatio(${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom, $kotlinStartTime);"
+            "globalThis.decodeJ2KWithCacheRatio(${config.maxPixels}, ${config.maxHeapSizeBytes}, ${colorFormat.id}, $measureTimes, $left, $top, $right, $bottom, $kotlinStartTime, $chunkedOutput);"
 
-        return executeDecodeImage(script, colorFormat)
+        return executeDecodeImage(colorFormat) { isolate ->
+            isolate.evaluateJavaScriptAsync(script).await()
+        }
     }
 
     private fun validateRatio(left: Float, top: Float, right: Float, bottom: Float) {
@@ -555,9 +618,9 @@ class Jp2kDecoder(
     }
 
     private suspend fun executeDecodeImage(
-        script: String,
         colorFormat: ColorFormat,
         inputSize: Long = 0L,
+        evaluate: suspend (JavaScriptIsolate) -> String,
     ): Bitmap = mutex.withLock {
         if (_state == State.Released || _state == State.Releasing) {
             throw CancellationException("Decoder was released.")
@@ -567,18 +630,18 @@ class Jp2kDecoder(
         }
         _state = State.Processing
 
+        dataChannel.prepareForDecode()
+
         val start = System.currentTimeMillis()
 
         return try {
             val isolate = checkNotNull(jsIsolate) { "Jp2kDecoder has not been initialized." }
 
             val bitmap = withContext(coroutineDispatcher) {
-                dataChannel.prepareForDecode()
                 val measureTimes = config.logLevel != null
                 val transferStart = if (measureTimes) System.nanoTime() else 0L
 
-                val resultFuture = isolate.evaluateJavaScriptAsync(script)
-                val jsonResult = ensureNotEmpty(resultFuture.await(), "JSON")
+                val jsonResult = ensureNotEmpty(evaluate(isolate), "JSON")
                 val kotlinReceiveTimeMs = System.currentTimeMillis()
                 val transferEnd = if (measureTimes) System.nanoTime() else 0L
 
@@ -604,14 +667,29 @@ class Jp2kDecoder(
                     throw Jp2kException(Jp2kError.Unknown, errorMsg)
                 }
 
-                val bmpBase64 = root.optString("bmp", "")
-                if (bmpBase64.isNotEmpty()) {
+                val bmpBase64 = if (root.optBoolean("isChunked", false)) {
+                    val outputSize = root.getInt("outputSize")
+                    val sb = java.lang.StringBuilder(outputSize)
+                    var offset = 0
+                    while (offset < outputSize) {
+                        val length = minOf(config.binderTransactionMaxChunkSizeBytes, outputSize - offset)
+                        val chunk = isolate.evaluateJavaScriptAsync("globalThis.getOutputChunk($offset, $length);").await()
+                        sb.append(chunk)
+                        offset += length
+                    }
+                    isolate.evaluateJavaScriptAsync("globalThis.clearOutput();").await()
+                    sb.toString()
+                } else {
+                    root.optString("bmp", "")
+                }
+
+                if (dataChannel.isStringMediated) {
                     log(Log.INFO) { "Output encoded content length: ${bmpBase64.length} chars" }
                     log(Log.INFO) { "Output encoded content (64 chars per line):\n${bmpBase64.chunked64()}" }
                 }
 
                 val kotlinDecodeStart = System.nanoTime()
-                val bmpBytes = dataChannel.decodePayload(bmpBase64)
+                val bmpBytes = dataChannel.retrieveDecodedBytes(bmpBase64)
 
                 val options = BitmapFactory.Options().apply {
                     inPreferredConfig = when (colorFormat) {
@@ -801,10 +879,10 @@ class Jp2kDecoder(
         private const val MIN_INPUT_SIZE = 12 // Signature box length
         private const val ASSET_PATH_WASM = "openjpeg_core.wasm"
 
+        private val SCRIPT_DEFINE_INPUT_CHUNKS_LOCAL = SCRIPT_DEFINE_INPUT_CHUNKS
         private val SCRIPT_DEFINE_SET_DATA_LOCAL = SCRIPT_DEFINE_SET_DATA
         private const val SCRIPT_IMPORT_OBJECT_LOCAL = SCRIPT_IMPORT_OBJECT
         private val SCRIPT_DEFINE_DECODE_J2K_LOCAL = SCRIPT_DEFINE_DECODE_J2K
         private val SCRIPT_DEFINE_GET_SIZE_LOCAL = SCRIPT_DEFINE_GET_SIZE
-        private const val SCRIPT_TRANSFER_FROM_PROVIDED_NAMED_DATA_LOCAL = SCRIPT_TRANSFER_FROM_PROVIDED_NAMED_DATA
     }
 }

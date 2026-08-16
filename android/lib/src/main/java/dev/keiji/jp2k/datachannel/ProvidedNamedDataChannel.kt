@@ -4,68 +4,34 @@ package dev.keiji.jp2k.datachannel
 
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
-import androidx.javascriptengine.Message
-import androidx.javascriptengine.MessagePort
-import androidx.javascriptengine.MessagePortClient
 import dev.keiji.jp2k.INTERNAL_RESULT_SUCCESS
-import dev.keiji.jp2k.MESSAGE_PORT_NAME
+import dev.keiji.jp2k.JavaScriptEngineEnvironment
 import dev.keiji.jp2k.PROVIDED_J2K_DATA
 import dev.keiji.jp2k.PROVIDED_WASM_DATA
-import java.util.concurrent.ArrayBlockingQueue
-import java.util.concurrent.Executor
-import java.util.concurrent.TimeUnit
 
 /**
  * Channel that uses [JavaScriptIsolate.provideNamedData] for direct binary data transfer.
  *
- * Also uses [MessagePort] for direct binary output retrieval when [JavaScriptSandbox.JS_FEATURE_MESSAGE_PORTS] is supported.
- *
  * @see JSDataChannel
  */
 internal class ProvidedNamedDataChannel : JSDataChannel {
+    override val name: String = "ProvidedNamedDataChannel"
     override val isStringMediated: Boolean = false
-
     @Volatile
     private var sandbox: JavaScriptSandbox? = null
 
-    @Volatile
-    private var messagePort: MessagePort? = null
-
-    private val pendingBytesQueue = ArrayBlockingQueue<ByteArray>(1)
-
-    private val fallbackChannel = DefaultJsDataChannel()
-
-    override val name: String = "ProvidedNamedDataChannel - ${fallbackChannel.name}"
+    private val fallbackChannel = Base64UrlDataChannel()
 
     override fun init(sandbox: JavaScriptSandbox) {
         require(
-            sandbox.isFeatureSupported(
+            JavaScriptEngineEnvironment.isFeatureSupported(
+                sandbox,
                 JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER,
             ),
         ) {
             "JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER not supported"
         }
         this.sandbox = sandbox
-    }
-
-    override fun setupIsolate(isolate: JavaScriptIsolate, executor: Executor) {
-        val sb = sandbox ?: return
-        if (sb.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_MESSAGE_PORTS)) {
-            val client = MessagePortClient { message ->
-                if (message.type == Message.TYPE_ARRAY_BUFFER) {
-                    pendingBytesQueue.offer(message.arrayBuffer)
-                }
-            }
-            try {
-                messagePort = isolate.createMessageChannel(MESSAGE_PORT_NAME, executor, client)
-            } catch (_: Exception) {
-                messagePort = null
-            }
-        }
-    }
-
-    override fun prepareForDecode() {
-        pendingBytesQueue.clear()
     }
 
     override fun getWasmExpression(
@@ -126,18 +92,13 @@ internal class ProvidedNamedDataChannel : JSDataChannel {
 
     override fun encodePayload(data: ByteArray): String = fallbackChannel.encodePayload(data)
 
-    override fun decodePayload(encoded: String): ByteArray {
-        if (encoded.isEmpty()) {
-            val binaryData = pendingBytesQueue.poll(5, TimeUnit.SECONDS)
-            if (binaryData != null) {
-                return binaryData
-            }
-        }
-        return fallbackChannel.decodePayload(encoded)
-    }
+    override fun decodePayload(encoded: String): ByteArray = fallbackChannel.decodePayload(encoded)
 
     override val jsConverterScript: String
         get() = fallbackChannel.jsConverterScript
+
+    override val jsSetupScript: String
+        get() = dev.keiji.jp2k.SCRIPT_TRANSFER_FROM_PROVIDED_NAMED_DATA
 
     override val jsEncodeFunctionName: String
         get() = fallbackChannel.jsEncodeFunctionName
