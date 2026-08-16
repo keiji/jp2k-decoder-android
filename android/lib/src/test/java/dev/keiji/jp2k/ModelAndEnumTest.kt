@@ -44,19 +44,25 @@ class ModelAndEnumTest {
         assertEquals(DEFAULT_MAX_EVALUATION_RETURN_SIZE_BYTES, defaultConfig.maxEvaluationReturnSizeBytes)
         assertNull(defaultConfig.logLevel)
         assertTrue(defaultConfig.preferDirectBinaryTransfer)
+        assertEquals(JavaScriptEngineEnvironment.DEFAULT_BINDER_TRANSACTION_MAX_CHUNK_SIZE_BYTES, defaultConfig.binderTransactionMaxChunkSizeBytes)
+        assertEquals(JavaScriptEngineEnvironment.DEFAULT_WASM_MAX_MEMORY_BYTES, defaultConfig.wasmMaxMemoryBytes)
 
         val customConfig = Config(
             maxPixels = 1000,
             maxHeapSizeBytes = 1024L,
             maxEvaluationReturnSizeBytes = 2048,
             logLevel = 3,
-            preferDirectBinaryTransfer = false
+            preferDirectBinaryTransfer = false,
+            binderTransactionMaxChunkSizeBytes = 512,
+            wasmMaxMemoryBytes = 1024L * 1024L
         )
         assertEquals(1000, customConfig.maxPixels)
         assertEquals(1024L, customConfig.maxHeapSizeBytes)
         assertEquals(2048, customConfig.maxEvaluationReturnSizeBytes)
         assertEquals(Integer.valueOf(3), customConfig.logLevel)
         assertFalse(customConfig.preferDirectBinaryTransfer)
+        assertEquals(512, customConfig.binderTransactionMaxChunkSizeBytes)
+        assertEquals(1024L * 1024L, customConfig.wasmMaxMemoryBytes)
 
         val copyConfig = defaultConfig.copy(maxPixels = 500)
         assertEquals(500, copyConfig.maxPixels)

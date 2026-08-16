@@ -8,6 +8,7 @@ import androidx.javascriptengine.Message
 import androidx.javascriptengine.MessagePort
 import androidx.javascriptengine.MessagePortClient
 import dev.keiji.jp2k.INTERNAL_RESULT_SUCCESS
+import dev.keiji.jp2k.JavaScriptEngineEnvironment
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.Executor
 
@@ -26,7 +27,7 @@ internal class MessagePortDataChannel : JSDataChannel {
     private var messagePort: MessagePort? = null
 
     override fun init(sandbox: JavaScriptSandbox) {
-        require(sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_MESSAGE_PORTS)) {
+        require(JavaScriptEngineEnvironment.isFeatureSupported(sandbox, JavaScriptSandbox.JS_FEATURE_MESSAGE_PORTS)) {
             "JS_FEATURE_MESSAGE_PORTS not supported"
         }
     }

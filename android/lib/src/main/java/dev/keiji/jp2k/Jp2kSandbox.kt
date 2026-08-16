@@ -1,7 +1,9 @@
 package dev.keiji.jp2k
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import androidx.javascriptengine.IsolateStartupParameters
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
@@ -42,6 +44,7 @@ object Jp2kSandbox {
      * @param maxEvaluationReturnSizeBytes The maximum return size for evaluation (if supported).
      * @return A new [JavaScriptIsolate] instance.
      */
+    @SuppressLint("RequiresFeature")
     @JvmStatic
     fun createIsolate(
         sandbox: JavaScriptSandbox,
@@ -49,10 +52,10 @@ object Jp2kSandbox {
         maxEvaluationReturnSizeBytes: Int,
     ): JavaScriptIsolate {
         val params = IsolateStartupParameters()
-        if (sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_ISOLATE_MAX_HEAP_SIZE)) {
+        if (JavaScriptEngineEnvironment.isFeatureSupported(sandbox, JavaScriptSandbox.JS_FEATURE_ISOLATE_MAX_HEAP_SIZE)) {
             params.maxHeapSizeBytes = maxHeapSizeBytes
         }
-        if (sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT)) {
+        if (JavaScriptEngineEnvironment.isFeatureSupported(sandbox, JavaScriptSandbox.JS_FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT)) {
             params.maxEvaluationReturnSizeBytes = maxEvaluationReturnSizeBytes
         }
         return sandbox.createIsolate(params)
@@ -66,17 +69,61 @@ object Jp2kSandbox {
      * @param executor The executor on which the callback will be invoked.
      * @param tag The tag to use for logging.
      */
+    @SuppressLint("RequiresFeature")
     @JvmStatic
     fun setupConsoleCallback(
         isolate: JavaScriptIsolate,
         sandbox: JavaScriptSandbox,
         executor: Executor,
-        tag: String
+        tag: String,
     ) {
-        if (sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_CONSOLE_MESSAGING)) {
+        if (JavaScriptEngineEnvironment.isFeatureSupported(sandbox, JavaScriptSandbox.JS_FEATURE_CONSOLE_MESSAGING)) {
             isolate.setConsoleCallback(executor) { consoleMessage ->
                 Log.v(tag, consoleMessage.message)
             }
         }
+    }
+
+    /**
+     * Checks whether the specified [feature] is supported by the provided [sandbox] in the current environment.
+     *
+     * @param sandbox The [JavaScriptSandbox] instance.
+     * @param feature The feature name constant.
+     * @return `true` if supported; `false` otherwise.
+     */
+    @JvmStatic
+    fun isFeatureSupported(sandbox: JavaScriptSandbox, feature: String): Boolean {
+        return JavaScriptEngineEnvironment.isFeatureSupported(sandbox, feature)
+    }
+
+    /**
+     * Disables the specified [feature] for testing purposes.
+     *
+     * @param feature The feature name constant.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun disableFeatureForTesting(feature: String) {
+        JavaScriptEngineEnvironment.disableFeatureForTesting(feature)
+    }
+
+    /**
+     * Enables a previously disabled [feature] for testing purposes.
+     *
+     * @param feature The feature name constant.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun enableFeatureForTesting(feature: String) {
+        JavaScriptEngineEnvironment.enableFeatureForTesting(feature)
+    }
+
+    /**
+     * Resets all test feature overrides.
+     */
+    @VisibleForTesting
+    @JvmStatic
+    fun resetFeaturesForTesting() {
+        JavaScriptEngineEnvironment.resetForTesting()
     }
 }

@@ -102,7 +102,7 @@ class Jp2kDecoderAsync(
                     // Wait for sandbox connection on the background thread
                     val sandbox = sandboxFuture.get()
                     isEvaluateWithoutTransactionLimitSupported =
-                        sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT)
+                        JavaScriptEngineEnvironment.isFeatureSupported(sandbox, JavaScriptSandbox.JS_FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT)
                     dataChannel = createDataChannel(sandbox, config.preferDirectBinaryTransfer)
                     log(Log.INFO) { "DataChannel: ${dataChannel.name}" }
                     val isolate = Jp2kSandbox.createIsolate(
@@ -221,10 +221,11 @@ class Jp2kDecoderAsync(
     }
 
     private fun validateInputSize(size: Int): Exception? {
-        if (size.toLong() > config.maxHeapSizeBytes || size.toLong() > WASM_MAX_MEMORY_BYTES) {
+        val maxAllowable = minOf(config.maxHeapSizeBytes, config.wasmMaxMemoryBytes)
+        if (size.toLong() > maxAllowable) {
             return Jp2kException(
                 Jp2kError.InputDataSize,
-                "Input data size ($size bytes) exceeds maximum allowable size (${config.maxHeapSizeBytes} bytes)",
+                "Input data size ($size bytes) exceeds maximum allowable size ($maxAllowable bytes)",
             )
         }
         return null
@@ -234,7 +235,7 @@ class Jp2kDecoderAsync(
         isolate.evaluateJavaScriptAsync("globalThis.clearInputChunks();").get()
         var offset = 0
         while (offset < encoded.length) {
-            val end = minOf(offset + BINDER_TRANSACTION_MAX_CHUNK_SIZE_BYTES, encoded.length)
+            val end = minOf(offset + config.binderTransactionMaxChunkSizeBytes, encoded.length)
             val chunk = encoded.substring(offset, end).escapeJs()
             isolate.evaluateJavaScriptAsync("globalThis.appendInputChunk('$chunk');").get()
             offset = end
@@ -861,7 +862,7 @@ class Jp2kDecoderAsync(
                         val sb = java.lang.StringBuilder(outputSize)
                         var offset = 0
                         while (offset < outputSize) {
-                            val length = minOf(BINDER_TRANSACTION_MAX_CHUNK_SIZE_BYTES, outputSize - offset)
+                            val length = minOf(config.binderTransactionMaxChunkSizeBytes, outputSize - offset)
                             val chunk = isolate.evaluateJavaScriptAsync("globalThis.getOutputChunk($offset, $length);").get()
                             sb.append(chunk)
                             offset += length

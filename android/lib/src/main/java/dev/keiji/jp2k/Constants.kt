@@ -25,12 +25,12 @@ const val DEFAULT_MAX_PIXELS = 16000000
  * Maximum chunk size in bytes / characters for safe transfer across Android Binder transactions.
  * 256KB: Safely below the 1MB shared Binder buffer limit.
  */
-const val BINDER_TRANSACTION_MAX_CHUNK_SIZE_BYTES = 256 * 1024
+const val BINDER_TRANSACTION_MAX_CHUNK_SIZE_BYTES = JavaScriptEngineEnvironment.DEFAULT_BINDER_TRANSACTION_MAX_CHUNK_SIZE_BYTES
 
 /**
  * Maximum addressable linear memory for WebAssembly 32-bit (4GB).
  */
-const val WASM_MAX_MEMORY_BYTES = 4L * 1024 * 1024 * 1024L
+const val WASM_MAX_MEMORY_BYTES = JavaScriptEngineEnvironment.DEFAULT_WASM_MAX_MEMORY_BYTES
 
 /**
  * Feature flag constant for direct binary data transfer support.
