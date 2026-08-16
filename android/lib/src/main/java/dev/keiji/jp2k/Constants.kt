@@ -22,6 +22,17 @@ const val DEFAULT_MAX_EVALUATION_RETURN_SIZE_BYTES = 256 * 1024 * 1024
 const val DEFAULT_MAX_PIXELS = 16000000
 
 /**
+ * Maximum chunk size in bytes / characters for safe transfer across Android Binder transactions.
+ * 256KB: Safely below the 1MB shared Binder buffer limit.
+ */
+const val BINDER_TRANSACTION_MAX_CHUNK_SIZE_BYTES = 256 * 1024
+
+/**
+ * Maximum addressable linear memory for WebAssembly 32-bit (4GB).
+ */
+const val WASM_MAX_MEMORY_BYTES = 4L * 1024 * 1024 * 1024L
+
+/**
  * Feature flag constant for direct binary data transfer support.
  * Checks if `JavaScriptSandbox.isFeatureSupported(JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)` returns true.
  */
@@ -84,6 +95,33 @@ const importObject = {
 };
 """
 
+internal const val SCRIPT_DEFINE_INPUT_CHUNKS = """
+            globalThis.inputChunks = [];
+            globalThis.clearInputChunks = function() {
+                globalThis.inputChunks = [];
+                return "$INTERNAL_RESULT_SUCCESS";
+            };
+            globalThis.appendInputChunk = function(chunk) {
+                globalThis.inputChunks.push(chunk);
+                return "$INTERNAL_RESULT_SUCCESS";
+            };
+            globalThis.consumeInputChunks = function() {
+                const joined = globalThis.inputChunks.join('');
+                globalThis.inputChunks = [];
+                return joined;
+            };
+
+            globalThis.outputPayload = null;
+            globalThis.clearOutput = function() {
+                globalThis.outputPayload = null;
+                return "$INTERNAL_RESULT_SUCCESS";
+            };
+            globalThis.getOutputChunk = function(offset, length) {
+                if (!globalThis.outputPayload) return "";
+                return globalThis.outputPayload.substring(offset, offset + length);
+            };
+"""
+
 internal val SCRIPT_DEFINE_SET_DATA = """
             globalThis.j2kData = null;
             globalThis.setData = function(dataEncodedString) {
@@ -95,10 +133,21 @@ internal val SCRIPT_DEFINE_SET_DATA = """
                     return JSON.stringify({ errorCode: ${Jp2kError.Unknown.code}, errorMessage: e.toString() });
                 }
             };
+
+            globalThis.setDataFromChunks = function() {
+                try {
+                    const decodeFn = globalThis.decodePayload || globalThis.base64ToBytes;
+                    const joined = globalThis.consumeInputChunks();
+                    globalThis.j2kData = decodeFn(joined);
+                    return "$INTERNAL_RESULT_SUCCESS";
+                } catch (e) {
+                    return JSON.stringify({ errorCode: ${Jp2kError.Unknown.code}, errorMessage: e.toString() });
+                }
+            };
 """
 
 internal val SCRIPT_DEFINE_DECODE_J2K = """
-            globalThis.commonDecodeJ2K = function(wasmFunctionName, encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, base64DecodeTime, inputTransferDelayMs) {
+            globalThis.commonDecodeJ2K = function(wasmFunctionName, encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, base64DecodeTime, inputTransferDelayMs, chunkedOutput) {
                 const now = function() {
                     return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
                 };
@@ -113,6 +162,10 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
 
                     const dataLength = encodedBuffer.length;
                     if (dataLength === 0) return JSON.stringify({ errorCode: -1 });
+
+                    if (dataLength > maxHeapSize || dataLength > 4294967296) {
+                        return JSON.stringify({ errorCode: ${Jp2kError.InputDataSize.code}, errorMessage: "Input data size (" + dataLength + " bytes) exceeds maximum allowable heap size" });
+                    }
 
                     const inputPtr = exports.malloc(dataLength);
                     const heap = new Uint8Array(exports.memory.buffer);
@@ -139,6 +192,12 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
                     const view = new DataView(exports.memory.buffer);
                     const bmpSize = view.getUint32(bmpPtr + 2, true);
 
+                    if (bmpSize > maxHeapSize || bmpSize > 4294967296) {
+                        exports.free(bmpPtr);
+                        exports.free(inputPtr);
+                        return JSON.stringify({ errorCode: ${Jp2kError.PixelDataSize.code}, errorMessage: "Output BMP size (" + bmpSize + " bytes) exceeds maximum heap size" });
+                    }
+
                     const bmpBuffer = new Uint8Array(exports.memory.buffer, bmpPtr, bmpSize);
                     let base64String = "";
                     let base64EncodeTime = 0;
@@ -161,9 +220,19 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
                          timeAfterPostProcess = now();
                     }
 
-                    const result = {
-                        bmp: base64String
-                    };
+                    let result;
+                    if (chunkedOutput && !(typeof globalThis.outputMessagePort !== 'undefined' && globalThis.outputMessagePort)) {
+                        globalThis.outputPayload = base64String;
+                        result = {
+                            outputSize: base64String.length,
+                            isChunked: true,
+                            bmp: ""
+                        };
+                    } else {
+                        result = {
+                            bmp: base64String
+                        };
+                    }
 
                     if (measureTimes) {
                         result.inputTransferDelayMs = inputTransferDelayMs || 0;
@@ -182,11 +251,11 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
                 }
             };
 
-            globalThis.internalDecodeJ2K = function(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, base64DecodeTime, inputTransferDelayMs) {
-                return globalThis.commonDecodeJ2K('decodeToBmp', encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, base64DecodeTime, inputTransferDelayMs);
+            globalThis.internalDecodeJ2K = function(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, base64DecodeTime, inputTransferDelayMs, chunkedOutput) {
+                return globalThis.commonDecodeJ2K('decodeToBmp', encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, base64DecodeTime, inputTransferDelayMs, chunkedOutput);
             };
 
-            globalThis.decodeJ2K = function(dataEncodedString, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, kotlinStartTime) {
+            globalThis.decodeJ2K = function(dataEncodedString, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, kotlinStartTime, chunkedOutput) {
                 try {
                     const jsStartTime = Date.now();
                     const inputTransferDelayMs = (kotlinStartTime && kotlinStartTime > 0) ? Math.max(0, jsStartTime - kotlinStartTime) : 0;
@@ -198,30 +267,53 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
                         const b64Start = now();
                         const encodedBuffer = decodeFn(dataEncodedString);
                         const base64DecodeTime = now() - b64Start;
-                        return globalThis.internalDecodeJ2K(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, base64DecodeTime, inputTransferDelayMs);
+                        return globalThis.internalDecodeJ2K(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, base64DecodeTime, inputTransferDelayMs, chunkedOutput);
                     } else {
                         const encodedBuffer = decodeFn(dataEncodedString);
-                        return globalThis.internalDecodeJ2K(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, 0, 0);
+                        return globalThis.internalDecodeJ2K(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, 0, 0, chunkedOutput);
                     }
                 } catch (e) {
                     return JSON.stringify({ errorCode: ${Jp2kError.Unknown.code}, errorMessage: e.toString() });
                 }
             };
 
-            globalThis.decodeJ2KWithCache = function(maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, kotlinStartTime) {
+            globalThis.decodeJ2KFromChunks = function(maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, kotlinStartTime, chunkedOutput) {
+                try {
+                    const jsStartTime = Date.now();
+                    const inputTransferDelayMs = (kotlinStartTime && kotlinStartTime > 0) ? Math.max(0, jsStartTime - kotlinStartTime) : 0;
+                    const now = function() {
+                        return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                    };
+                    const decodeFn = globalThis.decodePayload || globalThis.base64ToBytes;
+                    const joined = globalThis.consumeInputChunks();
+                    if (measureTimes) {
+                        const b64Start = now();
+                        const encodedBuffer = decodeFn(joined);
+                        const base64DecodeTime = now() - b64Start;
+                        return globalThis.internalDecodeJ2K(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, base64DecodeTime, inputTransferDelayMs, chunkedOutput);
+                    } else {
+                        const encodedBuffer = decodeFn(joined);
+                        return globalThis.internalDecodeJ2K(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, 0, 0, chunkedOutput);
+                    }
+                } catch (e) {
+                    return JSON.stringify({ errorCode: ${Jp2kError.Unknown.code}, errorMessage: e.toString() });
+                }
+            };
+
+            globalThis.decodeJ2KWithCache = function(maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, kotlinStartTime, chunkedOutput) {
                 if (!globalThis.j2kData) {
                     return JSON.stringify({ errorCode: ${Jp2kError.CacheDataMissing.code}, errorMessage: "No data cached" });
                 }
                 const jsStartTime = Date.now();
                 const inputTransferDelayMs = (kotlinStartTime && kotlinStartTime > 0) ? Math.max(0, jsStartTime - kotlinStartTime) : 0;
-                return globalThis.internalDecodeJ2K(globalThis.j2kData, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, 0, inputTransferDelayMs);
+                return globalThis.internalDecodeJ2K(globalThis.j2kData, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, 0, inputTransferDelayMs, chunkedOutput);
             };
 
-            globalThis.internalDecodeJ2KRatio = function(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, base64DecodeTime, inputTransferDelayMs) {
-                return globalThis.commonDecodeJ2K('decodeToBmpWithRatio', encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, base64DecodeTime, inputTransferDelayMs);
+            globalThis.internalDecodeJ2KRatio = function(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, base64DecodeTime, inputTransferDelayMs, chunkedOutput) {
+                return globalThis.commonDecodeJ2K('decodeToBmpWithRatio', encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, base64DecodeTime, inputTransferDelayMs, chunkedOutput);
             };
 
-            globalThis.decodeJ2KRatio = function(dataEncodedString, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, kotlinStartTime) {
+            globalThis.decodeJ2KRatio = function(dataEncodedString, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, kotlinStartTime, chunkedOutput) {
                 try {
                     const jsStartTime = Date.now();
                     const inputTransferDelayMs = (kotlinStartTime && kotlinStartTime > 0) ? Math.max(0, jsStartTime - kotlinStartTime) : 0;
@@ -233,23 +325,46 @@ internal val SCRIPT_DEFINE_DECODE_J2K = """
                         const b64Start = now();
                         const encodedBuffer = decodeFn(dataEncodedString);
                         const base64DecodeTime = now() - b64Start;
-                        return globalThis.internalDecodeJ2KRatio(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, base64DecodeTime, inputTransferDelayMs);
+                        return globalThis.internalDecodeJ2KRatio(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, base64DecodeTime, inputTransferDelayMs, chunkedOutput);
                     } else {
                         const encodedBuffer = decodeFn(dataEncodedString);
-                        return globalThis.internalDecodeJ2KRatio(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, 0, 0);
+                        return globalThis.internalDecodeJ2KRatio(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, 0, 0, chunkedOutput);
                     }
                 } catch (e) {
                     return JSON.stringify({ errorCode: ${Jp2kError.Unknown.code}, errorMessage: e.toString() });
                 }
             };
 
-            globalThis.decodeJ2KWithCacheRatio = function(maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, kotlinStartTime) {
+            globalThis.decodeJ2KRatioFromChunks = function(maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, kotlinStartTime, chunkedOutput) {
+                try {
+                    const jsStartTime = Date.now();
+                    const inputTransferDelayMs = (kotlinStartTime && kotlinStartTime > 0) ? Math.max(0, jsStartTime - kotlinStartTime) : 0;
+                    const now = function() {
+                        return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                    };
+                    const decodeFn = globalThis.decodePayload || globalThis.base64ToBytes;
+                    const joined = globalThis.consumeInputChunks();
+                    if (measureTimes) {
+                        const b64Start = now();
+                        const encodedBuffer = decodeFn(joined);
+                        const base64DecodeTime = now() - b64Start;
+                        return globalThis.internalDecodeJ2KRatio(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, base64DecodeTime, inputTransferDelayMs, chunkedOutput);
+                    } else {
+                        const encodedBuffer = decodeFn(joined);
+                        return globalThis.internalDecodeJ2KRatio(encodedBuffer, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, 0, 0, chunkedOutput);
+                    }
+                } catch (e) {
+                    return JSON.stringify({ errorCode: ${Jp2kError.Unknown.code}, errorMessage: e.toString() });
+                }
+            };
+
+            globalThis.decodeJ2KWithCacheRatio = function(maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, kotlinStartTime, chunkedOutput) {
                 if (!globalThis.j2kData) {
                     return JSON.stringify({ errorCode: ${Jp2kError.CacheDataMissing.code}, errorMessage: "No data cached" });
                 }
                 const jsStartTime = Date.now();
                 const inputTransferDelayMs = (kotlinStartTime && kotlinStartTime > 0) ? Math.max(0, jsStartTime - kotlinStartTime) : 0;
-                return globalThis.internalDecodeJ2KRatio(globalThis.j2kData, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, 0, inputTransferDelayMs);
+                return globalThis.internalDecodeJ2KRatio(globalThis.j2kData, maxPixels, maxHeapSize, colorFormat, measureTimes, x0, y0, x1, y1, 0, inputTransferDelayMs, chunkedOutput);
             };
 
             globalThis.getMemoryUsage = function() {
@@ -273,6 +388,10 @@ internal val SCRIPT_DEFINE_GET_SIZE = """
                     const dataLength = encodedBuffer.length;
 
                     if (dataLength === 0) return JSON.stringify({ errorCode: -1 });
+
+                    if (dataLength > 4294967296) {
+                        return JSON.stringify({ errorCode: ${Jp2kError.InputDataSize.code}, errorMessage: "Input data size exceeds maximum allowable memory" });
+                    }
 
                     const inputPtr = exports.malloc(dataLength);
                     const heap = new Uint8Array(exports.memory.buffer);
@@ -314,12 +433,23 @@ internal val SCRIPT_DEFINE_GET_SIZE = """
                 }
             };
 
-             globalThis.getSizeWithCache = function() {
-                 if (!globalThis.j2kData) {
-                     return JSON.stringify({ errorCode: ${Jp2kError.CacheDataMissing.code}, errorMessage: "No data cached" });
-                  }
-                 return globalThis.internalGetSize(globalThis.j2kData);
-              };
+            globalThis.getSizeFromChunks = function() {
+                try {
+                    const decodeFn = globalThis.decodePayload || globalThis.base64ToBytes;
+                    const joined = globalThis.consumeInputChunks();
+                    const encodedBuffer = decodeFn(joined);
+                    return globalThis.internalGetSize(encodedBuffer);
+                } catch (e) {
+                    return JSON.stringify({ errorCode: ${Jp2kError.Unknown.code}, errorMessage: e.toString() });
+                }
+            };
+
+            globalThis.getSizeWithCache = function() {
+                if (!globalThis.j2kData) {
+                    return JSON.stringify({ errorCode: ${Jp2kError.CacheDataMissing.code}, errorMessage: "No data cached" });
+                }
+                return globalThis.internalGetSize(globalThis.j2kData);
+            };
           """
 
 internal const val SCRIPT_TRANSFER_FROM_PROVIDED_NAMED_DATA = """

@@ -945,5 +945,129 @@ class Jp2kDecoderTest {
         val bitmap = decoder.decodeImage(data)
         assertNotNull(bitmap)
     }
+
+    @Test
+    fun testInputDataSizeExceedsMaxHeap_ThrowsException() = runTest {
+        val config = Config(maxHeapSizeBytes = 100L)
+        val decoder = createInitializedDecoder(config = config)
+
+        val oversizedData = ByteArray(150)
+        try {
+            decoder.decodeImage(oversizedData)
+            fail("Should throw Jp2kException for InputDataSize")
+        } catch (e: Jp2kException) {
+            assertEquals(Jp2kError.InputDataSize, e.error)
+        }
+
+        try {
+            decoder.precache(oversizedData)
+            fail("Should throw Jp2kException for InputDataSize")
+        } catch (e: Jp2kException) {
+            assertEquals(Jp2kError.InputDataSize, e.error)
+        }
+
+        try {
+            decoder.getSize(oversizedData)
+            fail("Should throw Jp2kException for InputDataSize")
+        } catch (e: Jp2kException) {
+            assertEquals(Jp2kError.InputDataSize, e.error)
+        }
+    }
+
+    @Test
+    fun testDecodeImage_OutputSizeExceedsHeap_ReturnsError() = runTest {
+        val errorJson = """{"errorCode": ${Jp2kError.PixelDataSize.code}, "errorMessage": "Output BMP size exceeds maximum heap size"}"""
+        val decoder = createInitializedDecoder { script ->
+            if (script.startsWith("globalThis.decodeJ2K")) {
+                TestListenableFuture(errorJson)
+            } else {
+                TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        val data = ByteArray(20)
+        try {
+            decoder.decodeImage(data)
+            fail("Should throw Jp2kException for PixelDataSize")
+        } catch (e: Jp2kException) {
+            assertEquals(Jp2kError.PixelDataSize, e.error)
+        }
+    }
+
+    @Test
+    fun testChunkedInputOutput_WithoutTransactionLimitSupport() = runTest {
+        whenever(sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT)).thenReturn(false)
+        whenever(sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)).thenReturn(false)
+        whenever(sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_MESSAGE_PORTS)).thenReturn(false)
+
+        val chunkedResultJson = """{"outputSize": 8, "isChunked": true}"""
+        var appendChunkCalled = false
+        var getOutputChunkCalled = false
+        var clearOutputCalled = false
+
+        val decoder = createInitializedDecoder { script ->
+            when {
+                script.startsWith("globalThis.appendInputChunk") -> {
+                    appendChunkCalled = true
+                    TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+                }
+                script.startsWith("globalThis.clearInputChunks") -> {
+                    TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+                }
+                script.startsWith("globalThis.decodeJ2KFromChunks") -> {
+                    TestListenableFuture(chunkedResultJson)
+                }
+                script.startsWith("globalThis.getOutputChunk") -> {
+                    getOutputChunkCalled = true
+                    TestListenableFuture("AQIDBAUG")
+                }
+                script.startsWith("globalThis.clearOutput") -> {
+                    clearOutputCalled = true
+                    TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+                }
+                else -> TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        val data = ByteArray(20)
+        val bitmap = decoder.decodeImage(data)
+        assertNotNull(bitmap)
+        assertEquals(true, appendChunkCalled)
+        assertEquals(true, getOutputChunkCalled)
+        assertEquals(true, clearOutputCalled)
+    }
+
+    @Test
+    fun testGetSize_ChunkedInput_WithoutTransactionLimitSupport() = runTest {
+        whenever(sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT)).thenReturn(false)
+        whenever(sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)).thenReturn(false)
+        whenever(sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_MESSAGE_PORTS)).thenReturn(false)
+
+        val sizeJson = """{"width": 800, "height": 600}"""
+        var getSizeFromChunksCalled = false
+
+        val decoder = createInitializedDecoder { script ->
+            when {
+                script.startsWith("globalThis.appendInputChunk") -> {
+                    TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+                }
+                script.startsWith("globalThis.clearInputChunks") -> {
+                    TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+                }
+                script.startsWith("globalThis.getSizeFromChunks") -> {
+                    getSizeFromChunksCalled = true
+                    TestListenableFuture(sizeJson)
+                }
+                else -> TestListenableFuture(INTERNAL_RESULT_SUCCESS)
+            }
+        }
+
+        val data = ByteArray(20)
+        val size = decoder.getSize(data)
+        assertEquals(800, size.width)
+        assertEquals(600, size.height)
+        assertEquals(true, getSizeFromChunksCalled)
+    }
 }
+
 
